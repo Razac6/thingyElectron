@@ -29,6 +29,8 @@ import AddIcon from '@mui/icons-material/Add';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
+import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
+import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
 import { StatusEnum } from '../../../enums/status.enum';
 import { PriorityEnum } from '../../../enums/priority.enum';
 import { TaskTypeEnum } from '../../../enums/task-type.enum';
@@ -140,7 +142,7 @@ function List() {
   const columns = [
     {
       field: 'done',
-      headerName: '', // Hide header
+      headerName: '',
       width: 60,
       align: 'center',
       headerAlign: 'center',
@@ -176,7 +178,7 @@ function List() {
       width: 150,
       renderCell: (params: any) => {
         const sprint = sprints.find(s => s.id === params.value);
-        return sprint ? sprint.name : null; // Return null for empty cell
+        return sprint ? sprint.name : null;
       }
     },
     {
@@ -203,8 +205,33 @@ function List() {
       headerAlign: 'center',
     },
     {
+      field: 'timer',
+      headerName: 'Timer',
+      sortable: false,
+      width: 150,
+      renderCell: (params: GridRenderCellParams<any, Task>) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+          <Box sx={{ width: '100px' }}>
+            <Timer
+              startTimer={params.row.startTimer}
+              spendTime={params.row.spendTime}
+            />
+          </Box>
+          {params.row.startTimer ? (
+            <IconButton color="error" onClick={(e) => { e.stopPropagation(); stopTimer(params.row.id); }}>
+              <PauseCircleOutlineIcon />
+            </IconButton>
+          ) : (
+            <IconButton color="primary" onClick={(e) => { e.stopPropagation(); startTimer(params.row.id); }} disabled={anyTimerRunning}>
+              <PlayCircleOutlineIcon />
+            </IconButton>
+          )}
+        </Box>
+      ),
+    },
+    {
       field: 'actions',
-      headerName: '', // Hide header
+      headerName: '',
       sortable: false,
       width: 60,
       align: 'center',
