@@ -1,0 +1,61 @@
+.react-calendar {
+  width: 100%;
+  border: none;
+  border-radius: 8px;
+  background-color: #ffffff;
+  font-family: "Roboto", "Helvetica", "Arial", sans-serif;
+}
+
+/* Style for the navigation bar (month, year) */
+.react-calendar__navigation button {
+  font-size: 1em;
+  font-weight: 500;
+  color: #ac3e33; /* Darker red */
+}
+
+/* Style for day tiles */
+.react-calendar__tile {
+  border-radius: 4px;
+  position: relative;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s ease-in-out;
+  /* Use an inset box-shadow to create a border without affecting layout */
+  box-shadow: inset 0 0 0 1px #f0f0f0;
+}
+
+/* Remove the highlight dot */
+.highlight {
+  display: none;
+}
+
+/* New style for tiles with activity */
+.react-calendar__tile.has-activity {
+  background-color: rgba(255, 89, 88, 0.2); /* Light red background */
+  font-weight: bold;
+}
+
+/* Hover effect for tiles with activity */
+.react-calendar__tile.has-activity:hover {
+  background-color: rgba(255, 89, 88, 0.4);
+}
+
+/* Currently selected day */
+.react-calendar__tile--active {
+  background: #ff5958 !important; /* Main theme color */
+  color: white;
+  box-shadow: none; /* Remove the inner border for the active day */
+}
+.react-calendar__tile--active:hover {
+  background: #ac3e33 !important; /* Darker red on hover */
+}
+
+/* Today's date */
+.react-calendar__tile--now {
+  background: rgba(172, 62, 51, 0.1);
+}
+.react-calendar__tile--now:hover {
+  background: rgba(172, 62, 51, 0.2);
+}

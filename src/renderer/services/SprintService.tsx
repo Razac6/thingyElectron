@@ -1,0 +1,19 @@
+export const getSprints = async () => {
+  try {
+    const sprints = await window.electron.database.getSprints();
+    return sprints;
+  } catch (error) {
+    console.error('Error fetching sprints:', error);
+    throw error;
+  }
+};
+
+export const createSprint = async (sprint: { name: string, startDate: string, endDate: string }) => {
+  try {
+    const newSprint = await window.electron.database.createSprint(sprint);
+    return newSprint;
+  } catch (error) {
+    console.error('Error creating sprint:', error);
+    throw error;
+  }
+};

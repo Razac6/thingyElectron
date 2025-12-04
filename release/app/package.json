@@ -1,0 +1,18 @@
+{
+  "name": "thingy",
+  "version": "0.0.10",
+  "description": "Todo app base on gtp-4",
+  "license": "MIT",
+  "author": {
+    "name": "Thingy",
+    "email": "binekmarcin@gmail.com",
+    "url": "https://webbd.pl"
+  },
+  "main": "./dist/main/main.js",
+  "scripts": {
+    "rebuild": "node -r ts-node/register ../../.erb/scripts/electron-rebuild.js",
+    "postinstall": "npm run rebuild && npm run link-modules",
+    "link-modules": "node -r ts-node/register ../../.erb/scripts/link-modules.ts"
+  },
+  "dependencies": {}
+}
