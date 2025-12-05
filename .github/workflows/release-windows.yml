@@ -34,7 +34,7 @@ jobs:
         run: npm version ${{ github.event.inputs.version }} --no-git-tag-version --allow-same-version
 
       - name: Build and package Windows application
-        run: npm run package
+        run: npm run package # Removed --publish always
 
       - name: Create/Update GitHub Release and upload artifact
         uses: softprops/action-gh-release@v1
