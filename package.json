@@ -1,7 +1,7 @@
 {
   "description": "Todo app base on gtp-4",
   "license": "",
-  "version": "0.1.2",
+  "version": "0.1.1",
   "author": {
     "name": "thingy",
     "email": "binekmarcin@gmail.com",
@@ -166,17 +166,13 @@
     "productName": "Thingy",
     "appId": "org.erb.Thingy",
     "asar": true,
+    "asarUnpack": [
+      "**/*.wasm"
+    ],
     "files": [
       "dist",
       "node_modules",
       "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "node_modules/sql.js/dist/sql-wasm.wasm",
-        "to": "sql-wasm.wasm"
-      },
-      "./assets/**"
     ],
     "afterSign": ".erb/scripts/notarize.js",
     "mac": {
@@ -217,6 +213,9 @@
       "buildResources": "assets",
       "output": "release/build"
     },
+    "extraResources": [
+      "./assets/**"
+    ],
     "publish": {
       "provider": "github",
       "owner": "webbd",
