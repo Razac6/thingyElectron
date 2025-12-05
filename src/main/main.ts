@@ -118,6 +118,11 @@ ipcMain.on('tray:update-tooltip', (event, tooltip) => {
   }
 });
 
+// Add handler for tray:get-icon-path
+ipcMain.on('tray:get-icon-path', (event) => {
+  event.returnValue = trayIconPath; // Return the icon path synchronously
+});
+
 if (process.env.NODE_ENV === 'production') {
   const sourceMapSupport = require('source-map-support');
   sourceMapSupport.install();
@@ -193,6 +198,9 @@ app.whenReady().then(async () => {
   }
 
   createWindow();
+
+  // Remove default tray creation here
+  // Tray will be managed by renderer process via IPC
 
 }).catch((error) => {
   log.error('CRITICAL: Unhandled error in app.whenReady.', error);
