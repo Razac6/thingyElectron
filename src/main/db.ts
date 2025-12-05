@@ -1,16 +1,12 @@
 import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
-import { Database } from 'sql.js';
+import initSqlJs, { Database } from 'sql.js';
 import crypto from 'crypto';
-
-// Use require for sql.js to prevent webpack from bundling it incorrectly
-const initSqlJs = require('sql.js');
 
 let db: Database | null = null;
 const dbPath = path.join(app.getPath('userData'), 'thingy.sqlite');
 
-// --- Helper Functions ---
 const saveDB = () => {
   if (!db) return;
   const data = db.export();
@@ -22,31 +18,23 @@ const hashPassword = (password: string) => {
   return crypto.createHash('sha256').update(password).digest('hex');
 };
 
-// --- DB Initialization ---
 export const initDB = async () => {
   const wasmPath = app.isPackaged
     ? path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm')
     : path.join(require.resolve('sql.js'), '..', 'dist', 'sql-wasm.wasm');
 
-  const SQL = await initSqlJs({
-    locateFile: () => wasmPath,
-  });
+  const SQL = await initSqlJs({ locateFile: () => wasmPath });
 
   db = fs.existsSync(dbPath) ? new SQL.Database(fs.readFileSync(dbPath)) : new SQL.Database();
 
-  // --- Schema Migrations ---
   try {
     const columns = db.exec("PRAGMA table_info(tasks);")[0].values;
-    if (!columns.some(row => row[1] === 'sprintId')) {
-      db.run('ALTER TABLE tasks ADD COLUMN sprintId INTEGER REFERENCES sprints(id) ON DELETE SET NULL');
-    }
     if (!columns.some(row => row[1] === 'displayOrder')) {
       db.run('ALTER TABLE tasks ADD COLUMN displayOrder INTEGER');
       db.run('UPDATE tasks SET displayOrder = id WHERE displayOrder IS NULL');
     }
-  } catch (e) { /* Fails if tasks table doesn't exist, which is fine */ }
+  } catch (e) { /* ignore */ }
 
-  // --- Table Creation ---
   db.run(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT)`);
   db.run(`CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY, title TEXT, description TEXT, status TEXT, updateStatusDate TEXT, estimate INTEGER, priority TEXT, link TEXT, createdAt TEXT, spendTime INTEGER, startTimer TEXT, type TEXT, userId INTEGER, sprintId INTEGER, displayOrder INTEGER, FOREIGN KEY(userId) REFERENCES users(id), FOREIGN KEY(sprintId) REFERENCES sprints(id) ON DELETE SET NULL)`);
   db.run(`CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, title TEXT, content TEXT, createdAt TEXT, userId INTEGER, FOREIGN KEY(userId) REFERENCES users(id))`);
@@ -60,8 +48,7 @@ export const initDB = async () => {
   saveDB();
 };
 
-// ... (rest of the file remains the same)
-// --- Task Order Function ---
+// ... (rest of the functions)
 export const updateTasksOrder = (taskIds: number[]) => {
   if (!db) throw new Error('DB not initialized');
   const stmt = db.prepare('UPDATE tasks SET displayOrder = ? WHERE id = ?');
@@ -77,8 +64,6 @@ export const updateTasksOrder = (taskIds: number[]) => {
   }
 };
 
-
-// --- Task Functions ---
 export const getTasks = (userId: number) => {
   if (!db) throw new Error('DB not initialized');
   const query = `
@@ -116,7 +101,7 @@ export const createTask = (task: any, userId: number) => {
   return { ...task, id, userId, displayOrder: newOrder };
 };
 
-// --- Tag Functions ---
+// ... (rest of the functions)
 export const getOrCreateTag = (name: string): number => {
   if (!db) throw new Error('DB not initialized');
   db.run('INSERT OR IGNORE INTO tags (name) VALUES (?)', [name]);
@@ -136,7 +121,6 @@ export const setTaskTags = (taskId: number, tagNames: string[]) => {
   saveDB();
 };
 
-// --- Gamification Functions ---
 export const getProfile = (userId: number) => {
   if (!db) throw new Error('DB not initialized');
   const stmt = db.prepare('SELECT * FROM user_profile WHERE userId = :userId');

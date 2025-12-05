@@ -5,10 +5,12 @@
 import webpack from 'webpack';
 import TsconfigPathsPlugins from 'tsconfig-paths-webpack-plugin';
 import webpackPaths from './webpack.paths';
-import { dependencies as externals } from '../../release/app/package.json';
 
 const configuration: webpack.Configuration = {
-  externals: [...Object.keys(externals || {})],
+  // Add a specific rule to exclude sql.js from being bundled
+  externals: {
+    'sql.js': 'commonjs sql.js',
+  },
 
   stats: 'errors-only',
 
