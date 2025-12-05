@@ -21,7 +21,15 @@ const hashPassword = (password: string) => {
 
 // --- DB Initialization ---
 export const initDB = async () => {
-  const SQL = await initSqlJs();
+  // Correct path for WASM file in production
+  const wasmPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules/sql.js/dist/sql-wasm.wasm')
+    : path.join(require.resolve('sql.js'), '..', 'sql-wasm.wasm');
+
+  const SQL = await initSqlJs({
+    locateFile: () => wasmPath,
+  });
+
   db = fs.existsSync(dbPath) ? new SQL.Database(fs.readFileSync(dbPath)) : new SQL.Database();
 
   // --- Schema Migrations ---
@@ -32,7 +40,6 @@ export const initDB = async () => {
     }
     if (!columns.some(row => row[1] === 'displayOrder')) {
       db.run('ALTER TABLE tasks ADD COLUMN displayOrder INTEGER');
-      // Seed initial order for existing tasks
       db.run('UPDATE tasks SET displayOrder = id WHERE displayOrder IS NULL');
     }
   } catch (e) { /* Fails if tasks table doesn't exist, which is fine */ }
@@ -54,6 +61,7 @@ export const initDB = async () => {
   saveDB();
 };
 
+// ... (rest of the file remains the same)
 // --- Task Order Function ---
 export const updateTasksOrder = (taskIds: number[]) => {
   if (!db) throw new Error('DB not initialized');
@@ -87,6 +95,7 @@ export const getTasks = (userId: number) => {
   const tasks: any[] = [];
   while (stmt.step()) {
     const task = stmt.getAsObject();
+    // Convert comma-separated string of tags to an array
     task.tags = task.tags ? (task.tags as string).split(',') : [];
     tasks.push(task);
   }
