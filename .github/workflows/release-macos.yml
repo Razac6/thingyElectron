@@ -12,7 +12,7 @@ jobs:
     runs-on: macos-latest
 
     permissions:
-      contents: write # Add permissions for the job to create a release
+      contents: write
 
     steps:
       - name: Check out Git repository
@@ -30,15 +30,16 @@ jobs:
       - name: Update package version
         run: npm version ${{ github.event.inputs.version }} --no-git-tag-version --allow-same-version
 
-      - name: Build and package macOS application
-        run: npm run package
+      - name: Build and package macOS application (unsigned)
+        # We override the config from package.json to disable signing for this CI build
+        run: npm run package -- --config.mac.hardenedRuntime=false --config.mac.gatekeeperAssess=false
 
-      - name: Create GitHub Release and upload artifact
+      - name: Create/Update GitHub Release and upload artifact
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.event.inputs.version }}
-          name: Release ${{ github.event.inputs.version }} (macOS)
-          body: "Automated macOS release for version ${{ github.event.inputs.version }}."
+          name: Release ${{ github.event.inputs.version }}
+          body: "Automated release for version ${{ github.event.inputs.version }}. Note: This is an unsigned build."
           files: |
             release/build/*.dmg
             release/build/*.zip
