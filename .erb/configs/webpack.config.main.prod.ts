@@ -27,6 +27,11 @@ const configuration: webpack.Configuration = {
     preload: path.join(webpackPaths.srcMainPath, 'preload.ts'),
   },
 
+  // Add externals to prevent Webpack from bundling sql.js
+  externals: {
+    'sql.js': 'commonjs sql.js',
+  },
+
   output: {
     path: webpackPaths.distMainPath,
     filename: '[name].js',
