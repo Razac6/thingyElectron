@@ -1,7 +1,7 @@
 {
   "description": "Todo app",
   "license": "MIT",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "author": {
     "name": "thingy",
     "email": "binekmarcin@gmail.com",
@@ -213,10 +213,14 @@
       "buildResources": "assets",
       "output": "release/build"
     },
+    "extraResources": [
+      "./assets/**"
+    ],
     "publish": {
       "provider": "github",
       "owner": "Razac6",
-      "repo": "thingyElectron"
+      "repo": "thingyElectron",
+      "releaseType": "release"
     }
   },
   "collective": {

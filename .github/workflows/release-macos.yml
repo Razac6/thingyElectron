@@ -34,16 +34,17 @@ jobs:
         run: npm version ${{ github.event.inputs.version }} --no-git-tag-version --allow-same-version
 
       - name: Build and package macOS application (unsigned)
-        run: npm run package -- --config.mac.hardenedRuntime=false --config.mac.gatekeeperAssess=false
+        run: npm run package -- --config.mac.hardenedRuntime=false --config.mac.gatekeeperAssess=false --publish always
 
       - name: Create/Update GitHub Release and upload artifact
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.event.inputs.version }}
           name: Release ${{ github.event.inputs.version }}
-          body: "Automated release for version ${{ github.event.inputs.version }}. Note: This is an unsigned build."
+          body: "Automated macOS release for version ${{ github.event.inputs.version }}. Note: This is an unsigned build."
           files: |
             release/build/*.dmg
             release/build/*.zip
+            release/build/latest-mac.yml # Add this file to the release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
