@@ -11,6 +11,9 @@ jobs:
   release:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: write # Add permissions for the job to create a release
+
     steps:
       - name: Check out Git repository
         uses: actions/checkout@v3
