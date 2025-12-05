@@ -215,8 +215,8 @@
     },
     "publish": {
       "provider": "github",
-      "owner": "webbd",
-      "repo": "Thingy"
+      "owner": "Razac6",
+      "repo": "thingyElectron"
     }
   },
   "collective": {
