@@ -1,8 +1,11 @@
 import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
-import initSqlJs, { Database } from 'sql.js';
+import { Database } from 'sql.js';
 import crypto from 'crypto';
+
+// Use require for sql.js to prevent webpack from bundling it incorrectly
+const initSqlJs = require('sql.js');
 
 let db: Database | null = null;
 const dbPath = path.join(app.getPath('userData'), 'thingy.sqlite');
@@ -21,9 +24,8 @@ const hashPassword = (password: string) => {
 
 // --- DB Initialization ---
 export const initDB = async () => {
-  // Correct path for WASM file in both development and production
   const wasmPath = app.isPackaged
-    ? path.join(process.resourcesPath, 'sql-wasm.wasm')
+    ? path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm')
     : path.join(require.resolve('sql.js'), '..', 'dist', 'sql-wasm.wasm');
 
   const SQL = await initSqlJs({
@@ -54,9 +56,6 @@ export const initDB = async () => {
   db.run(`CREATE TABLE IF NOT EXISTS user_achievements (userId INTEGER, achievementId TEXT, earnedAt TEXT NOT NULL, PRIMARY KEY (userId, achievementId), FOREIGN KEY(userId) REFERENCES users(id), FOREIGN KEY(achievementId) REFERENCES achievements(id))`);
   db.run(`CREATE TABLE IF NOT EXISTS tags (id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL)`);
   db.run(`CREATE TABLE IF NOT EXISTS task_tags (taskId INTEGER, tagId INTEGER, PRIMARY KEY (taskId, tagId), FOREIGN KEY(taskId) REFERENCES tasks(id) ON DELETE CASCADE, FOREIGN KEY(tagId) REFERENCES tags(id) ON DELETE CASCADE)`);
-
-  // --- Seeding ---
-  // ... (seeding logic remains the same)
 
   saveDB();
 };
@@ -95,7 +94,6 @@ export const getTasks = (userId: number) => {
   const tasks: any[] = [];
   while (stmt.step()) {
     const task = stmt.getAsObject();
-    // Convert comma-separated string of tags to an array
     task.tags = task.tags ? (task.tags as string).split(',') : [];
     tasks.push(task);
   }
@@ -105,7 +103,6 @@ export const getTasks = (userId: number) => {
 
 export const createTask = (task: any, userId: number) => {
   if (!db) throw new Error('DB not initialized');
-  // Get max displayOrder and add 1
   const maxOrderResult = db.exec('SELECT MAX(displayOrder) FROM tasks');
   const maxOrder = maxOrderResult[0]?.values[0][0] as number | null;
   const newOrder = (maxOrder === null) ? 0 : maxOrder + 1;
@@ -119,7 +116,6 @@ export const createTask = (task: any, userId: number) => {
   return { ...task, id, userId, displayOrder: newOrder };
 };
 
-// ... (rest of the functions remain mostly the same, only getTasks and createTask are significantly changed)
 // --- Tag Functions ---
 export const getOrCreateTag = (name: string): number => {
   if (!db) throw new Error('DB not initialized');
