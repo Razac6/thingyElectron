@@ -2,7 +2,7 @@
 
 import path from 'path';
 import { app, BrowserWindow, shell, ipcMain, Tray, Menu } from 'electron';
-import { autoUpdater } from 'electron-updater';
+// import { autoUpdater } from 'electron-updater'; // Commented out: electron-updater
 import log from 'electron-log';
 import MenuBuilder from './menu';
 import { resolveHtmlPath } from './util';
@@ -30,12 +30,13 @@ log.catchErrors({
 
 require('dotenv').config();
 
-class AppUpdater {
-  constructor() {
-    autoUpdater.logger = log;
-    autoUpdater.checkForUpdatesAndNotify();
-  }
-}
+// Commented out: electron-updater class definition
+// class AppUpdater {
+//   constructor() {
+//     autoUpdater.logger = log;
+//     autoUpdater.checkForUpdatesAndNotify();
+//   }
+// }
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -103,7 +104,7 @@ ipcMain.handle('db:get-average-time-for-task-type', (event, taskType) => getAver
 ipcMain.handle('db:get-average-sprint-capacity', () => getAverageSprintCapacity());
 
 // --- Tray IPC Handlers ---
-ipcMain.on('tray:create', createTray); // No longer passes iconPath
+ipcMain.on('tray:create', createTray);
 ipcMain.on('tray:destroy', destroyTray);
 ipcMain.on('tray:update-title', (event, title) => {
   if (tray) {
@@ -138,14 +139,14 @@ const installExtensions = async () => {
 const createWindow = async () => {
   if (isDebug) await installExtensions();
 
-  const RESOURCES_PATH = app.isPackaged ? path.join(process.resourcesPath, 'assets') : path.join(__dirname, '../../assets');
-  // const getAssetPath = (...paths: string[]): string => path.join(RESOURCES_PATH, ...paths); // Removed duplication
+  // const RESOURCES_PATH = app.isPackaged ? path.join(process.resourcesPath, 'assets') : path.join(__dirname, '../../assets'); // Moved to global getAssetPath
+  // const getAssetPath = (...paths: string[]): string => path.join(RESOURCES_PATH, ...paths); // Moved to global getAssetPath
 
   mainWindow = new BrowserWindow({
     show: false,
     width: 1254,
     height: 728,
-    icon: getAssetPath('icon.png'), // Use the global getAssetPath
+    icon: getAssetPath('icon.png'),
     webPreferences: {
       preload: app.isPackaged ? path.join(__dirname, 'preload.js') : path.join(__dirname, '../../.erb/dll/preload.js'),
       devTools: true,
@@ -164,7 +165,8 @@ const createWindow = async () => {
     return { action: 'deny' };
   });
 
-  new AppUpdater();
+  // Commented out: electron-updater instantiation
+  // new AppUpdater();
 };
 
 app.on('window-all-closed', () => {
@@ -191,9 +193,6 @@ app.whenReady().then(async () => {
   }
 
   createWindow();
-
-  // Remove default tray creation here
-  // Tray will be managed by renderer process via IPC
 
 }).catch((error) => {
   log.error('CRITICAL: Unhandled error in app.whenReady.', error);
