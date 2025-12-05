@@ -1,35 +1,32 @@
-name: Build & Release
+name: Create GitHub Release
 
 on:
-  push:
-    branches: [ master ]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version tag (e.g., v0.1.1)'
+        required: true
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
-
-    runs-on: ${{ matrix.os }}
+  release:
+    runs-on: ubuntu-latest # Release can be done from any OS
 
     steps:
       - name: Check out Git repository
         uses: actions/checkout@v3
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
+      - name: Download all workflow artifacts
+        uses: actions/download-artifact@v4
         with:
-          node-version: '18.x'
-          cache: 'npm'
+          path: artifacts/
+          merge-multiple: true # Merge all artifacts into one directory
 
-      - name: Install dependencies
-        run: npm install
-
-      - name: Build and package application
-        run: npm run package
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4 # Updated from v3 to v4
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
         with:
-          name: ${{ matrix.os }}-build
-          path: release/build/
+          tag_name: ${{ github.event.inputs.version }}
+          name: Release ${{ github.event.inputs.version }}
+          body: "Automated release for version ${{ github.event.inputs.version }}."
+          files: artifacts/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
