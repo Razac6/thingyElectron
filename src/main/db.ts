@@ -21,10 +21,10 @@ const hashPassword = (password: string) => {
 
 // --- DB Initialization ---
 export const initDB = async () => {
-  // Correct path for WASM file in production
+  // Correct path for WASM file in both development and production
   const wasmPath = app.isPackaged
-    ? path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules/sql.js/dist/sql-wasm.wasm')
-    : path.join(require.resolve('sql.js'), '..', 'sql-wasm.wasm');
+    ? path.join(process.resourcesPath, 'sql-wasm.wasm')
+    : path.join(require.resolve('sql.js'), '..', 'dist', 'sql-wasm.wasm');
 
   const SQL = await initSqlJs({
     locateFile: () => wasmPath,

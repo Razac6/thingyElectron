@@ -1,7 +1,7 @@
 {
   "description": "Todo app base on gtp-4",
   "license": "",
-  "version": "0.1.1",
+  "version": "0.1.0",
   "author": {
     "name": "thingy",
     "email": "binekmarcin@gmail.com",
@@ -169,12 +169,14 @@
     "files": [
       "dist",
       "node_modules",
-      "package.json",
+      "package.json"
+    ],
+    "extraResources": [
       {
-        "from": "node_modules/sql.js/dist/",
-        "to": "node_modules/sql.js/dist/",
-        "filter": ["**/*.wasm"]
-      }
+        "from": "node_modules/sql.js/dist/sql-wasm.wasm",
+        "to": "sql-wasm.wasm"
+      },
+      "./assets/**"
     ],
     "afterSign": ".erb/scripts/notarize.js",
     "mac": {
@@ -215,9 +217,6 @@
       "buildResources": "assets",
       "output": "release/build"
     },
-    "extraResources": [
-      "./assets/**"
-    ],
     "publish": {
       "provider": "github",
       "owner": "webbd",
