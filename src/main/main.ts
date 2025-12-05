@@ -8,8 +8,8 @@ import MenuBuilder from './menu';
 import { resolveHtmlPath } from './util';
 import {
   initDB,
-  getTasks, createTask, updateTask, deleteTask,
-  getSprints, createSprint,
+  getTasks, createTask, updateTask, deleteTask, updateTasksOrder,
+  getSprints, createSprint, updateSprintStatus,
   getNotes, createNote, updateNote, deleteNote,
   loginUser, registerUser,
   getProfile, updateProfile, getEarnedAchievements, grantAchievement,
@@ -33,10 +33,12 @@ ipcMain.handle('db:get-tasks', (event, userId) => getTasks(userId));
 ipcMain.handle('db:create-task', (event, task, userId) => createTask(task, userId));
 ipcMain.handle('db:update-task', (event, task) => updateTask(task));
 ipcMain.handle('db:delete-task', (event, taskId) => deleteTask(taskId));
+ipcMain.handle('db:update-tasks-order', (event, taskIds) => updateTasksOrder(taskIds));
 
 // Sprints
 ipcMain.handle('db:get-sprints', () => getSprints());
 ipcMain.handle('db:create-sprint', (event, sprint) => createSprint(sprint));
+ipcMain.handle('db:update-sprint-status', (event, sprintId, status) => updateSprintStatus(sprintId, status));
 
 // Notes
 ipcMain.handle('db:get-notes', (event, userId) => getNotes(userId));

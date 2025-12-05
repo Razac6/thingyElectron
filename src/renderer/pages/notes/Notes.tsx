@@ -14,6 +14,7 @@ import {
   IconButton,
   Grid,
   Fab,
+  CircularProgress,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -35,17 +36,27 @@ interface Note {
 
 function Notes() {
   const [notes, setNotes] = useState<Note[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [openDialog, setOpenDialog] = useState(false);
-  const [currentNote, setCurrentNote] = useState<Note>({
+  const [currentNote, setCurrentNote] = useState<Partial<Note>>({
     title: '',
     content: '',
-    createdAt: '',
   });
   const [isEditing, setIsEditing] = useState(false);
 
   const loadNotes = async () => {
-    const data = await fetchNotes();
-    setNotes(data);
+    try {
+      setIsLoading(true);
+      setError(null);
+      const data = await fetchNotes();
+      setNotes(data);
+    } catch (err) {
+      setError('Failed to load notes. Please make sure you are logged in.');
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -53,24 +64,36 @@ function Notes() {
   }, []);
 
   const handleSave = async () => {
-    if (isEditing && currentNote.id) {
-      await updateNote(currentNote);
-    } else {
-      await createNote({ ...currentNote, createdAt: new Date().toISOString() });
+    try {
+      if (isEditing && currentNote.id) {
+        await updateNote(currentNote as Note);
+      } else {
+        await createNote({
+          title: currentNote.title || 'Untitled Note',
+          content: currentNote.content || '',
+          createdAt: new Date().toISOString(),
+        });
+      }
+      setOpenDialog(false);
+      setCurrentNote({ title: '', content: '' });
+      setIsEditing(false);
+      loadNotes(); // Refresh notes list
+    } catch (err) {
+      console.error('Failed to save note:', err);
     }
-    setOpenDialog(false);
-    setCurrentNote({ title: '', content: '', createdAt: '' });
-    setIsEditing(false);
-    loadNotes();
   };
 
   const handleDelete = async (id: number) => {
-    await deleteNote(id);
-    loadNotes();
+    try {
+      await deleteNote(id);
+      loadNotes(); // Refresh notes list
+    } catch (err) {
+      console.error('Failed to delete note:', err);
+    }
   };
 
   const openAddDialog = () => {
-    setCurrentNote({ title: '', content: '', createdAt: '' });
+    setCurrentNote({ title: '', content: '' });
     setIsEditing(false);
     setOpenDialog(true);
   };
@@ -80,6 +103,14 @@ function Notes() {
     setIsEditing(true);
     setOpenDialog(true);
   };
+
+  if (isLoading) {
+    return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}><CircularProgress /></Box>;
+  }
+
+  if (error) {
+    return <Typography color="error" sx={{ textAlign: 'center', mt: 4 }}>{error}</Typography>;
+  }
 
   return (
     <Box>

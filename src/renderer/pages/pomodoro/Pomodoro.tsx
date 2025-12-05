@@ -3,15 +3,15 @@ import { Box, Typography, IconButton, Button, styled } from '@mui/material';
 import PauseIcon from '@mui/icons-material/Pause';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import SettingsIcon from '@mui/icons-material/Settings';
+import { useNavigate } from 'react-router-dom';
 
 // --- Styled Components ---
-
 const PomodoroContainer = styled(Box)({
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'center',
   justifyContent: 'center',
-  height: 'calc(100vh - 100px)', // Adjust height to fit within layout
+  height: 'calc(100vh - 100px)',
   backgroundColor: '#ac3e33',
   padding: '20px',
   borderRadius: '16px',
@@ -55,39 +55,39 @@ const ProgressSVG = styled('svg')({
   left: 0,
   width: '100%',
   height: '100%',
-  transform: 'rotate(-90deg)', // Start from the top
+  transform: 'rotate(-90deg)',
 });
 
 // --- Component ---
-
-const POMODORO_DURATION = 25 * 60; // 25 minutes
-
 function Pomodoro() {
-  const [timeRemaining, setTimeRemaining] = useState(POMODORO_DURATION);
+  const navigate = useNavigate();
+  const [duration, setDuration] = useState(25 * 60); // Default 25 minutes
+  const [timeRemaining, setTimeRemaining] = useState(duration);
   const [isActive, setIsActive] = useState(false);
 
   useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
+    const savedDuration = localStorage.getItem('pomodoroDuration');
+    const newDuration = savedDuration ? JSON.parse(savedDuration) * 60 : 25 * 60;
+    setDuration(newDuration);
+    setTimeRemaining(newDuration);
+  }, []);
 
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
     if (isActive && timeRemaining > 0) {
       interval = setInterval(() => {
         setTimeRemaining((time) => time - 1);
       }, 1000);
-    } else if (!isActive && timeRemaining !== 0) {
-      if (interval) clearInterval(interval);
     } else if (timeRemaining === 0) {
       setIsActive(false);
-      // Here you would handle the end of a session (e.g., switch to break)
+      // Handle end of session
     }
-
     return () => {
       if (interval) clearInterval(interval);
     };
   }, [isActive, timeRemaining]);
 
-  const toggleTimer = () => {
-    setIsActive(!isActive);
-  };
+  const toggleTimer = () => setIsActive(!isActive);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -97,12 +97,12 @@ function Pomodoro() {
 
   const radius = 165;
   const circumference = 2 * Math.PI * radius;
-  const progress = (timeRemaining / POMODORO_DURATION) * circumference;
+  const progress = (timeRemaining / duration) * circumference;
   const strokeDashoffset = circumference - progress;
 
   return (
     <PomodoroContainer>
-      <IconButton sx={{ position: 'absolute', top: 16, right: 16, color: 'white' }}>
+      <IconButton onClick={() => navigate('/profile')} sx={{ position: 'absolute', top: 16, right: 16, color: 'white' }}>
         <SettingsIcon />
       </IconButton>
 
@@ -112,27 +112,8 @@ function Pomodoro() {
 
       <ClockFace>
         <ProgressSVG viewBox="0 0 350 350">
-          {/* Background Circle */}
-          <circle
-            cx="175"
-            cy="175"
-            r={radius}
-            stroke="#ac3e33"
-            strokeWidth="10"
-            fill="transparent"
-          />
-          {/* Progress Circle */}
-          <circle
-            cx="175"
-            cy="175"
-            r={radius}
-            stroke="white"
-            strokeWidth="10"
-            fill="transparent"
-            strokeDasharray={circumference}
-            strokeDashoffset={strokeDashoffset}
-            strokeLinecap="round"
-          />
+          <circle cx="175" cy="175" r={radius} stroke="#ac3e33" strokeWidth="10" fill="transparent" />
+          <circle cx="175" cy="175" r={radius} stroke="white" strokeWidth="10" fill="transparent" strokeDasharray={circumference} strokeDashoffset={strokeDashoffset} strokeLinecap="round" />
         </ProgressSVG>
         <TimeDisplay>{formatTime(timeRemaining)}</TimeDisplay>
       </ClockFace>

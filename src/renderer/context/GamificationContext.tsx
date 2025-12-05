@@ -30,13 +30,16 @@ interface UserProfile {
   xp: number;
 }
 
+type AnimationType = 'cat_movement' | 'flirting_dog' | 'meditating_fox' | 'cat_rocket' | 'trophy';
+
 interface GamificationContextType {
   profile: UserProfile | null;
   earnedAchievements: string[];
   addXp: (amount: number) => void;
-  checkForAchievements: (action: string, data?: any) => void;
-  showConfetti: boolean;
-  triggerConfetti: () => void;
+  checkForAchievements: (action: string, data?: any) => Promise<boolean>; // Returns true if achievement was earned
+  rewardAnimation: AnimationType | null;
+  triggerRewardAnimation: (type: 'standard' | 'achievement') => void;
+  hideRewardAnimation: () => void;
   rank: string;
 }
 
@@ -45,10 +48,10 @@ const GamificationContext = createContext<GamificationContextType | undefined>(u
 export const GamificationProvider = ({ children }: { children: ReactNode }) => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [earnedAchievements, setEarnedAchievements] = useState<string[]>([]);
-  const [showConfetti, setShowConfetti] = useState(false);
+  const [rewardAnimation, setRewardAnimation] = useState<AnimationType | null>(null);
   const [rank, setRank] = useState<string>('Utopiec');
   const [isLoading, setIsLoading] = useState(true);
-  const userId = 1; // Assuming a single user with ID 1
+  const userId = 1;
 
   useEffect(() => {
     const loadData = async () => {
@@ -69,14 +72,22 @@ export const GamificationProvider = ({ children }: { children: ReactNode }) => {
     loadData();
   }, []);
 
-  const triggerConfetti = () => {
-    setShowConfetti(true);
-    setTimeout(() => setShowConfetti(false), 5000);
+  const triggerRewardAnimation = (type: 'standard' | 'achievement') => {
+    if (type === 'achievement') {
+      setRewardAnimation('trophy');
+    } else {
+      const animations: AnimationType[] = ['cat_movement', 'flirting_dog', 'meditating_fox', 'cat_rocket'];
+      const randomAnimation = animations[Math.floor(Math.random() * animations.length)];
+      setRewardAnimation(randomAnimation);
+    }
+  };
+
+  const hideRewardAnimation = () => {
+    setRewardAnimation(null);
   };
 
   const addXp = useCallback(async (amount: number) => {
     if (!profile) return;
-
     let newXp = profile.xp + amount;
     let newLevel = profile.level;
     const xpForNextLevel = newLevel * 100;
@@ -84,33 +95,32 @@ export const GamificationProvider = ({ children }: { children: ReactNode }) => {
     if (newXp >= xpForNextLevel) {
       newLevel += 1;
       newXp -= xpForNextLevel;
-      console.log(`LEVEL UP! You are now level ${newLevel}!`);
       setRank(getRankForLevel(newLevel));
     }
 
     const updatedProfile = { ...profile, level: newLevel, xp: newXp };
     setProfile(updatedProfile);
     await window.electron.database.updateProfile(updatedProfile);
-
   }, [profile]);
 
-  const checkForAchievements = useCallback(async (action: string, data?: any) => {
+  const checkForAchievements = useCallback(async (action: string, data?: any): Promise<boolean> => {
     if (action === 'TASK_COMPLETED') {
       if (!earnedAchievements.includes('FIRST_TASK')) {
         await window.electron.database.grantAchievement(userId, 'FIRST_TASK');
         setEarnedAchievements(prev => [...prev, 'FIRST_TASK']);
         addXp(10);
-        triggerConfetti();
+        return true; // Achievement earned
       }
     }
+    return false; // No new achievement
   }, [addXp, earnedAchievements, userId]);
 
   if (isLoading) {
-    return null; // Or a loading spinner
+    return null;
   }
 
   return (
-    <GamificationContext.Provider value={{ profile, earnedAchievements, addXp, checkForAchievements, showConfetti, triggerConfetti, rank }}>
+    <GamificationContext.Provider value={{ profile, earnedAchievements, addXp, checkForAchievements, rewardAnimation, triggerRewardAnimation, hideRewardAnimation, rank }}>
       {children}
     </GamificationContext.Provider>
   );

@@ -49,9 +49,13 @@ export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
     if (!query || isAdding) {
       return [];
     }
-    return tasks.filter(task =>
-      task.title.toLowerCase().includes(query.toLowerCase())
-    ).slice(0, 5); // Show top 5 results
+    const lowerCaseQuery = query.toLowerCase();
+    return tasks.filter(task => {
+      const titleMatch = task.title.toLowerCase().includes(lowerCaseQuery);
+      // Check if any tag matches, handling the case where tags might be undefined
+      const tagMatch = task.tags && task.tags.some(tag => tag.toLowerCase().includes(lowerCaseQuery));
+      return titleMatch || tagMatch;
+    }).slice(0, 5);
   }, [query, tasks, isAdding]);
 
   const handleSelectTask = (taskId: number) => {
@@ -62,11 +66,10 @@ export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
   const handleQuickAdd = async () => {
     if (!query) return;
 
-    // Feature: Parse estimate from title (e.g., "My Task 2.5h")
     const titleRegex = /\s(\d+(\.\d+)?)[hH]$/;
     const match = query.match(titleRegex);
     let title = query;
-    let estimate = 0; // Default estimate
+    let estimate = 1; // Default estimate to 1 if not specified
 
     if (match && match[1]) {
       title = query.replace(titleRegex, '').trim();
@@ -86,13 +89,14 @@ export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
       startTimer: null,
       type: TaskTypeEnum.TASK,
       sprintId: null,
+      tags: [],
     };
 
     try {
-      const createdTask = await createTask(newTask, 1); // Assuming userId 1
+      const createdTask = await createTask(newTask, 1);
       setTasks((prev) => [...prev, createdTask]);
       onClose();
-      navigate(`/task/${createdTask.id}`); // Navigate to the new task's detail view
+      navigate(`/task/${createdTask.id}`);
     } catch (error) {
       console.error('Failed to quick-add task', error);
     }
@@ -108,7 +112,7 @@ export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
     }
   };
 
-  const placeholder = isAdding ? "Enter new task title (e.g., 'Fix bug 2h') and press Enter..." : "Search for a task...";
+  const placeholder = isAdding ? "Enter new task title (e.g., 'Fix bug 2h') and press Enter..." : "Search by title or #tag...";
 
   return (
     <Modal
@@ -156,7 +160,7 @@ export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
             {filteredTasks.length > 0 ? (
               filteredTasks.map(task => (
                 <ListItemButton key={task.id} onClick={() => handleSelectTask(task.id)}>
-                  <ListItemText primary={task.title} />
+                  <ListItemText primary={task.title} secondary={task.tags?.join(' ')} />
                 </ListItemButton>
               ))
             ) : (

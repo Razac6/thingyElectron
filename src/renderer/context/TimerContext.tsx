@@ -12,6 +12,19 @@ import {
   updateTask as updateTaskService,
 } from '../services/DatabaseService';
 
+// Helper to get a consistent YYYY-MM-DD string for the workday.
+const getWorkdayISO = () => {
+  const now = new Date();
+  // If it's before 4 AM, we're still in the previous workday.
+  if (now.getHours() < 4) {
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    return yesterday.toISOString().split('T')[0];
+  }
+  return now.toISOString().split('T')[0];
+};
+
+
 interface TimerContextType {
   tasks: Task[];
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
@@ -47,11 +60,11 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (isLoading) return;
 
-    const today = new Date().toLocaleDateString();
+    const workday = getWorkdayISO();
     const storedProgressData =
       JSON.parse(localStorage.getItem('dailyProgress') || '[]') || [];
     let todayEntry = storedProgressData.find(
-      (entry: any) => entry.date === today,
+      (entry: any) => entry.date === workday,
     );
 
     const totalSpendTime = tasks.reduce(
@@ -63,9 +76,8 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
       todayEntry.dayTimeSpend = totalSpendTime;
     } else {
       todayEntry = {
-        date: today,
+        date: workday,
         dayTimeSpend: totalSpendTime,
-        doTasks: [], // This might need adjustment if you use it
       };
       storedProgressData.push(todayEntry);
     }
@@ -104,7 +116,7 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
       ...taskToUpdate,
       spendTime: newSpendTime,
       startTimer: null,
-      updateStatusDate: new Date().toLocaleDateString(),
+      updateStatusDate: new Date().toLocaleDateString(), // This can stay as locale for display purposes
     };
     await updateTask({ ...updatedTask, id: taskId });
   };

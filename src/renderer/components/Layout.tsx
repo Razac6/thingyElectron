@@ -16,10 +16,17 @@ import {
   Theme,
   CSSObject,
   Button,
-  useTheme,
 } from '@mui/material';
 import { useNavigate, useLocation } from 'react-router-dom';
-import Confetti from 'react-confetti';
+import Lottie from "lottie-react";
+
+// Import all animations
+import catMovement from '../../../assets/Cat Movement.json';
+import flirtingDog from '../../../assets/Flirting Dog.json';
+import meditatingFox from '../../../assets/Meditating Fox.json';
+import catRocket from '../../../assets/Cat in a rocket.json';
+import trophyAnimation from '../../../assets/Trophy.json';
+
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import AssignmentIcon from '@mui/icons-material/Assignment';
 import BarChartIcon from '@mui/icons-material/BarChart';
@@ -35,6 +42,14 @@ import { useGamification } from '../context/GamificationContext';
 import Timer from './Timer';
 import SearchOverlay from './SearchOverlay';
 
+const animationMap = {
+  cat_movement: catMovement,
+  flirting_dog: flirtingDog,
+  meditating_fox: meditatingFox,
+  cat_rocket: catRocket,
+  trophy: trophyAnimation,
+};
+
 const drawerWidth = 240;
 
 const menuItems = [
@@ -45,17 +60,6 @@ const menuItems = [
   { text: 'Profile', path: '/profile', icon: <PersonIcon /> },
   { text: 'Notes', path: '/notes', icon: <NoteAltIcon /> },
 ];
-
-const useWindowSize = () => {
-  const [size, setSize] = React.useState([window.innerWidth, window.innerHeight]);
-  React.useLayoutEffect(() => {
-    const updateSize = () => setSize([window.innerWidth, window.innerHeight]);
-    window.addEventListener('resize', updateSize);
-    updateSize();
-    return () => window.removeEventListener('resize', updateSize);
-  }, []);
-  return size;
-};
 
 const openedMixin = (theme: Theme): CSSObject => ({
   width: drawerWidth,
@@ -129,76 +133,53 @@ interface LayoutProps {
 export default function Layout({ children }: LayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const theme = useTheme();
   const [open, setOpen] = React.useState(true);
   const [searchOpen, setSearchOpen] = React.useState(false);
   const { tasks, stopTimer } = useTimer();
-  const { showConfetti } = useGamification();
-  const [width, height] = useWindowSize();
-
+  const { rewardAnimation, hideRewardAnimation } = useGamification();
 
   const activeTask = tasks.find(task => task.startTimer !== null);
 
-  const handleDrawerOpen = () => {
-    setOpen(true);
-  };
-
-  const handleDrawerClose = () => {
-    setOpen(false);
-  };
+  const handleDrawerOpen = () => setOpen(true);
+  const handleDrawerClose = () => setOpen(false);
 
   const getPageTitle = () => {
     const currentItem = menuItems.find(item => item.path === location.pathname);
     return currentItem ? currentItem.text : 'Thingy';
   };
 
+  const currentAnimationData = rewardAnimation ? animationMap[rewardAnimation] : null;
+
   return (
     <Box sx={{ display: 'flex' }}>
       <CssBaseline />
-      {showConfetti && <Confetti width={width} height={height} colors={[theme.palette.primary.main, theme.palette.secondary.main, '#FFFFFF']}/>}
+      {currentAnimationData && (
+        <Box sx={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', zIndex: 9999, pointerEvents: 'none' }}>
+          <Lottie
+            animationData={currentAnimationData}
+            loop={false}
+            onComplete={hideRewardAnimation}
+          />
+        </Box>
+      )}
       <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} />
       <AppBar position="fixed" open={open}>
         <Toolbar sx={{ display: 'flex', justifyContent: 'space-between' }}>
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <IconButton
-              color="inherit"
-              aria-label="open drawer"
-              onClick={handleDrawerOpen}
-              edge="start"
-              sx={{
-                marginRight: 5,
-                ...(open && { display: 'none' }),
-              }}
-            >
+            <IconButton color="inherit" aria-label="open drawer" onClick={handleDrawerOpen} edge="start" sx={{ marginRight: 5, ...(open && { display: 'none' }) }}>
               <MenuIcon />
             </IconButton>
-            <Typography variant="h6" noWrap component="div">
-              {getPageTitle()}
-            </Typography>
+            <Typography variant="h6" noWrap component="div">{getPageTitle()}</Typography>
           </Box>
-
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <IconButton color="inherit" onClick={() => setSearchOpen(true)}>
-              <SearchIcon />
-            </IconButton>
+            <IconButton color="inherit" onClick={() => setSearchOpen(true)}><SearchIcon /></IconButton>
             {activeTask && (
               <>
-                <Typography variant="body1" noWrap>
-                  {activeTask.title}
-                </Typography>
+                <Typography variant="body1" noWrap>{activeTask.title}</Typography>
                 <Box sx={{ color: 'white', minWidth: '110px' }}>
-                  <Timer
-                      startTimer={activeTask.startTimer}
-                      spendTime={activeTask.spendTime}
-                    />
+                   <Timer startTimer={activeTask.startTimer} spendTime={activeTask.spendTime} estimate={activeTask.estimate} context="header" />
                 </Box>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  startIcon={<StopCircleIcon />}
-                  onClick={() => stopTimer(activeTask.id)}
-                  sx={{backgroundColor: 'white', color: '#ac3e33', '&:hover': { backgroundColor: '#f0f0f0'}}}
-                >
+                <Button variant="contained" color="primary" startIcon={<StopCircleIcon />} onClick={() => stopTimer(activeTask.id)} sx={{backgroundColor: 'white', color: '#ac3e33', '&:hover': { backgroundColor: '#f0f0f0'}}}>
                   Stop
                 </Button>
               </>
@@ -207,32 +188,12 @@ export default function Layout({ children }: LayoutProps) {
         </Toolbar>
       </AppBar>
       <Drawer variant="permanent" open={open}>
-        <DrawerHeader>
-          <IconButton onClick={handleDrawerClose}>
-            <ChevronLeftIcon />
-          </IconButton>
-        </DrawerHeader>
+        <DrawerHeader><IconButton onClick={handleDrawerClose}><ChevronLeftIcon /></IconButton></DrawerHeader>
         <List>
           {menuItems.map((item) => (
             <ListItem key={item.text} disablePadding sx={{ display: 'block' }}>
-              <ListItemButton
-                sx={{
-                  minHeight: 48,
-                  justifyContent: open ? 'initial' : 'center',
-                  px: 2.5,
-                }}
-                selected={location.pathname === item.path}
-                onClick={() => navigate(item.path)}
-              >
-                <ListItemIcon
-                  sx={{
-                    minWidth: 0,
-                    mr: open ? 3 : 'auto',
-                    justifyContent: 'center',
-                  }}
-                >
-                  {item.icon}
-                </ListItemIcon>
+              <ListItemButton sx={{ minHeight: 48, justifyContent: open ? 'initial' : 'center', px: 2.5 }} selected={location.pathname === item.path} onClick={() => navigate(item.path)}>
+                <ListItemIcon sx={{ minWidth: 0, mr: open ? 3 : 'auto', justifyContent: 'center' }}>{item.icon}</ListItemIcon>
                 <ListItemText primary={item.text} sx={{ opacity: open ? 1 : 0 }} />
               </ListItemButton>
             </ListItem>

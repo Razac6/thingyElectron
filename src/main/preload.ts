@@ -7,10 +7,12 @@ contextBridge.exposeInMainWorld('electron', {
     createTask: (task: any, userId: number) => ipcRenderer.invoke('db:create-task', task, userId),
     updateTask: (task: any) => ipcRenderer.invoke('db:update-task', task),
     deleteTask: (taskId: number) => ipcRenderer.invoke('db:delete-task', taskId),
+    updateTasksOrder: (taskIds: number[]) => ipcRenderer.invoke('db:update-tasks-order', taskIds),
 
     // Sprints
     getSprints: () => ipcRenderer.invoke('db:get-sprints'),
     createSprint: (sprint: any) => ipcRenderer.invoke('db:create-sprint', sprint),
+    updateSprintStatus: (sprintId: number, status: string) => ipcRenderer.invoke('db:update-sprint-status', sprintId, status),
 
     // Notes
     getNotes: (userId: number) => ipcRenderer.invoke('db:get-notes', userId),

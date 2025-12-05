@@ -3,7 +3,6 @@ import { Box, Paper, Typography, Grid, LinearProgress, List, ListItem, ListItemI
 import { useGamification } from '../../context/GamificationContext';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 
-// This should ideally be fetched from the DB as well, but for now, it's fine here
 const allAchievements = [
   { id: 'FIRST_TASK', name: 'First Step', description: 'Complete your first task.' },
   { id: 'FIVE_TASKS', name: 'Apprentice', description: 'Complete 5 tasks.' },

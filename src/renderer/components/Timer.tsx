@@ -3,54 +3,69 @@ import { useEffect, useState } from 'react';
 interface TimerProps {
   startTimer: number | null;
   spendTime: number;
+  estimate: number; // Estimate in hours
+  context: 'list' | 'header';
 }
 
-function Timer({ startTimer, spendTime }: TimerProps) {
-  const [displayTime, setDisplayTime] = useState(spendTime || 0);
+function formatTime(seconds: number): string {
+  if (seconds < 0) seconds = 0;
 
-  function formatTime(ms: number, withSec = true): string {
-    if (ms < 0) {
-      return withSec ? '00h 00m 00s' : '00h 00m';
-    }
-    let seconds = Math.floor(ms / 1000);
-    let minutes = Math.floor(seconds / 60);
-    let hours = Math.floor(minutes / 60);
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
 
-    seconds %= 60;
-    minutes %= 60;
+  return [
+    h.toString().padStart(2, '0'),
+    m.toString().padStart(2, '0'),
+    s.toString().padStart(2, '0'),
+  ].join(':');
+}
 
-    const paddedHours = hours.toString().padStart(2, '0');
-    const paddedMinutes = minutes.toString().padStart(2, '0');
-    const paddedSeconds = seconds.toString().padStart(2, '0');
-    if (withSec) {
-      return `${paddedHours}h ${paddedMinutes}m ${paddedSeconds}s`;
-    }
-    return `${paddedHours}h ${paddedMinutes}m`;
-  }
+function Timer({ startTimer, spendTime, estimate, context }: TimerProps) {
+  const [displaySeconds, setDisplaySeconds] = useState(0);
+  const [isOvertime, setIsOvertime] = useState(false);
 
   useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
+    const calculateTime = () => {
+      const estimateInSeconds = (estimate || 0) * 3600;
+      const spendTimeInSeconds = (spendTime || 0) / 1000;
+      let totalSpent = spendTimeInSeconds;
 
-    if (startTimer) {
-      // Jeśli timer jest uruchomiony, ustawiamy interwał
-      interval = setInterval(() => {
-        const elapsed = Date.now() - startTimer;
-        setDisplayTime((spendTime || 0) + elapsed);
-      }, 1000);
-    } else {
-      // Jeśli timer nie jest uruchomiony, po prostu wyświetl całkowity czas
-      setDisplayTime(spendTime || 0);
-    }
+      if (startTimer) {
+        const elapsed = (Date.now() - startTimer) / 1000;
+        totalSpent += elapsed;
+      }
 
-    // Funkcja czyszcząca, która zatrzymuje interwał, gdy komponent jest odmontowywany
-    return () => {
-      if (interval) {
-        clearInterval(interval);
+      const overtime = totalSpent > estimateInSeconds;
+      setIsOvertime(overtime);
+
+      if (overtime) {
+        setDisplaySeconds(totalSpent - estimateInSeconds);
+      } else {
+        setDisplaySeconds(estimateInSeconds - totalSpent);
       }
     };
-  }, [startTimer, spendTime]);
 
-  return <div>{formatTime(displayTime)}</div>;
+    // Initial calculation
+    calculateTime();
+
+    // Set up interval only if timer is running
+    if (startTimer) {
+      const interval = setInterval(calculateTime, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [startTimer, spendTime, estimate]);
+
+  let overtimeColor = 'inherit';
+  if (isOvertime) {
+    overtimeColor = context === 'header' ? 'white' : 'red';
+  }
+
+  return (
+    <div style={{ color: overtimeColor }}>
+      {isOvertime ? `+${formatTime(displaySeconds)}` : formatTime(displaySeconds)}
+    </div>
+  );
 }
 
 export default Timer;

@@ -1,5 +1,5 @@
-import React from 'react';
-import { Box, Paper, Grid, Typography } from '@mui/material';
+import React, { useState, useMemo } from 'react';
+import { Box, Paper, Grid, Typography, TextField } from '@mui/material';
 import { Pie, Doughnut } from 'react-chartjs-2';
 import 'chart.js/auto';
 import { useTimer } from '../../context/TimerContext';
@@ -7,90 +7,90 @@ import { StatusEnum } from '../../../enums/status.enum';
 import { PriorityEnum } from '../../../enums/priority.enum';
 import ProductivityChart from '../../components/ProductivityChart';
 
+// Helper to format date to YYYY-MM-DD for the input
+const formatDateForInput = (date: Date): string => {
+  return date.toISOString().split('T')[0];
+};
+
 function Statistics() {
   const { tasks } = useTimer();
-
-  // Data for Status Pie Chart
-  const statusCounts = {
-    [StatusEnum.TO_DO]: 0,
-    [StatusEnum.IN_PROGRESS]: 0,
-    [StatusEnum.IN_REVIEW]: 0,
-    [StatusEnum.COMPLETED]: 0,
-  };
-  tasks.forEach(task => {
-    if (task.status in statusCounts) {
-      statusCounts[task.status]++;
-    }
+  const [startDate, setStartDate] = useState<string>(() => {
+    const date = new Date();
+    date.setDate(date.getDate() - 7); // Default to last 7 days
+    return formatDateForInput(date);
   });
+  const [endDate, setEndDate] = useState<string>(formatDateForInput(new Date()));
 
-  const statusPieData = {
-    labels: Object.keys(statusCounts),
-    datasets: [
-      {
-        label: '# of Tasks by Status',
-        data: Object.values(statusCounts),
-        backgroundColor: [
-          'rgba(150, 150, 150, 0.7)',
-          'rgba(54, 162, 235, 0.7)',
-          'rgba(255, 206, 86, 0.7)',
-          'rgba(75, 192, 192, 0.7)',
-        ],
-        borderColor: [
-          'rgba(150, 150, 150, 1)',
-          'rgba(54, 162, 235, 1)',
-          'rgba(255, 206, 86, 1)',
-          'rgba(75, 192, 192, 1)',
-        ],
-        borderWidth: 1,
-      },
-    ],
-  };
+  // Memoized data for Productivity Line Chart based on date range
+  const productivityChartData = useMemo(() => {
+    const storedDataString = localStorage.getItem('dailyProgress');
+    const dailyProgress: { date: string; dayTimeSpend: number }[] = storedDataString ? JSON.parse(storedDataString) : [];
 
-  // Data for Priority Doughnut Chart
-  const priorityCounts = {
-    [PriorityEnum.HIGH]: 0,
-    [PriorityEnum.MEDIUM]: 0,
-    [PriorityEnum.LOW]: 0,
-  };
-  tasks.forEach(task => {
-    if (task.priority in priorityCounts) {
-      priorityCounts[task.priority]++;
-    }
-  });
+    // Filter by comparing strings directly in YYYY-MM-DD format
+    const filteredProgress = dailyProgress.filter(entry => {
+      return entry.date >= startDate && entry.date <= endDate;
+    });
 
-  const priorityDoughnutData = {
-    labels: Object.keys(priorityCounts),
-    datasets: [
-      {
-        label: '# of Tasks by Priority',
-        data: Object.values(priorityCounts),
-        backgroundColor: [
-          'rgba(211, 47, 47, 0.7)', // High - Red
-          'rgba(255, 179, 0, 0.7)',  // Medium - Amber
-          'rgba(25, 118, 210, 0.7)', // Low - Blue
-        ],
-        borderColor: [
-          'rgba(211, 47, 47, 1)',
-          'rgba(255, 179, 0, 1)',
-          'rgba(25, 118, 210, 1)',
-        ],
-        borderWidth: 1,
-      },
-    ],
-  };
+    // Sort the filtered data just in case it's not in order
+    filteredProgress.sort((a, b) => a.date.localeCompare(b.date));
+
+    const labels = filteredProgress.map(entry => new Date(entry.date).toLocaleDateString([], { month: 'short', day: 'numeric' }));
+    const data = filteredProgress.map(entry => Math.round(entry.dayTimeSpend / (1000 * 60)));
+
+    return {
+      labels,
+      datasets: [{
+        label: 'Time Spent (minutes)',
+        data,
+        fill: false,
+        backgroundColor: 'rgb(75, 192, 192)',
+        borderColor: 'rgba(75, 192, 192, 0.2)',
+      }],
+    };
+  }, [startDate, endDate]);
+
+  // Data for Status Pie Chart (always shows current state)
+  const statusPieData = useMemo(() => {
+    const statusCounts = {
+      [StatusEnum.TO_DO]: 0,
+      [StatusEnum.IN_PROGRESS]: 0,
+      [StatusEnum.IN_REVIEW]: 0,
+      [StatusEnum.COMPLETED]: 0,
+    };
+    tasks.forEach(task => { if (task.status in statusCounts) statusCounts[task.status]++; });
+    return {
+      labels: Object.keys(statusCounts),
+      datasets: [{ data: Object.values(statusCounts), backgroundColor: ['rgba(150, 150, 150, 0.7)', 'rgba(54, 162, 235, 0.7)', 'rgba(255, 206, 86, 0.7)', 'rgba(75, 192, 192, 0.7)'] }],
+    };
+  }, [tasks]);
+
+  // Data for Priority Doughnut Chart (always shows current state)
+  const priorityDoughnutData = useMemo(() => {
+    const priorityCounts = { [PriorityEnum.HIGH]: 0, [PriorityEnum.MEDIUM]: 0, [PriorityEnum.LOW]: 0 };
+    tasks.forEach(task => { if (task.priority in priorityCounts) priorityCounts[task.priority]++; });
+    return {
+      labels: Object.keys(priorityCounts),
+      datasets: [{ data: Object.values(priorityCounts), backgroundColor: ['rgba(211, 47, 47, 0.7)', 'rgba(255, 179, 0, 0.7)', 'rgba(25, 118, 210, 0.7)'] }],
+    };
+  }, [tasks]);
 
   return (
     <Box>
       <Grid container spacing={3}>
-        {/* Productivity Line Chart - Top Full Width */}
         <Grid item xs={12}>
           <Paper sx={{ padding: 2 }}>
-            <Typography variant="h6" gutterBottom>Productivity Over Time</Typography>
-            <ProductivityChart />
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="h6">Productivity Over Time</Typography>
+              <Box sx={{ display: 'flex', gap: 2 }}>
+                <TextField label="Start Date" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} InputLabelProps={{ shrink: true }} size="small" />
+                <TextField label="End Date" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} InputLabelProps={{ shrink: true }} size="small" />
+              </Box>
+            </Box>
+            <Box sx={{ height: 300, position: 'relative' }}>
+              <ProductivityChart chartData={productivityChartData} />
+            </Box>
           </Paper>
         </Grid>
-
-        {/* Status Pie Chart - Bottom Left */}
         <Grid item xs={12} md={6}>
           <Paper sx={{ padding: 2, height: '100%' }}>
             <Typography variant="h6" gutterBottom>Tasks by Status</Typography>
@@ -99,8 +99,6 @@ function Statistics() {
             </Box>
           </Paper>
         </Grid>
-
-        {/* Priority Doughnut Chart - Bottom Right */}
         <Grid item xs={12} md={6}>
           <Paper sx={{ padding: 2, height: '100%' }}>
             <Typography variant="h6" gutterBottom>Tasks by Priority</Typography>
