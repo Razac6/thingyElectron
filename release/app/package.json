@@ -1,7 +1,7 @@
 {
   "name": "thingy",
-  "version": "0.0.10",
-  "description": "Todo app base on gtp-4",
+  "version": "0.2.2",
+  "description": "Todo app",
   "license": "MIT",
   "author": {
     "name": "Thingy",
