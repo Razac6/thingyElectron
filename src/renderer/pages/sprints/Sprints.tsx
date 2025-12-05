@@ -18,6 +18,7 @@ import {
   IconButton,
   Chip,
   LinearProgress,
+  Tooltip,
 } from '@mui/material';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
@@ -48,21 +49,20 @@ function Sprints() {
   const { tasks, updateTask } = useTimer();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [suggestedCapacity, setSuggestedCapacity] = useState(0);
 
-  const fetchSprints = async () => {
+  const fetchSprintsAndCapacity = async () => {
     const sprintsData = await getSprints();
     setSprints(sprintsData);
-    // If a sprint is selected, update its data from the fresh list
-    if (selectedSprint) {
-      const updatedSelected = sprintsData.find(s => s.id === selectedSprint.id);
-      setSelectedSprint(updatedSelected || null);
-    } else if (sprintsData.length > 0) {
+    if (sprintsData.length > 0 && !selectedSprint) {
       setSelectedSprint(sprintsData[0]);
     }
+    const avgCapacity = await window.electron.database.getAverageSprintCapacity();
+    setSuggestedCapacity(avgCapacity);
   };
 
   useEffect(() => {
-    fetchSprints();
+    fetchSprintsAndCapacity();
   }, []);
 
   const handleCreateSprint = async () => {
@@ -75,11 +75,7 @@ function Sprints() {
 
   const handleUpdateSprintStatus = async (sprintId: number, status: 'ACTIVE' | 'COMPLETED') => {
     await updateSprintStatus(sprintId, status);
-    // After updating, re-fetch and update the selected sprint state
-    const sprintsData = await getSprints();
-    setSprints(sprintsData);
-    const updatedSelected = sprintsData.find(s => s.id === sprintId);
-    setSelectedSprint(updatedSelected || null);
+    fetchSprintsAndCapacity();
   };
 
   const tasksInSelectedSprint = useMemo(() => {
@@ -87,11 +83,11 @@ function Sprints() {
     return tasks.filter(task => task.sprintId === selectedSprint.id);
   }, [tasks, selectedSprint]);
 
-  const sprintProgress = useMemo(() => {
-    if (!selectedSprint || tasksInSelectedSprint.length === 0) return 0;
-    const completedTasks = tasksInSelectedSprint.filter(t => t.status === StatusEnum.COMPLETED).length;
-    return Math.round((completedTasks / tasksInSelectedSprint.length) * 100);
-  }, [tasksInSelectedSprint, selectedSprint]);
+  const currentSprintLoad = useMemo(() => {
+    return tasksInSelectedSprint.reduce((acc, task) => acc + (task.estimate || 0), 0);
+  }, [tasksInSelectedSprint]);
+
+  const capacityProgress = suggestedCapacity > 0 ? Math.min((currentSprintLoad / suggestedCapacity) * 100, 100) : 0;
 
   const backlogTasks = useMemo(() => {
     return tasks.filter(task => !task.sprintId && task.title.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -107,10 +103,14 @@ function Sprints() {
 
   return (
     <Grid container spacing={2}>
-      {/* Left Panel: Sprint List & Creation */}
       <Grid item xs={12} md={4}>
         <Paper sx={{ padding: 2, mb: 2 }}>
           <Typography variant="h6" gutterBottom>Create New Sprint</Typography>
+          {suggestedCapacity > 0 && (
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+              Suggested capacity based on your history: ~{Math.round(suggestedCapacity)} hours
+            </Typography>
+          )}
           <TextField label="Sprint Name" fullWidth value={newSprintName} onChange={(e) => setNewSprintName(e.target.value)} sx={{ mb: 2 }} />
           <TextField label="Start Date" type="date" fullWidth value={newSprintStart} onChange={(e) => setNewSprintStart(e.target.value)} InputLabelProps={{ shrink: true }} sx={{ mb: 2 }} />
           <TextField label="End Date" type="date" fullWidth value={newSprintEnd} onChange={(e) => setNewSprintEnd(e.target.value)} InputLabelProps={{ shrink: true }} sx={{ mb: 2 }} />
@@ -128,7 +128,6 @@ function Sprints() {
         </Paper>
       </Grid>
 
-      {/* Right Panel: Selected Sprint Details */}
       <Grid item xs={12} md={8}>
         {selectedSprint ? (
           <Paper sx={{ padding: 2, height: '100%' }}>
@@ -152,10 +151,14 @@ function Sprints() {
               </Box>
             </Box>
 
-            {selectedSprint.status === 'ACTIVE' && (
+            {suggestedCapacity > 0 && selectedSprint.status !== 'COMPLETED' && (
               <Box sx={{ my: 2 }}>
-                <Typography variant="body2">Sprint Progress: {sprintProgress}%</Typography>
-                <LinearProgress variant="determinate" value={sprintProgress} sx={{ height: 10, borderRadius: 5 }} />
+                <Tooltip title={`Current Load: ${currentSprintLoad}h / Suggested: ${Math.round(suggestedCapacity)}h`}>
+                  <Box>
+                    <Typography variant="body2">Sprint Capacity</Typography>
+                    <LinearProgress variant="determinate" value={capacityProgress} color={capacityProgress > 100 ? 'error' : 'primary'} sx={{ height: 10, borderRadius: 5 }} />
+                  </Box>
+                </Tooltip>
               </Box>
             )}
 
@@ -178,7 +181,6 @@ function Sprints() {
         )}
       </Grid>
 
-      {/* Add Task from Backlog Modal */}
       <Dialog open={isModalOpen} onClose={() => setIsModalOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>Add Task from Backlog</DialogTitle>
         <DialogContent>
@@ -186,7 +188,7 @@ function Sprints() {
           <List sx={{ mt: 2, maxHeight: 400, overflow: 'auto' }}>
             {backlogTasks.map(task => (
               <ListItemButton key={task.id} onClick={() => handleAddTaskToSprint(task)}>
-                <ListItemText primary={task.title} />
+                <ListItemText primary={task.title} secondary={`Estimate: ${task.estimate}h`} />
               </ListItemButton>
             ))}
           </List>

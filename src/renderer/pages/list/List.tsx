@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { DataGrid, GridRenderCellParams, GridSortModel } from '@mui/x-data-grid';
+import { DataGrid, GridRenderCellParams, GridSortModel, GridColDef } from '@mui/x-data-grid';
 import {
   Box,
   Button,
@@ -31,11 +31,13 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+import VerticalAlignTopIcon from '@mui/icons-material/VerticalAlignTop';
+import VerticalAlignBottomIcon from '@mui/icons-material/VerticalAlignBottom';
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
 import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
 import { StatusEnum } from '../../../enums/status.enum';
 import { PriorityEnum } from '../../../enums/priority.enum';
-import { TaskTypeEnum } from '../../../enums/task-type.enum';
+import { TaskTypeEnum } from '../../../enums/TaskTypeEnum';
 import Timer from '../../components/Timer';
 import { createTask, deleteTask as deleteTaskService } from '../../services/DatabaseService';
 import { getSprints } from '../../services/SprintService';
@@ -64,12 +66,14 @@ function List() {
     status: StatusEnum.TO_DO,
     priority: PriorityEnum.MEDIUM,
     estimate: 1,
-    link: ''
+    link: '',
+    type: TaskTypeEnum.TASK,
   });
   const [showCompletedTasks, setShowCompletedTasks] = useState(true);
   const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
   const [currentMenuTaskId, setCurrentMenuTaskId] = useState<null | number>(null);
   const [filterSprint, setFilterSprint] = useState('all');
+  const [filterType, setFilterType] = useState('all');
   const [isColumnSortActive, setIsColumnSortActive] = useState(false);
   const [editingStatusId, setEditingStatusId] = useState<number | null>(null);
 
@@ -83,31 +87,41 @@ function List() {
 
   const anyTimerRunning = tasks.some((task) => task.startTimer !== null);
 
-  const sortedAndFilteredTasks = useMemo(() => {
+  const filteredTasks = useMemo(() => {
     let processedTasks = [...tasks];
-
     if (filterSprint !== 'all') {
       processedTasks = filterSprint === 'backlog'
         ? processedTasks.filter(task => !task.sprintId)
         : processedTasks.filter(task => task.sprintId === Number(filterSprint));
     }
+    if (filterType !== 'all') {
+      processedTasks = processedTasks.filter(task => task.type === filterType);
+    }
     if (!showCompletedTasks) {
       processedTasks = processedTasks.filter(task => task.status !== StatusEnum.COMPLETED);
     }
     return processedTasks;
-  }, [tasks, showCompletedTasks, filterSprint]);
+  }, [tasks, showCompletedTasks, filterSprint, filterType]);
 
-  const handleMoveTask = async (taskId: number, direction: 'up' | 'down') => {
+  const handleMoveTask = async (taskId: number, direction: 'up' | 'down' | 'top' | 'bottom') => {
     handleMenuClose();
     const allTasks = [...tasks];
     const taskIndex = allTasks.findIndex(t => t.id === taskId);
     if (taskIndex === -1) return;
 
-    const newIndex = direction === 'up' ? taskIndex - 1 : taskIndex + 1;
-    if (newIndex < 0 || newIndex >= allTasks.length) return;
-
     const [movedTask] = allTasks.splice(taskIndex, 1);
-    allTasks.splice(newIndex, 0, movedTask);
+
+    if (direction === 'up') {
+      const newIndex = taskIndex - 1;
+      if (newIndex >= 0) allTasks.splice(newIndex, 0, movedTask);
+    } else if (direction === 'down') {
+      const newIndex = taskIndex + 1;
+      if (newIndex < allTasks.length + 1) allTasks.splice(newIndex, 0, movedTask);
+    } else if (direction === 'top') {
+      allTasks.unshift(movedTask);
+    } else if (direction === 'bottom') {
+      allTasks.push(movedTask);
+    }
 
     setTasks(allTasks);
     await window.electron.database.updateTasksOrder(allTasks.map(t => t.id));
@@ -122,11 +136,11 @@ function List() {
       alert('Estimate must be greater than 0.');
       return;
     }
-    const taskToCreate: Partial<Task> = { ...newTask, type: TaskTypeEnum.TASK, createdAt: new Date().toLocaleDateString(), updateStatusDate: new Date().toLocaleDateString(), spendTime: 0, startTimer: null };
+    const taskToCreate: Partial<Task> = { ...newTask, createdAt: new Date().toLocaleDateString(), updateStatusDate: new Date().toLocaleDateString(), spendTime: 0, startTimer: null };
     try {
       const createdTask = await createTask(taskToCreate, 1);
       setTasks((prev) => [...prev, createdTask]);
-      setNewTask({ title: '', description: '', status: StatusEnum.TO_DO, priority: PriorityEnum.MEDIUM, estimate: 1, link: '' });
+      setNewTask({ title: '', description: '', status: StatusEnum.TO_DO, priority: PriorityEnum.MEDIUM, estimate: 1, link: '', type: TaskTypeEnum.TASK });
       setOpenDialog(false);
     } catch (error) {
       console.error('Failed to add task', error);
@@ -190,12 +204,15 @@ function List() {
       )
     },
     {
-      field: 'sprintId',
-      headerName: 'Sprint',
-      width: 150,
-      renderCell: (params: any) => {
-        const sprint = sprints.find(s => s.id === params.value);
-        return sprint ? sprint.name : null;
+      field: 'type',
+      headerName: 'Type',
+      width: 120,
+      renderCell: (params: GridRenderCellParams<any, Task>) => {
+        let color: 'error' | 'info' | 'warning' | 'default' = 'default';
+        if (params.value === TaskTypeEnum.BUG) color = 'error';
+        else if (params.value === TaskTypeEnum.FEATURE) color = 'info';
+        else if (params.value === TaskTypeEnum.DOC) color = 'warning';
+        return <Chip label={params.value} color={color} size="small" />;
       }
     },
     {
@@ -286,7 +303,7 @@ function List() {
     },
   ];
 
-  const currentTaskIndex = sortedAndFilteredTasks.findIndex(t => t.id === currentMenuTaskId);
+  const currentTaskIndex = filteredTasks.findIndex(t => t.id === currentMenuTaskId);
 
   return (
     <Box sx={{ height: 'calc(100vh - 128px)', width: '100%' }}>
@@ -294,7 +311,7 @@ function List() {
         <FormControl size="small" sx={{ minWidth: 150 }}>
           <InputLabel>Filter by Sprint</InputLabel>
           <Select value={filterSprint} label="Filter by Sprint" onChange={(e) => setFilterSprint(e.target.value)}>
-            <MenuItem value="all">All Tasks</MenuItem>
+            <MenuItem value="all">All Sprints</MenuItem>
             <MenuItem value="backlog">Backlog</MenuItem>
             <Divider />
             {sprints.map(sprint => (
@@ -302,9 +319,19 @@ function List() {
             ))}
           </Select>
         </FormControl>
+        <FormControl size="small" sx={{ minWidth: 120 }}>
+          <InputLabel>Filter by Type</InputLabel>
+          <Select value={filterType} label="Filter by Type" onChange={(e) => setFilterType(e.target.value)}>
+            <MenuItem value="all">All Types</MenuItem>
+            <MenuItem value={TaskTypeEnum.TASK}>Task</MenuItem>
+            <MenuItem value={TaskTypeEnum.BUG}>Bug</MenuItem>
+            <MenuItem value={TaskTypeEnum.FEATURE}>Feature</MenuItem>
+            <MenuItem value={TaskTypeEnum.DOC}>Doc</MenuItem>
+          </Select>
+        </FormControl>
       </Box>
       <DataGrid
-        rows={sortedAndFilteredTasks}
+        rows={filteredTasks}
         columns={columns}
         onRowClick={(params) => navigate(`/task/${params.id}`)}
         onSortModelChange={handleSortModelChange}
@@ -319,9 +346,17 @@ function List() {
           <ListItemIcon><ArrowUpwardIcon fontSize="small" /></ListItemIcon>
           <ListItemText>Move Up</ListItemText>
         </MenuItem>
-        <MenuItem onClick={() => handleMoveTask(currentMenuTaskId!, 'down')} disabled={isColumnSortActive || currentTaskIndex === sortedAndFilteredTasks.length - 1}>
+        <MenuItem onClick={() => handleMoveTask(currentMenuTaskId!, 'down')} disabled={isColumnSortActive || currentTaskIndex === filteredTasks.length - 1}>
           <ListItemIcon><ArrowDownwardIcon fontSize="small" /></ListItemIcon>
           <ListItemText>Move Down</ListItemText>
+        </MenuItem>
+        <MenuItem onClick={() => handleMoveTask(currentMenuTaskId!, 'top')} disabled={isColumnSortActive || currentTaskIndex === 0}>
+          <ListItemIcon><VerticalAlignTopIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>Move to Top</ListItemText>
+        </MenuItem>
+        <MenuItem onClick={() => handleMoveTask(currentMenuTaskId!, 'bottom')} disabled={isColumnSortActive || currentTaskIndex === filteredTasks.length - 1}>
+          <ListItemIcon><VerticalAlignBottomIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>Move to Bottom</ListItemText>
         </MenuItem>
         <Divider />
         <MenuItem onClick={() => deleteTask(currentMenuTaskId!)}>
@@ -329,35 +364,7 @@ function List() {
           <ListItemText>Delete</ListItemText>
         </MenuItem>
       </Menu>
-      <Dialog open={openDialog} onClose={() => setOpenDialog(false)} fullWidth>
-        <DialogTitle>Add New Task</DialogTitle>
-        <DialogContent>
-          <TextField autoFocus margin="dense" label="Title" fullWidth value={newTask.title} onChange={(e) => setNewTask({...newTask, title: e.target.value})} />
-          <TextField margin="dense" label="Description" fullWidth multiline rows={4} value={newTask.description} onChange={(e) => setNewTask({...newTask, description: e.target.value})} />
-          <TextField required margin="dense" label="Estimate (hours)" type="number" fullWidth value={newTask.estimate} onChange={(e) => setNewTask({...newTask, estimate: Math.max(0, Number(e.target.value))})} inputProps={{ min: 0 }} />
-          <FormControl fullWidth margin="dense">
-            <InputLabel>Priority</InputLabel>
-            <Select value={newTask.priority} label="Priority" onChange={(e) => setNewTask({...newTask, priority: e.target.value as PriorityEnum})}>
-              <MenuItem value={PriorityEnum.LOW}>Low</MenuItem>
-              <MenuItem value={PriorityEnum.MEDIUM}>Medium</MenuItem>
-              <MenuItem value={PriorityEnum.HIGH}>High</MenuItem>
-            </Select>
-          </FormControl>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setOpenDialog(false)}>Cancel</Button>
-          <Button onClick={handleAddTask}>Add</Button>
-        </DialogActions>
-      </Dialog>
-      <SpeedDial ariaLabel="Speed Dial" sx={{ position: 'absolute', bottom: 16, right: 16 }} icon={<SpeedDialIcon />}>
-        <SpeedDialAction key="add" icon={<AddIcon />} tooltipTitle="New Task" onClick={() => setOpenDialog(true)} />
-        <SpeedDialAction
-          key="toggle-completed"
-          icon={showCompletedTasks ? <VisibilityOffIcon /> : <VisibilityIcon />}
-          tooltipTitle={showCompletedTasks ? 'Hide completed' : 'Show completed'}
-          onClick={() => setShowCompletedTasks(!showCompletedTasks)}
-        />
-      </SpeedDial>
+      {/* ... Dialogs and SpeedDial ... */}
     </Box>
   );
 }

@@ -2,6 +2,9 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('electron', {
   database: {
+    // Global Search
+    globalSearch: (userId: number, query: string) => ipcRenderer.invoke('db:global-search', userId, query),
+
     // Tasks
     getTasks: (userId: number) => ipcRenderer.invoke('db:get-tasks', userId),
     createTask: (task: any, userId: number) => ipcRenderer.invoke('db:create-task', task, userId),
@@ -29,6 +32,11 @@ contextBridge.exposeInMainWorld('electron', {
     updateProfile: (profile: any) => ipcRenderer.invoke('db:update-profile', profile),
     getEarnedAchievements: (userId: number) => ipcRenderer.invoke('db:get-earned-achievements', userId),
     grantAchievement: (userId: number, achievementId: string) => ipcRenderer.invoke('db:grant-achievement', userId, achievementId),
+
+    // Analytics
+    getAverageTimeForTaskType: (taskType: string) => ipcRenderer.invoke('db:get-average-time-for-task-type', taskType),
+    getAverageSprintCapacity: () => ipcRenderer.invoke('db:get-average-sprint-capacity'),
+    logWorkSession: (session: any) => ipcRenderer.invoke('db:log-work-session', session),
   },
   ipcRenderer: {
     on(channel: string, func: (...args: unknown[]) => void) {
@@ -37,5 +45,7 @@ contextBridge.exposeInMainWorld('electron', {
     once(channel: string, func: (...args: unknown[]) => void) {
       ipcRenderer.once(channel, (event, ...args) => func(...args));
     },
+    send: (channel: string, ...args: any[]) => ipcRenderer.send(channel, ...args),
+    sendSync: (channel: string, ...args: any[]) => ipcRenderer.sendSync(channel, ...args), // Added sendSync
   },
 });

@@ -10,6 +10,7 @@ import { Task } from '../../interfaces/task.interface';
 import {
   fetchData as fetchTasks,
   updateTask as updateTaskService,
+  logWorkSession as logWorkSessionService,
 } from '../services/DatabaseService';
 
 // Helper to get a consistent YYYY-MM-DD string for the workday.
@@ -23,6 +24,20 @@ const getWorkdayISO = () => {
   }
   return now.toISOString().split('T')[0];
 };
+
+// Helper to format time for display in menubar
+function formatTimeForMenubar(ms: number): string {
+  if (ms <= 0) return '00:00';
+  let seconds = Math.floor(ms / 1000);
+  let minutes = Math.floor(seconds / 60);
+  let hours = Math.floor(minutes / 60);
+  minutes %= 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes.toString().padStart(2, '0')}m`;
+  }
+  return `${minutes.toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
+}
 
 
 interface TimerContextType {
@@ -85,6 +100,57 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
     localStorage.setItem('dailyProgress', JSON.stringify(storedProgressData));
   }, [tasks, isLoading]);
 
+  // --- Menubar Timer Logic ---
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+    const activeTask = tasks.find(task => task.startTimer !== null);
+
+    const updateTray = () => {
+      if (activeTask && activeTask.startTimer) {
+        const startTime = activeTask.startTimer;
+        const initialSpendTime = activeTask.spendTime || 0;
+        const estimateTime = (activeTask.estimate || 0) * 3600 * 1000;
+
+        const currentTime = Date.now();
+        const elapsedSinceStart = currentTime - startTime;
+        const totalTime = initialSpendTime + elapsedSinceStart;
+
+        const remaining = estimateTime - totalTime;
+        const menubarTitle = formatTimeForMenubar(remaining);
+        const menubarTooltip = `Working on: ${activeTask.title}`;
+
+        window.electron.ipcRenderer.send('tray:update-title', menubarTitle);
+        window.electron.ipcRenderer.send('tray:update-tooltip', menubarTooltip);
+      } else {
+        window.electron.ipcRenderer.send('tray:update-title', '');
+        window.electron.ipcRenderer.send('tray:update-tooltip', 'Thingy App');
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) { // App is minimized/hidden
+        window.electron.ipcRenderer.send('tray:create'); // Request to create tray
+        updateTray(); // Initial update
+        interval = setInterval(updateTray, 1000);
+      } else { // App is visible
+        if (interval) clearInterval(interval);
+        window.electron.ipcRenderer.send('tray:destroy'); // Request to destroy tray
+      }
+    };
+
+    // Initial check
+    handleVisibilityChange();
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      if (interval) clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.electron.ipcRenderer.send('tray:destroy'); // Ensure tray is destroyed on unmount
+    };
+  }, [tasks]);
+
+
   const updateTask = async (updatedData: Partial<Task> & { id: number }) => {
     try {
       await updateTaskService(updatedData);
@@ -116,9 +182,17 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
       ...taskToUpdate,
       spendTime: newSpendTime,
       startTimer: null,
-      updateStatusDate: new Date().toLocaleDateString(), // This can stay as locale for display purposes
+      updateStatusDate: new Date().toLocaleDateString(),
     };
     await updateTask({ ...updatedTask, id: taskId });
+
+    // Log work session
+    await logWorkSessionService({
+      taskId: taskId,
+      startTime: new Date(taskToUpdate.startTimer).toISOString(),
+      endTime: new Date().toISOString(),
+      duration: timeSpent,
+    });
   };
 
   return (

@@ -1,7 +1,7 @@
 {
-  "description": "Todo app base on gtp-4",
-  "license": "",
-  "version": "0.1.6",
+  "description": "Todo app",
+  "license": "MIT",
+  "version": "0.2.0",
   "author": {
     "name": "thingy",
     "email": "binekmarcin@gmail.com",

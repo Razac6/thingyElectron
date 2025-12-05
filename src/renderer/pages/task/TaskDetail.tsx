@@ -15,21 +15,25 @@ import {
   Autocomplete,
   Chip,
   IconButton,
+  Link,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SaveIcon from '@mui/icons-material/Save';
 import EditIcon from '@mui/icons-material/Edit';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { useTimer } from '../../context/TimerContext';
 import { getSprints } from '../../services/SprintService';
 import { StatusEnum } from '../../../enums/status.enum';
 import { PriorityEnum } from '../../../enums/priority.enum';
+import { TaskTypeEnum } from '../../../enums/TaskTypeEnum';
 import { useGamification } from '../../context/GamificationContext';
+import TaskStats from '../../components/TaskStats'; // Import the new component
 
 function TaskDetail() {
   const { taskId } = useParams<{ taskId: string }>();
   const navigate = useNavigate();
   const { tasks, updateTask } = useTimer();
-  const { addXp, checkForAchievements, triggerConfetti } = useGamification();
+  const { addXp, checkForAchievements, triggerRewardAnimation } = useGamification();
 
   const [task, setTask] = useState<any>(null);
   const [sprints, setSprints] = useState<any[]>([]);
@@ -40,7 +44,7 @@ function TaskDetail() {
     const taskIdNum = Number(taskId);
     const foundTask = tasks.find(t => t.id === taskIdNum);
     if (foundTask) {
-      setTask({ ...foundTask, tags: foundTask.tags || [] });
+      setTask({ ...foundTask, tags: foundTask.tags || [], type: foundTask.type || TaskTypeEnum.TASK });
     }
 
     const fetchSprints = async () => {
@@ -63,10 +67,21 @@ function TaskDetail() {
 
     if (originalTask && originalTask.status !== StatusEnum.COMPLETED && task.status === StatusEnum.COMPLETED) {
       addXp(10);
-      checkForAchievements('TASK_COMPLETED', { task });
-      triggerConfetti();
+      const achievementEarned = await checkForAchievements('TASK_COMPLETED', { task });
+      if (achievementEarned) {
+        triggerRewardAnimation('achievement');
+      } else {
+        triggerRewardAnimation('standard');
+      }
     }
-    setIsEditing(false); // Exit edit mode after saving
+    setIsEditing(false);
+  };
+
+  const handleLinkClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (task?.link) {
+      window.electron.shell.openExternal(task.link);
+    }
   };
 
   if (isLoading || !task) {
@@ -104,76 +119,37 @@ function TaskDetail() {
       <Divider sx={{ mb: 3 }} />
 
       {isEditing ? (
-        // --- EDITING VIEW ---
         <Grid container spacing={3}>
-          <Grid item xs={12}>
-            <TextField label="Title" fullWidth value={task.title} onChange={(e) => setTask({ ...task, title: e.target.value })} />
-          </Grid>
-          <Grid item xs={12}>
-            <TextField label="Description" fullWidth multiline rows={4} value={task.description} onChange={(e) => setTask({ ...task, description: e.target.value })} />
-          </Grid>
-          <Grid item xs={12}>
-            <Autocomplete multiple freeSolo options={[]} value={task.tags} onChange={(event, newValue) => setTask({ ...task, tags: newValue })}
-              renderTags={(value, getTagProps) => value.map((option, index) => (<Chip variant="outlined" label={option} {...getTagProps({ index })} />))}
-              renderInput={(params) => (<TextField {...params} variant="outlined" label="Tags" placeholder="Add tags" />)}
-            />
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <FormControl fullWidth>
-              <InputLabel>Status</InputLabel>
-              <Select value={task.status} label="Status" onChange={(e) => setTask({ ...task, status: e.target.value as StatusEnum })}>
-                <MenuItem value={StatusEnum.TO_DO}>To Do</MenuItem>
-                <MenuItem value={StatusEnum.IN_PROGRESS}>In Progress</MenuItem>
-                <MenuItem value={StatusEnum.IN_REVIEW}>In Review</MenuItem>
-                <MenuItem value={StatusEnum.COMPLETED}>Completed</MenuItem>
-              </Select>
-            </FormControl>
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <FormControl fullWidth>
-              <InputLabel>Priority</InputLabel>
-              <Select value={task.priority} label="Priority" onChange={(e) => setTask({ ...task, priority: e.target.value as PriorityEnum })}>
-                <MenuItem value={PriorityEnum.LOW}>Low</MenuItem>
-                <MenuItem value={PriorityEnum.MEDIUM}>Medium</MenuItem>
-                <MenuItem value={PriorityEnum.HIGH}>High</MenuItem>
-              </Select>
-            </FormControl>
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <FormControl fullWidth>
-              <InputLabel>Sprint</InputLabel>
-              <Select value={task.sprintId || ''} label="Sprint" onChange={(e) => setTask({ ...task, sprintId: e.target.value === '' ? null : e.target.value })}>
-                <MenuItem value=""><em>Backlog</em></MenuItem>
-                {sprints.map(sprint => (
-                  <MenuItem key={sprint.id} value={sprint.id}>{sprint.name}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <TextField
-              required
-              label="Estimate (hours)"
-              type="number"
-              fullWidth
-              value={task.estimate}
-              onChange={(e) => setTask({ ...task, estimate: Math.max(0, Number(e.target.value)) })}
-              inputProps={{ min: 0 }}
-            />
-          </Grid>
+          <Grid item xs={12}><TextField label="Title" fullWidth value={task.title} onChange={(e) => setTask({ ...task, title: e.target.value })} /></Grid>
+          <Grid item xs={12}><TextField label="Description" fullWidth multiline rows={4} value={task.description} onChange={(e) => setTask({ ...task, description: e.target.value })} /></Grid>
+          <Grid item xs={12}><TextField label="URL / Link" fullWidth value={task.link || ''} onChange={(e) => setTask({ ...task, link: e.target.value })} /></Grid>
+          <Grid item xs={12}><Autocomplete multiple freeSolo options={[]} value={task.tags} onChange={(event, newValue) => setTask({ ...task, tags: newValue })} renderTags={(value, getTagProps) => value.map((option, index) => (<Chip variant="outlined" label={option} {...getTagProps({ index })} />))} renderInput={(params) => (<TextField {...params} variant="outlined" label="Tags" placeholder="Add tags" />)} /></Grid>
+          <Grid item xs={12} md={6}><FormControl fullWidth><InputLabel>Type</InputLabel><Select value={task.type} label="Type" onChange={(e) => setTask({ ...task, type: e.target.value as TaskTypeEnum })}><MenuItem value={TaskTypeEnum.TASK}>Task</MenuItem><MenuItem value={TaskTypeEnum.BUG}>Bug</MenuItem><MenuItem value={TaskTypeEnum.FEATURE}>Feature</MenuItem><MenuItem value={TaskTypeEnum.DOC}>Doc</MenuItem></Select></FormControl></Grid>
+          <Grid item xs={12} md={6}><FormControl fullWidth><InputLabel>Status</InputLabel><Select value={task.status} label="Status" onChange={(e) => setTask({ ...task, status: e.target.value as StatusEnum })}><MenuItem value={StatusEnum.TO_DO}>To Do</MenuItem><MenuItem value={StatusEnum.IN_PROGRESS}>In Progress</MenuItem><MenuItem value={StatusEnum.IN_REVIEW}>In Review</MenuItem><MenuItem value={StatusEnum.COMPLETED}>Completed</MenuItem></Select></FormControl></Grid>
+          <Grid item xs={12} md={6}><FormControl fullWidth><InputLabel>Priority</InputLabel><Select value={task.priority} label="Priority" onChange={(e) => setTask({ ...task, priority: e.target.value as PriorityEnum })}><MenuItem value={PriorityEnum.LOW}>Low</MenuItem><MenuItem value={PriorityEnum.MEDIUM}>Medium</MenuItem><MenuItem value={PriorityEnum.HIGH}>High</MenuItem></Select></FormControl></Grid>
+          <Grid item xs={12} md={6}><FormControl fullWidth><InputLabel>Sprint</InputLabel><Select value={task.sprintId || ''} label="Sprint" onChange={(e) => setTask({ ...task, sprintId: e.target.value === '' ? null : e.target.value })}><MenuItem value=""><em>Backlog</em></MenuItem>{sprints.map(sprint => (<MenuItem key={sprint.id} value={sprint.id}>{sprint.name}</MenuItem>))}</Select></FormControl></Grid>
+          <Grid item xs={12} md={6}><TextField required label="Estimate (hours)" type="number" fullWidth value={task.estimate} onChange={(e) => setTask({ ...task, estimate: Math.max(0, Number(e.target.value)) })} inputProps={{ min: 0 }} /></Grid>
         </Grid>
       ) : (
-        // --- READ-ONLY VIEW ---
         <Box>
+          {task.link && (
+            <Button startIcon={<OpenInNewIcon />} onClick={handleLinkClick} sx={{ mb: 2 }}>
+              Open Link
+            </Button>
+          )}
           <Typography variant="body1" paragraph sx={{ whiteSpace: 'pre-wrap' }}>{task.description || 'No description provided.'}</Typography>
+          <TaskStats task={task} />
+          <Divider sx={{ my: 2 }} />
           <Grid container spacing={2} sx={{ mt: 2 }}>
+            <Grid item><Chip label={`Type: ${task.type}`} /></Grid>
             <Grid item><Chip label={`Status: ${task.status}`} /></Grid>
             <Grid item><Chip label={`Priority: ${task.priority}`} /></Grid>
             <Grid item><Chip label={`Sprint: ${sprints.find(s => s.id === task.sprintId)?.name || 'Backlog'}`} /></Grid>
             <Grid item><Chip label={`Estimate: ${task.estimate}h`} /></Grid>
           </Grid>
           {task.tags && task.tags.length > 0 && (
-            <Box sx={{ mt: 2 }}>
+            <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
+              <Typography variant="subtitle2" gutterBottom>Tags:</Typography>
               {task.tags.map((tag: string) => <Chip key={tag} label={tag} sx={{ mr: 1 }} />)}
             </Box>
           )}

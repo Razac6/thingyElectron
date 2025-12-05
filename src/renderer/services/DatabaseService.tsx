@@ -121,6 +121,27 @@ const register = async (username: string, password: string) => {
   }
 };
 
+const globalSearch = async (query: string) => {
+  try {
+    const userStr = localStorage.getItem('userId');
+    const userId = userStr ? JSON.parse(userStr) : null;
+    if (!userId) return [];
+    return await window.electron.database.globalSearch(userId, query);
+  } catch (error) {
+    console.error('Error during global search:', error);
+    return [];
+  }
+};
+
+const logWorkSession = async (session: { taskId: number, startTime: string, endTime: string, duration: number }) => {
+  try {
+    return await window.electron.database.logWorkSession(session);
+  } catch (error) {
+    console.error('Error logging work session:', error);
+    throw error;
+  }
+};
+
 export {
   getToken,
   checkAuth,
@@ -133,4 +154,6 @@ export {
   createNote,
   updateNote,
   deleteNote,
+  globalSearch,
+  logWorkSession,
 };

@@ -6,6 +6,7 @@ import { useTimer } from '../../context/TimerContext';
 import { StatusEnum } from '../../../enums/status.enum';
 import { PriorityEnum } from '../../../enums/priority.enum';
 import ProductivityChart from '../../components/ProductivityChart';
+import HourlyProductivityChart from '../../components/HourlyProductivityChart'; // Import new component
 
 // Helper to format date to YYYY-MM-DD for the input
 const formatDateForInput = (date: Date): string => {
@@ -88,6 +89,13 @@ function Statistics() {
             </Box>
             <Box sx={{ height: 300, position: 'relative' }}>
               <ProductivityChart chartData={productivityChartData} />
+            </Box>
+          </Paper>
+        </Grid>
+        <Grid item xs={12}>
+          <Paper sx={{ padding: 2 }}>
+            <Box sx={{ height: 300, position: 'relative' }}>
+              <HourlyProductivityChart />
             </Box>
           </Paper>
         </Grid>
