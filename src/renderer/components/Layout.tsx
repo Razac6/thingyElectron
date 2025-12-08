@@ -132,7 +132,7 @@ interface LayoutProps {
 export default function Layout({ children }: LayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const [open, setOpen] = React.useState(true);
+  const [open, setOpen] = React.useState(false);
   const [searchOpen, setSearchOpen] = React.useState(false);
   const { tasks, stopTimer } = useTimer();
   const { rewardAnimation, hideRewardAnimation } = useGamification();
