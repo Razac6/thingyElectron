@@ -102,49 +102,32 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
 
   // --- Menubar Timer Logic ---
   useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
     const activeTask = tasks.find(task => task.startTimer !== null);
 
-    const updateTray = () => {
-      if (activeTask && activeTask.startTimer) {
-        const startTime = activeTask.startTimer;
-        const initialSpendTime = activeTask.spendTime || 0;
-        const estimateTime = (activeTask.estimate || 0) * 3600 * 1000;
-
-        const currentTime = Date.now();
-        const elapsedSinceStart = currentTime - startTime;
-        const totalTime = initialSpendTime + elapsedSinceStart;
-
-        const remaining = estimateTime - totalTime;
-        const menubarTitle = formatTimeForMenubar(remaining);
-        const menubarTooltip = `Working on: ${activeTask.title}`;
-
-        window.electron.ipcRenderer.send('tray:update-title', menubarTitle);
-        window.electron.ipcRenderer.send('tray:update-tooltip', menubarTooltip);
-      } else {
-        window.electron.ipcRenderer.send('tray:update-title', '');
-        window.electron.ipcRenderer.send('tray:update-tooltip', 'Thingy App');
-      }
-    };
+    if (activeTask && activeTask.startTimer) {
+      window.electron.ipcRenderer.send('tray:start-timer', {
+        title: activeTask.title,
+        startTime: activeTask.startTimer,
+        estimate: activeTask.estimate || 0,
+        initialSpendTime: activeTask.spendTime || 0
+      });
+    } else {
+      window.electron.ipcRenderer.send('tray:stop-timer');
+    }
 
     const handleVisibilityChange = () => {
       if (document.hidden) { // App is minimized/hidden
         window.electron.ipcRenderer.send('tray:create'); // Request to create tray
-        updateTray(); // Initial update
-        interval = setInterval(updateTray, 1000);
       } else { // App is visible
-        if (interval) clearInterval(interval);
         window.electron.ipcRenderer.send('tray:destroy'); // Request to destroy tray
       }
     };
-
     // Initial check
     handleVisibilityChange();
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-      if (interval) clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.electron.ipcRenderer.send('tray:destroy'); // Ensure tray is destroyed on unmount
     };
