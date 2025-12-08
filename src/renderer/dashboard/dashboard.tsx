@@ -55,19 +55,19 @@ export default function Dashboard() {
         <Grid item xs={12} sm={4}>
           <Item>
             <Typography variant="h4">{tasks.length}</Typography>
-            <Typography variant="subtitle1">Total Tasks</Typography>
+            <Typography variant="subtitle1" sx={{ fontWeight: 300, color: 'text.secondary' }}>Total Tasks</Typography>
           </Item>
         </Grid>
         <Grid item xs={12} sm={4}>
           <Item>
             <Typography variant="h4">{toDoTasksCount}</Typography>
-            <Typography variant="subtitle1">Tasks To Do</Typography>
+            <Typography variant="subtitle1" sx={{ fontWeight: 300, color: 'text.secondary' }}>Tasks To Do</Typography>
           </Item>
         </Grid>
         <Grid item xs={12} sm={4}>
           <Item>
             <Typography variant="h4">{completedTasksCount}</Typography>
-            <Typography variant="subtitle1">Tasks Completed</Typography>
+            <Typography variant="subtitle1" sx={{ fontWeight: 300, color: 'text.secondary' }}>Tasks Completed</Typography>
           </Item>
         </Grid>
 

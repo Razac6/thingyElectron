@@ -142,6 +142,18 @@ const logWorkSession = async (session: { taskId: number, startTime: string, endT
   }
 };
 
+const getDailyProductivity = async () => {
+  try {
+    const userStr = localStorage.getItem('userId');
+    const userId = userStr ? JSON.parse(userStr) : null;
+    if (!userId) return [];
+    return await window.electron.database.getDailyProductivity(userId);
+  } catch (error) {
+    console.error('Error fetching daily productivity:', error);
+    return [];
+  }
+};
+
 export {
   getToken,
   checkAuth,
@@ -156,4 +168,5 @@ export {
   deleteNote,
   globalSearch,
   logWorkSession,
+  getDailyProductivity,
 };

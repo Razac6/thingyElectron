@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Modal,
@@ -18,7 +18,7 @@ import {
 import AddIcon from '@mui/icons-material/Add';
 import SearchIcon from '@mui/icons-material/Search';
 import { useTimer } from '../context/TimerContext';
-import { createTask, globalSearch } from '../services/DatabaseService'; // Import globalSearch
+import { globalSearch } from '../services/DatabaseService';
 import { Task } from '../../interfaces/task.interface';
 import { TaskTypeEnum } from '../../enums/TaskTypeEnum';
 import { StatusEnum } from '../../enums/status.enum';
@@ -48,10 +48,18 @@ interface SearchOverlayProps {
 
 export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
   const [query, setQuery] = useState('');
-  const [isAdding, setIsAdding] = useState(false);
+  const [isAdding, setIsAdding] = useState(true); // Default to "add mode"
   const [results, setResults] = useState<SearchResult[]>([]);
-  const { setTasks } = useTimer();
+  const { createTask } = useTimer(); // Use createTask from context
   const navigate = useNavigate();
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) {
+      // Focus the input when the modal opens
+      setTimeout(() => inputRef.current?.focus(), 100);
+    }
+  }, [open]);
 
   useEffect(() => {
     if (!query || isAdding) {
@@ -60,13 +68,12 @@ export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
     }
 
     const debounce = setTimeout(async () => {
-      const searchResults = await globalSearch(query); // Use the imported function
+      const searchResults = await globalSearch(query);
       setResults(searchResults);
     }, 300);
 
     return () => clearTimeout(debounce);
   }, [query, isAdding]);
-
 
   const handleSelectResult = (result: SearchResult) => {
     onClose();
@@ -118,11 +125,11 @@ export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
     };
 
     try {
-      const createdTask = await createTask(newTask);
-      setTasks((prev) => [...prev, createdTask]);
+      // Use the context's createTask to ensure the UI updates
+      await createTask(newTask);
       onClose();
       setQuery('');
-      navigate(`/task/${createdTask.id}`);
+      // No need to navigate, the task list will update automatically
     } catch (error) {
       console.error('Failed to quick-add task', error);
     }
@@ -138,7 +145,9 @@ export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
     }
   };
 
-  const placeholder = isAdding ? "e.g., 'Fix login 3.5h #bug' and press Enter" : "Search tasks and notes...";
+  const placeholder = isAdding
+    ? "Add a new task... e.g., 'Fix login 3.5h #bug'"
+    : 'Search tasks and notes...';
 
   return (
     <Modal
@@ -156,6 +165,7 @@ export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
           placeholder={placeholder}
           autoFocus
           value={query}
+          inputRef={inputRef}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           sx={{
@@ -171,17 +181,17 @@ export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
             ),
             endAdornment: (
               <InputAdornment position="end">
-                <IconButton onClick={() => setIsAdding(!isAdding)} title={isAdding ? "Switch to Search Mode" : "Switch to Add Mode"}>
+                <IconButton onClick={() => setIsAdding(!isAdding)} title={isAdding ? 'Switch to Search Mode' : 'Switch to Add Mode'}>
                   {isAdding ? <SearchIcon /> : <AddIcon />}
                 </IconButton>
               </InputAdornment>
-            )
+            ),
           }}
         />
         {!isAdding && query && (
           <List>
             {results.length > 0 ? (
-              results.map(result => (
+              results.map((result) => (
                 <ListItemButton key={`${result.resultType}-${result.id}`} onClick={() => handleSelectResult(result)}>
                   <ListItemText primary={result.title} />
                   {result.resultType === 'note' && <Chip label="Note" size="small" />}

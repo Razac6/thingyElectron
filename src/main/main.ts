@@ -1,7 +1,7 @@
 /* eslint global-require: off, no-console: off, promise/always-return: off */
 
 import path from 'path';
-import { app, BrowserWindow, shell, ipcMain, Tray, Menu, nativeImage } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, Tray, Menu, nativeImage, globalShortcut } from 'electron';
 // import { autoUpdater } from 'electron-updater'; // Commented out: electron-updater
 import log from 'electron-log';
 import MenuBuilder from './menu';
@@ -16,6 +16,8 @@ import {
   globalSearch,
   getAverageTimeForTaskType, getAverageSprintCapacity,
   logWorkSession,
+  getHourlyProductivity,
+  getDailyProductivity,
 } from './db';
 
 // --- Aggressive Error Logging ---
@@ -103,7 +105,7 @@ const createTray = () => {
   tray.on('click', () => {
     mainWindow?.isVisible() ? mainWindow?.hide() : mainWindow?.show();
   });
-  
+
   // Update title immediately if we have active task info
   if (activeTaskInfo) {
       updateTrayTitle();
@@ -144,6 +146,8 @@ ipcMain.handle('db:get-earned-achievements', (event, userId) => getEarnedAchieve
 ipcMain.handle('db:grant-achievement', (event, userId, achievementId) => grantAchievement(userId, achievementId));
 ipcMain.handle('db:get-average-time-for-task-type', (event, taskType) => getAverageTimeForTaskType(taskType));
 ipcMain.handle('db:get-average-sprint-capacity', () => getAverageSprintCapacity());
+ipcMain.handle('db:get-hourly-productivity', () => getHourlyProductivity());
+ipcMain.handle('db:get-daily-productivity', (event, userId) => getDailyProductivity(userId));
 
 // --- Tray IPC Handlers ---
 ipcMain.on('tray:create', createTray);
@@ -203,9 +207,6 @@ const installExtensions = async () => {
 const createWindow = async () => {
   if (isDebug) await installExtensions();
 
-  // const RESOURCES_PATH = app.isPackaged ? path.join(process.resourcesPath, 'assets') : path.join(__dirname, '../../assets'); // Moved to global getAssetPath
-  // const getAssetPath = (...paths: string[]): string => path.join(RESOURCES_PATH, ...paths); // Moved to global getAssetPath
-
   mainWindow = new BrowserWindow({
     show: false,
     width: 1254,
@@ -239,9 +240,6 @@ const createWindow = async () => {
     shell.openExternal(edata.url);
     return { action: 'deny' };
   });
-
-  // Commented out: electron-updater instantiation
-  // new AppUpdater();
 };
 
 app.on('window-all-closed', () => {
@@ -269,10 +267,17 @@ app.whenReady().then(async () => {
 
   createWindow();
 
-  // Remove default tray creation here
-  // Tray will be managed by renderer process via IPC
+  // Register global shortcut for search
+  globalShortcut.register('CommandOrControl+K', () => {
+    mainWindow?.webContents.send('open-search');
+  });
 
 }).catch((error) => {
   log.error('CRITICAL: Unhandled error in app.whenReady.', error);
   app.quit();
+});
+
+app.on('will-quit', () => {
+  // Unregister all shortcuts.
+  globalShortcut.unregisterAll();
 });

@@ -11,12 +11,17 @@ import {
   fetchData as fetchTasks,
   updateTask as updateTaskService,
   logWorkSession as logWorkSessionService,
+  getDailyProductivity,
+  createTask as createTaskService, // Import the createTask service
 } from '../services/DatabaseService';
 
-// Helper to get a consistent YYYY-MM-DD string for the workday.
+interface DailyProgressEntry {
+  date: string;
+  totalDuration: number;
+}
+
 const getWorkdayISO = () => {
   const now = new Date();
-  // If it's before 4 AM, we're still in the previous workday.
   if (now.getHours() < 4) {
     const yesterday = new Date(now);
     yesterday.setDate(now.getDate() - 1);
@@ -25,7 +30,6 @@ const getWorkdayISO = () => {
   return now.toISOString().split('T')[0];
 };
 
-// Helper to format time for display in menubar
 function formatTimeForMenubar(ms: number): string {
   if (ms <= 0) return '00:00';
   let seconds = Math.floor(ms / 1000);
@@ -39,14 +43,16 @@ function formatTimeForMenubar(ms: number): string {
   return `${minutes.toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
 }
 
-
 interface TimerContextType {
   tasks: Task[];
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
   updateTask: (updatedData: Partial<Task> & { id: number }) => Promise<void>;
+  createTask: (newTask: Partial<Task>) => Promise<void>; // Add createTask to the type
   startTimer: (taskId: number) => Promise<void>;
   stopTimer: (taskId: number) => Promise<void>;
   isLoading: boolean;
+  productivityData: DailyProgressEntry[];
+  isLoadingProductivity: boolean;
 }
 
 const TimerContext = createContext<TimerContextType | undefined>(undefined);
@@ -54,56 +60,40 @@ const TimerContext = createContext<TimerContextType | undefined>(undefined);
 export const TimerProvider = ({ children }: { children: ReactNode }) => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [productivityData, setProductivityData] = useState<DailyProgressEntry[]>([]);
+  const [isLoadingProductivity, setIsLoadingProductivity] = useState(true);
   const navigate = useNavigate();
 
+  const fetchProductivity = async () => {
+    try {
+      setIsLoadingProductivity(true);
+      const data = await getDailyProductivity();
+      setProductivityData(data);
+    } catch (error) {
+      console.error('Failed to fetch productivity data', error);
+    } finally {
+      setIsLoadingProductivity(false);
+    }
+  };
+
   useEffect(() => {
-    const loadTasks = async () => {
+    const loadInitialData = async () => {
       try {
         setIsLoading(true);
-        const data = await fetchTasks(navigate);
-        setTasks(data || []);
+        const taskData = await fetchTasks(navigate);
+        setTasks(taskData || []);
+        await fetchProductivity();
       } catch (error) {
-        console.error('Failed to fetch tasks for context', error);
+        console.error('Failed to fetch initial data for context', error);
       } finally {
         setIsLoading(false);
       }
     };
-    loadTasks();
+    loadInitialData();
   }, [navigate]);
 
-  // useEffect to update daily progress in localStorage
-  useEffect(() => {
-    if (isLoading) return;
-
-    const workday = getWorkdayISO();
-    const storedProgressData =
-      JSON.parse(localStorage.getItem('dailyProgress') || '[]') || [];
-    let todayEntry = storedProgressData.find(
-      (entry: any) => entry.date === workday,
-    );
-
-    const totalSpendTime = tasks.reduce(
-      (total, task) => total + (task.spendTime || 0),
-      0,
-    );
-
-    if (todayEntry) {
-      todayEntry.dayTimeSpend = totalSpendTime;
-    } else {
-      todayEntry = {
-        date: workday,
-        dayTimeSpend: totalSpendTime,
-      };
-      storedProgressData.push(todayEntry);
-    }
-
-    localStorage.setItem('dailyProgress', JSON.stringify(storedProgressData));
-  }, [tasks, isLoading]);
-
-  // --- Menubar Timer Logic ---
   useEffect(() => {
     const activeTask = tasks.find(task => task.startTimer !== null);
-
     if (activeTask && activeTask.startTimer) {
       window.electron.ipcRenderer.send('tray:start-timer', {
         title: activeTask.title,
@@ -114,25 +104,20 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
     } else {
       window.electron.ipcRenderer.send('tray:stop-timer');
     }
-
     const handleVisibilityChange = () => {
-      if (document.hidden) { // App is minimized/hidden
-        window.electron.ipcRenderer.send('tray:create'); // Request to create tray
-      } else { // App is visible
-        window.electron.ipcRenderer.send('tray:destroy'); // Request to destroy tray
+      if (document.hidden) {
+        window.electron.ipcRenderer.send('tray:create');
+      } else {
+        window.electron.ipcRenderer.send('tray:destroy');
       }
     };
-    // Initial check
     handleVisibilityChange();
-
     document.addEventListener('visibilitychange', handleVisibilityChange);
-
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.electron.ipcRenderer.send('tray:destroy'); // Ensure tray is destroyed on unmount
+      window.electron.ipcRenderer.send('tray:destroy');
     };
   }, [tasks]);
-
 
   const updateTask = async (updatedData: Partial<Task> & { id: number }) => {
     try {
@@ -147,19 +132,34 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const createTask = async (newTask: Partial<Task>) => {
+    try {
+      const createdTask = await createTaskService(newTask);
+      setTasks((prev) => [...prev, createdTask]);
+    } catch (error) {
+      console.error('Failed to create task via context', error);
+      throw error; // Re-throw to be caught by the caller
+    }
+  };
+
   const startTimer = async (taskId: number) => {
     const taskToUpdate = tasks.find((t) => t.id === taskId);
     if (!taskToUpdate) return;
-
     const updatedTask = { ...taskToUpdate, startTimer: Date.now() };
     await updateTask({ ...updatedTask, id: taskId });
   };
 
   const stopTimer = async (taskId: number) => {
     const taskToUpdate = tasks.find((t) => t.id === taskId);
-    if (!taskToUpdate || !taskToUpdate.startTimer) return;
+    if (!taskToUpdate || !taskToUpdate.startTimer || typeof taskToUpdate.startTimer !== 'number') {
+      if (taskToUpdate) {
+        await updateTask({ ...taskToUpdate, startTimer: null, id: taskId });
+      }
+      return;
+    }
 
-    const timeSpent = Date.now() - taskToUpdate.startTimer;
+    const startTime = taskToUpdate.startTimer;
+    const timeSpent = Date.now() - startTime;
     const newSpendTime = (taskToUpdate.spendTime || 0) + timeSpent;
     const updatedTask = {
       ...taskToUpdate,
@@ -169,18 +169,30 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
     };
     await updateTask({ ...updatedTask, id: taskId });
 
-    // Log work session
     await logWorkSessionService({
       taskId: taskId,
-      startTime: new Date(taskToUpdate.startTimer).toISOString(),
+      startTime: new Date(startTime).toISOString(),
       endTime: new Date().toISOString(),
       duration: timeSpent,
     });
+
+    // Refresh productivity data after logging a session
+    await fetchProductivity();
   };
 
   return (
     <TimerContext.Provider
-      value={{ tasks, setTasks, updateTask, startTimer, stopTimer, isLoading }}
+      value={{
+        tasks,
+        setTasks,
+        updateTask,
+        createTask, // Expose the new function
+        startTimer,
+        stopTimer,
+        isLoading,
+        productivityData,
+        isLoadingProductivity,
+      }}
     >
       {children}
     </TimerContext.Provider>

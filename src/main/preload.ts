@@ -37,6 +37,8 @@ contextBridge.exposeInMainWorld('electron', {
     getAverageTimeForTaskType: (taskType: string) => ipcRenderer.invoke('db:get-average-time-for-task-type', taskType),
     getAverageSprintCapacity: () => ipcRenderer.invoke('db:get-average-sprint-capacity'),
     logWorkSession: (session: any) => ipcRenderer.invoke('db:log-work-session', session),
+    getHourlyProductivity: () => ipcRenderer.invoke('db:get-hourly-productivity'),
+    getDailyProductivity: (userId: number) => ipcRenderer.invoke('db:get-daily-productivity', userId),
   },
   ipcRenderer: {
     on(channel: string, func: (...args: unknown[]) => void) {

@@ -78,6 +78,46 @@ export const logWorkSession = (session: { taskId: number, startTime: string, end
 
 
 // --- Analytics Functions ---
+export const getDailyProductivity = (userId: number) => {
+  if (!db) return [];
+  const stmt = db.prepare(`
+    SELECT
+      strftime('%Y-%m-%d', ws.startTime) as date,
+      SUM(ws.duration) as totalDuration
+    FROM work_sessions ws
+    JOIN tasks t ON ws.taskId = t.id
+    WHERE t.userId = :userId
+    GROUP BY date
+    ORDER BY date
+  `);
+  stmt.bind({ ':userId': userId });
+  const results: any[] = [];
+  while (stmt.step()) {
+    results.push(stmt.getAsObject());
+  }
+  stmt.free();
+  return results;
+};
+
+export const getHourlyProductivity = () => {
+  if (!db) return [];
+  const stmt = db.prepare(`
+    SELECT
+      CAST(strftime('%H', startTime) AS INTEGER) as hour,
+      SUM(duration) as totalDuration
+    FROM work_sessions
+    WHERE startTime IS NOT NULL
+    GROUP BY hour
+    ORDER BY hour
+  `);
+  const results: any[] = [];
+  while (stmt.step()) {
+    results.push(stmt.getAsObject());
+  }
+  stmt.free();
+  return results;
+};
+
 export const getAverageTimeForTaskType = (taskType: string) => {
   if (!db) return 0;
   const stmt = db.prepare(`SELECT AVG(spendTime) as avgTime FROM tasks WHERE type = :type AND status = 'COMPLETED'`);

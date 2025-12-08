@@ -2,44 +2,52 @@ import React, { useMemo } from 'react';
 import { Bar } from 'react-chartjs-2';
 import 'chart.js/auto';
 import { useTheme } from '@mui/material';
+import { useTimer } from '../context/TimerContext'; // Import useTimer
 
-interface DailyProgressEntry {
-  date: string;
-  dayTimeSpend: number;
-}
+const getISODateString = (date: Date): string => {
+  return date.toISOString().split('T')[0];
+};
 
 function DailyProductivityBarChart() {
   const theme = useTheme();
+  // Get productivity data and loading state from the context
+  const { productivityData, isLoadingProductivity } = useTimer();
 
   const chartData = useMemo(() => {
-    const storedDataString = localStorage.getItem('dailyProgress');
-    const dailyProgress: DailyProgressEntry[] = storedDataString ? JSON.parse(storedDataString) : [];
-
     const labels: string[] = [];
     const data: number[] = [];
     const today = new Date();
 
+    const productivityMap = new Map(
+      productivityData.map((p) => [p.date, p.totalDuration]),
+    );
+
     for (let i = 4; i >= 0; i--) {
       const day = new Date(today);
       day.setDate(today.getDate() - i);
-      const dateString = day.toLocaleDateString([], { weekday: 'short' }); // e.g., "Mon"
-      labels.push(dateString);
 
-      const entry = dailyProgress.find(d => d.date === day.toLocaleDateString());
-      const timeInMinutes = entry ? Math.round(entry.dayTimeSpend / (1000 * 60)) : 0;
+      const shortDayName = day.toLocaleDateString('en-US', { weekday: 'short' });
+      labels.push(shortDayName);
+
+      const isoDate = getISODateString(day);
+      const durationMs = productivityMap.get(isoDate) || 0;
+      // Use Math.ceil to show even small amounts of work
+      const timeInMinutes = Math.ceil(durationMs / (1000 * 60));
       data.push(timeInMinutes);
     }
 
     return {
       labels,
-      datasets: [{
-        label: 'Time Spent (minutes)',
-        data,
-        backgroundColor: theme.palette.primary.light,
-        borderRadius: 4,
-      }],
+      datasets: [
+        {
+          label: 'Time Spent (minutes)',
+          data,
+          backgroundColor: theme.palette.primary.light,
+          borderRadius: 4,
+        },
+      ],
     };
-  }, [theme.palette.primary.light]);
+  }, [productivityData, theme.palette.primary.light]);
 
   const options = {
     responsive: true,
@@ -56,13 +64,17 @@ function DailyProductivityBarChart() {
       y: {
         beginAtZero: true,
         ticks: {
-          callback: function(value: number) {
+          callback: function (value: number) {
             return value + 'm';
-          }
-        }
+          },
+        },
       },
     },
   };
+
+  if (isLoadingProductivity) {
+    return <div>Loading...</div>;
+  }
 
   return <Bar data={chartData} options={options as any} />;
 }

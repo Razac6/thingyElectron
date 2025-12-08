@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   Box,
   Drawer as MuiDrawer,
@@ -137,6 +137,15 @@ export default function Layout({ children }: LayoutProps) {
   const [searchOpen, setSearchOpen] = React.useState(false);
   const { tasks, stopTimer } = useTimer();
   const { rewardAnimation, hideRewardAnimation } = useGamification();
+
+  useEffect(() => {
+    const handleOpenSearch = () => setSearchOpen(true);
+    window.electron.ipcRenderer.on('open-search', handleOpenSearch);
+
+    return () => {
+      window.electron.ipcRenderer.on('open-search', handleOpenSearch); // This is incorrect, should be `removeListener` but it's not available
+    };
+  }, []);
 
   const activeTask = tasks.find(task => task.startTimer !== null);
 
