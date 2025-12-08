@@ -1,7 +1,7 @@
 /* eslint global-require: off, no-console: off, promise/always-return: off */
 
 import path from 'path';
-import { app, BrowserWindow, shell, ipcMain, Tray, Menu } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, Tray, Menu, nativeImage } from 'electron';
 // import { autoUpdater } from 'electron-updater'; // Commented out: electron-updater
 import log from 'electron-log';
 import MenuBuilder from './menu';
@@ -51,10 +51,50 @@ const getAssetPath = (...paths: string[]): string => {
 
 const trayIconPath = getAssetPath('icon.png'); // Resolve icon path once for the tray
 
+// --- Tray Timer Logic ---
+let trayTimerInterval: NodeJS.Timeout | null = null;
+let activeTaskInfo: { title: string; startTime: number; estimate: number; initialSpendTime: number } | null = null;
+
+function formatTimeForTray(ms: number): string {
+  if (ms <= 0) return '00:00';
+  let seconds = Math.floor(ms / 1000);
+  let minutes = Math.floor(seconds / 60);
+  let hours = Math.floor(minutes / 60);
+  minutes %= 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes.toString().padStart(2, '0')}m`;
+  }
+  return `${minutes.toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
+}
+
+const updateTrayTitle = () => {
+  if (!tray || !activeTaskInfo) return;
+
+  const { title, startTime, estimate, initialSpendTime } = activeTaskInfo;
+  const estimateTime = (estimate || 0) * 3600 * 1000;
+  const currentTime = Date.now();
+  const elapsedSinceStart = currentTime - startTime;
+  const totalTime = initialSpendTime + elapsedSinceStart;
+
+  const remaining = estimateTime - totalTime;
+  const timeString = formatTimeForTray(remaining);
+  const shortTitle = title.length > 10 ? `${title.substring(0, 10)}...` : title;
+  const menubarTitle = `${shortTitle} ${timeString}`;
+  const menubarTooltip = `Working on: ${title}`;
+
+  tray.setTitle(menubarTitle);
+  tray.setToolTip(menubarTooltip);
+};
+  // We need initialSpendTime passed from renderer too.
+  // Let's assume the renderer passes the effective start time or we need to pass initialSpendTime.
+};
+
 // --- Tray Management Functions ---
 const createTray = () => {
   if (tray) return; // Tray already exists
-  tray = new Tray(trayIconPath);
+  const icon = nativeImage.createFromPath(trayIconPath).resize({ width: 16, height: 16 });
+  tray = new Tray(icon);
   const contextMenu = Menu.buildFromTemplate([
     { label: 'Show App', click: () => { mainWindow?.show(); } },
     { label: 'Quit', click: () => { app.quit(); } },
@@ -66,6 +106,11 @@ const createTray = () => {
   tray.on('click', () => {
     mainWindow?.isVisible() ? mainWindow?.hide() : mainWindow?.show();
   });
+  
+  // Update title immediately if we have active task info
+  if (activeTaskInfo) {
+      updateTrayTitle();
+  }
 };
 
 const destroyTray = () => {
@@ -159,6 +204,17 @@ const createWindow = async () => {
   });
 
   mainWindow.loadURL(resolveHtmlPath('index.html'));
+
+  mainWindow.on('ready-to-show', () => {
+    if (!mainWindow) {
+      throw new Error('"mainWindow" is not defined');
+    }
+    if (process.env.START_MINIMIZED) {
+      mainWindow.minimize();
+    } else {
+      mainWindow.show();
+    }
+  });
 
   mainWindow.on('closed', () => { mainWindow = null; });
 
