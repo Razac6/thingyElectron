@@ -86,9 +86,6 @@ const updateTrayTitle = () => {
   tray.setTitle(menubarTitle);
   tray.setToolTip(menubarTooltip);
 };
-  // We need initialSpendTime passed from renderer too.
-  // Let's assume the renderer passes the effective start time or we need to pass initialSpendTime.
-};
 
 // --- Tray Management Functions ---
 const createTray = () => {
@@ -160,6 +157,23 @@ ipcMain.on('tray:update-title', (event, title) => {
 ipcMain.on('tray:update-tooltip', (event, tooltip) => {
   if (tray) {
     tray.setToolTip(tooltip);
+  }
+});
+
+ipcMain.on('tray:start-timer', (event, info) => {
+  activeTaskInfo = info;
+  if (trayTimerInterval) clearInterval(trayTimerInterval);
+  updateTrayTitle();
+  trayTimerInterval = setInterval(updateTrayTitle, 1000);
+});
+
+ipcMain.on('tray:stop-timer', () => {
+  activeTaskInfo = null;
+  if (trayTimerInterval) clearInterval(trayTimerInterval);
+  trayTimerInterval = null;
+  if (tray) {
+    tray.setTitle('');
+    tray.setToolTip('Thingy App');
   }
 });
 
