@@ -78,6 +78,30 @@ export const logWorkSession = (session: { taskId: number, startTime: string, end
 
 
 // --- Analytics Functions ---
+export const getContributionData = (userId: number) => {
+  if (!db) return [];
+  const oneYearAgo = new Date();
+  oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+  const stmt = db.prepare(`
+    SELECT
+      strftime('%Y-%m-%d', ws.startTime) as date,
+      SUM(ws.duration) as totalDuration
+    FROM work_sessions ws
+    JOIN tasks t ON ws.taskId = t.id
+    WHERE t.userId = :userId AND ws.startTime >= :oneYearAgo
+    GROUP BY date
+    ORDER BY date
+  `);
+  stmt.bind({ ':userId': userId, ':oneYearAgo': oneYearAgo.toISOString() });
+  const results: any[] = [];
+  while (stmt.step()) {
+    results.push(stmt.getAsObject());
+  }
+  stmt.free();
+  return results;
+};
+
 export const getDailyProductivity = (userId: number) => {
   if (!db) return [];
   const stmt = db.prepare(`

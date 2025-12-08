@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('electron', {
     logWorkSession: (session: any) => ipcRenderer.invoke('db:log-work-session', session),
     getHourlyProductivity: () => ipcRenderer.invoke('db:get-hourly-productivity'),
     getDailyProductivity: (userId: number) => ipcRenderer.invoke('db:get-daily-productivity', userId),
+    getContributionData: (userId: number) => ipcRenderer.invoke('db:get-contribution-data', userId),
   },
   ipcRenderer: {
     on(channel: string, func: (...args: unknown[]) => void) {

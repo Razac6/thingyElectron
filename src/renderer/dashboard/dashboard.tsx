@@ -10,6 +10,7 @@ import React from 'react';
 import { StatusEnum } from '../../enums/status.enum';
 import { useTimer } from '../context/TimerContext';
 import DailyProductivityBarChart from '../components/DailyProductivityBarChart';
+import ContributionGraph from '../components/ContributionGraph'; // Import the new component
 
 function formatTime(ms: number): string {
   if (ms <= 0) return '0h 0m';
@@ -90,6 +91,9 @@ export default function Dashboard() {
               <DailyProductivityBarChart />
             </Box>
           </Item>
+        </Grid>
+        <Grid item xs={12}>
+          <ContributionGraph />
         </Grid>
       </Grid>
     </Box>

@@ -18,6 +18,7 @@ import {
   logWorkSession,
   getHourlyProductivity,
   getDailyProductivity,
+  getContributionData,
 } from './db';
 
 // --- Aggressive Error Logging ---
@@ -148,6 +149,7 @@ ipcMain.handle('db:get-average-time-for-task-type', (event, taskType) => getAver
 ipcMain.handle('db:get-average-sprint-capacity', () => getAverageSprintCapacity());
 ipcMain.handle('db:get-hourly-productivity', () => getHourlyProductivity());
 ipcMain.handle('db:get-daily-productivity', (event, userId) => getDailyProductivity(userId));
+ipcMain.handle('db:get-contribution-data', (event, userId) => getContributionData(userId));
 
 // --- Tray IPC Handlers ---
 ipcMain.on('tray:create', createTray);

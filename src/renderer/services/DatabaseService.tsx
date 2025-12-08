@@ -154,6 +154,18 @@ const getDailyProductivity = async () => {
   }
 };
 
+const getContributionData = async () => {
+  try {
+    const userStr = localStorage.getItem('userId');
+    const userId = userStr ? JSON.parse(userStr) : null;
+    if (!userId) return [];
+    return await window.electron.database.getContributionData(userId);
+  } catch (error) {
+    console.error('Error fetching contribution data:', error);
+    return [];
+  }
+};
+
 export {
   getToken,
   checkAuth,
@@ -169,4 +181,5 @@ export {
   globalSearch,
   logWorkSession,
   getDailyProductivity,
+  getContributionData,
 };

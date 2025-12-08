@@ -15,7 +15,6 @@ import {
   styled,
   Theme,
   CSSObject,
-  Button,
 } from '@mui/material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Lottie from "lottie-react";
@@ -35,7 +34,7 @@ import PersonIcon from '@mui/icons-material/Person';
 import SprintIcon from '@mui/icons-material/DirectionsRun';
 import MenuIcon from '@mui/icons-material/Menu';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
-import StopCircleIcon from '@mui/icons-material/StopCircle';
+import StopIcon from '@mui/icons-material/Stop'; // Use the square Stop icon
 import SearchIcon from '@mui/icons-material/Search';
 import { useTimer } from '../context/TimerContext';
 import { useGamification } from '../context/GamificationContext';
@@ -188,9 +187,9 @@ export default function Layout({ children }: LayoutProps) {
                 <Box sx={{ color: 'white', minWidth: '110px' }}>
                    <Timer startTimer={activeTask.startTimer} spendTime={activeTask.spendTime} estimate={activeTask.estimate} context="header" />
                 </Box>
-                <Button variant="contained" color="primary" startIcon={<StopCircleIcon />} onClick={() => stopTimer(activeTask.id)} sx={{backgroundColor: 'white', color: '#ac3e33', '&:hover': { backgroundColor: '#f0f0f0'}}}>
-                  Stop
-                </Button>
+                <IconButton onClick={() => stopTimer(activeTask.id)} sx={{ color: '#ef476f' }}>
+                  <StopIcon />
+                </IconButton>
               </>
             )}
           </Box>
