@@ -95,6 +95,70 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
   const [dailyChallenge, setDailyChallenge] = useState<DailyChallenge | null>(null);
   const [totalSpendTimeToday, setTotalSpendTimeToday] = useState(0);
   const navigate = useNavigate();
+  
+  // Ref to access latest tasks inside the event listener closure
+  const tasksRef = React.useRef(tasks);
+  useEffect(() => {
+    tasksRef.current = tasks;
+  }, [tasks]);
+
+  useEffect(() => {
+    const handleIdle = () => {
+      const currentTasks = tasksRef.current;
+      const activeTask = currentTasks.find(t => t.startTimer);
+      
+      if (activeTask) {
+        // We need to call stopTimer. However, stopTimer defined in component scope uses stale 'tasks'.
+        // We must replicate stopTimer logic here or make stopTimer use refs/functional updates.
+        // Replicating logic for safety and simplicity in this context:
+        
+        const taskId = activeTask.id;
+        const startTime = Number(activeTask.startTimer);
+        const IDLE_THRESHOLD = 10 * 60 * 1000; // 10 minutes
+        
+        if (taskId && startTime) {
+             const now = Date.now();
+             // Calculate duration but subtract the idle time because user wasn't working
+             let timeSpent = now - startTime - IDLE_THRESHOLD;
+             
+             // Safety check: session cannot be negative (if entire session was idle)
+             if (timeSpent < 0) timeSpent = 0;
+
+             const newSpendTime = (activeTask.spendTime || 0) + timeSpent;
+             
+             // Stop the timer
+             updateTaskService({ 
+                 ...activeTask, 
+                 spendTime: newSpendTime, 
+                 startTimer: null, 
+                 updateStatusDate: new Date().toLocaleDateString() 
+             }).then(() => {
+                 // Log session with corrected end time (10 mins ago)
+                 logWorkSessionService({
+                    taskId: taskId,
+                    startTime: new Date(startTime).toISOString(),
+                    endTime: new Date(now - IDLE_THRESHOLD).toISOString(),
+                    duration: timeSpent,
+                 });
+                 // Refresh UI
+                 fetchAllData();
+                 // Notify user
+                 new Notification("💤 Idle Detected", { 
+                    body: "Timer auto-stopped. The last 10 minutes of inactivity were discarded." 
+                 });
+             });
+        }
+      }
+    };
+
+    // Register listener (using the generic 'on' from preload)
+    window.electron.ipcRenderer.on('activity:idle-detected', handleIdle);
+
+    // Cleanup (optional for singleton, but good practice if we had a working removeListener)
+    return () => {
+       // window.electron.ipcRenderer.removeListener('activity:idle-detected', handleIdle);
+    };
+  }, []); // Mount once
 
   const fetchAllData = async () => {
     setIsLoading(true);

@@ -1,7 +1,7 @@
 /* eslint global-require: off, no-console: off, promise/always-return: off */
 
 import path from 'path';
-import { app, BrowserWindow, shell, ipcMain, Tray, Menu, nativeImage, globalShortcut, Notification } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, Tray, Menu, nativeImage, globalShortcut, Notification, powerMonitor } from 'electron';
 // import { autoUpdater } from 'electron-updater'; // Commented out: electron-updater
 import log from 'electron-log';
 import MenuBuilder from './menu';
@@ -332,6 +332,23 @@ setInterval(() => {
     }
   }
 }, 15 * 60 * 1000); // Check every 15 minutes
+
+// --- Activity Monitor (Idle Detection) ---
+setInterval(() => {
+  // Only check if a task is actively running
+  if (activeTaskInfo) {
+    const idleTime = powerMonitor.getSystemIdleTime(); // Returns seconds
+    // Threshold: 10 minutes (600 seconds)
+    if (idleTime >= 600) {
+      if (mainWindow) {
+        mainWindow.webContents.send('activity:idle-detected');
+      }
+      
+      // Optionally notify immediately here, but better to let Renderer handle the stop logic
+      // so it updates the UI state correctly.
+    }
+  }
+}, 60000); // Check every 1 minute
 
 
 if (process.env.NODE_ENV === 'production') {
