@@ -2,6 +2,7 @@ import React from 'react';
 import { Box, Paper, Typography, Grid, LinearProgress, List, ListItem, ListItemIcon, ListItemText } from '@mui/material';
 import { useGamification } from '../../context/GamificationContext';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
+import DailyChallengeWidget from '../../components/DailyChallengeWidget';
 
 const allAchievements = [
   { id: 'FIRST_TASK', name: 'First Step', description: 'Complete your first task.' },
@@ -42,9 +43,14 @@ function Profile() {
           </Paper>
         </Grid>
 
+        {/* Daily Challenge */}
+        <Grid item xs={12} md={6}>
+            <DailyChallengeWidget />
+        </Grid>
+
         {/* Achievements Card */}
-        <Grid item xs={12}>
-          <Paper sx={{ padding: 3 }}>
+        <Grid item xs={12} md={6}>
+          <Paper sx={{ padding: 3, height: '100%' }}>
             <Typography variant="h5" gutterBottom>Achievements</Typography>
             <List>
               {allAchievements.map(ach => {

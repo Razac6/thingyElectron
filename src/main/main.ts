@@ -1,7 +1,7 @@
 /* eslint global-require: off, no-console: off, promise/always-return: off */
 
 import path from 'path';
-import { app, BrowserWindow, shell, ipcMain, Tray, Menu, nativeImage, globalShortcut } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, Tray, Menu, nativeImage, globalShortcut, Notification } from 'electron';
 // import { autoUpdater } from 'electron-updater'; // Commented out: electron-updater
 import log from 'electron-log';
 import MenuBuilder from './menu';
@@ -19,7 +19,13 @@ import {
   getHourlyProductivity,
   getDailyProductivity,
   getContributionData,
+  getRecentWorkSessions,
+  getLast14DaysProductivity,
+  getDailyChallenge,
+  createDailyChallenge,
+  updateDailyChallengeProgress,
 } from './db';
+import { ProductivityAnalyst, AnalysisResult } from './ProductivityAnalysis';
 
 // --- Aggressive Error Logging ---
 log.transports.file.level = 'info';
@@ -44,6 +50,42 @@ require('dotenv').config();
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 
+// --- Smart Insights State ---
+let cachedInsights: AnalysisResult | null = null;
+let hasSentFatigueWarning = false;
+let lastPeakHourNotificationDate: string | null = null;
+
+const refreshInsights = (userId: number) => {
+  try {
+    const recentSessions = getRecentWorkSessions(userId, 30);
+    const trendData = getLast14DaysProductivity(userId);
+    cachedInsights = {
+      peakHours: ProductivityAnalyst.identifyPeakHours(recentSessions).peakHours,
+      peakHourRange: ProductivityAnalyst.identifyPeakHours(recentSessions).formattedRange,
+      fatigueProfile: ProductivityAnalyst.analyzeFatigue(recentSessions),
+      trend: ProductivityAnalyst.analyzeTrend(trendData),
+      focusScore: ProductivityAnalyst.analyzeFocusQuality(recentSessions),
+    };
+    log.info('Smart Insights Refreshed:', cachedInsights);
+
+    // --- Daily Challenge Generation ---
+    const today = new Date().toISOString().split('T')[0];
+    const existingChallenge = getDailyChallenge(userId, today);
+    if (!existingChallenge && cachedInsights) {
+      const config = ProductivityAnalyst.generateDailyChallenge(cachedInsights.trend, cachedInsights.fatigueProfile);
+      createDailyChallenge({
+        userId,
+        date: today,
+        ...config
+      });
+      log.info('New Daily Challenge Generated:', config);
+    }
+
+  } catch (e) {
+    log.error('Failed to refresh insights', e);
+  }
+};
+
 // --- Global Asset Path Resolver ---
 const getAssetPath = (...paths: string[]): string => {
   const RESOURCES_PATH = app.isPackaged
@@ -56,7 +98,7 @@ const trayIconPath = getAssetPath('icon.png'); // Resolve icon path once for the
 
 // --- Tray Timer Logic ---
 let trayTimerInterval: NodeJS.Timeout | null = null;
-let activeTaskInfo: { title: string; startTime: number; estimate: number; initialSpendTime: number } | null = null;
+let activeTaskInfo: { title: string; startTime: number; estimate: number; initialSpendTime: number; userId?: number } | null = null;
 
 function formatTimeForTray(ms: number): string {
   if (ms <= 0) return '00:00';
@@ -88,6 +130,22 @@ const updateTrayTitle = () => {
 
   tray.setTitle(menubarTitle);
   tray.setToolTip(menubarTooltip);
+
+  // --- Smart Notification: Fatigue Check ---
+  if (cachedInsights && !hasSentFatigueWarning) {
+    const elapsedMinutes = elapsedSinceStart / (1000 * 60);
+    const limit = cachedInsights.fatigueProfile.maxRecommended;
+
+    // Notify if exceeded limit (and limit is reasonable > 10m)
+    if (elapsedMinutes > limit && limit > 10) {
+      new Notification({
+        title: '🧠 Brain Fatigue Detected',
+        body: `You've passed your optimal session limit of ${limit}m. A 5m break increases subsequent efficiency by 40%.`,
+        icon: getAssetPath('icon.png'),
+      }).show();
+      hasSentFatigueWarning = true; // Don't spam
+    }
+  }
 };
 
 // --- Tray Management Functions ---
@@ -121,8 +179,60 @@ const destroyTray = () => {
 };
 
 // --- IPC Handlers ---
-ipcMain.handle('db:log-work-session', (event, session) => logWorkSession(session));
+// Better approach: Let the Frontend trigger a "check challenge" or simply recalculate on getDailyChallenge call?
+// Actually, `updateDailyChallengeProgress` needs to be called.
+// Let's enhance logWorkSession in db.ts to handle this? No, keep logic here.
+// Re-implementing the handler to be async and do the logic.
+
+ipcMain.handle('db:log-work-session', async (event, session) => {
+  logWorkSession(session);
+
+  // Retrieve userId from the task to identify the user
+  // This is a bit roundabout but necessary if session doesn't have userId
+  // We can pass userId in session object from frontend? Yes, let's assume we will add userId to session log payload from frontend.
+  // BUT the interface in db.ts for logWorkSession is specific. 
+  // Let's just fetch the challenge for the user involved.
+  // Optimization: activeTaskInfo has userId if we add it.
+
+  if (activeTaskInfo && activeTaskInfo.userId) {
+     const userId = activeTaskInfo.userId;
+     const today = new Date().toISOString().split('T')[0];
+     const challenge: any = getDailyChallenge(userId, today);
+     
+     if (challenge && challenge.status === 'ACTIVE') {
+       let newProgress = challenge.progress;
+       
+       if (challenge.type === 'TOTAL_DURATION') {
+         // Add duration (ms) converted to minutes
+         newProgress += Math.round(session.duration / (1000 * 60));
+       } else if (challenge.type === 'DEEP_WORK') {
+         const durationMin = session.duration / (1000 * 60);
+         if (durationMin >= 20) {
+            newProgress += Math.round(durationMin);
+         }
+       }
+       
+       const status = newProgress >= challenge.target ? 'COMPLETED' : 'ACTIVE';
+       updateDailyChallengeProgress(challenge.id, newProgress, status);
+       
+       if (status === 'COMPLETED') {
+         // Grant XP
+         // grantAchievement(userId, 'DAILY_CHALLENGE_COMPLETED'); // Optional
+         new Notification({
+            title: '🎉 Challenge Completed!',
+            body: `You completed: ${challenge.description} (+${challenge.xpReward} XP)`,
+            icon: getAssetPath('icon.png'),
+         }).show();
+       }
+     }
+  }
+});
+
 ipcMain.handle('db:global-search', (event, userId, query) => globalSearch(userId, query));
+ipcMain.handle('db:get-daily-challenge', (event, userId) => {
+  const today = new Date().toISOString().split('T')[0];
+  return getDailyChallenge(userId, today);
+});
 ipcMain.handle('db:get-tasks', (event, userId) => getTasks(userId));
 ipcMain.handle('db:create-task', (event, task, userId) => createTask(task, userId));
 ipcMain.handle('db:update-task', (event, task) => updateTask(task));
@@ -137,7 +247,10 @@ ipcMain.handle('db:update-note', (event, note) => updateNote(note));
 ipcMain.handle('db:delete-note', (event, noteId) => deleteNote(noteId));
 ipcMain.handle('db:login', (event, { username, password }) => {
   const user = loginUser(username, password);
-  if (user) return { access_token: 'local-session-token', userId: user.id };
+  if (user) {
+    refreshInsights(user.id); // Load insights on login
+    return { access_token: 'local-session-token', userId: user.id };
+  }
   throw new Error('Invalid credentials');
 });
 ipcMain.handle('db:register', (event, { username, password }) => registerUser(username, password));
@@ -150,6 +263,11 @@ ipcMain.handle('db:get-average-sprint-capacity', () => getAverageSprintCapacity(
 ipcMain.handle('db:get-hourly-productivity', () => getHourlyProductivity());
 ipcMain.handle('db:get-daily-productivity', (event, userId) => getDailyProductivity(userId));
 ipcMain.handle('db:get-contribution-data', (event, userId) => getContributionData(userId));
+
+ipcMain.handle('db:get-productivity-insights', async (event, userId) => {
+  refreshInsights(userId); // Ensure fresh data
+  return cachedInsights;
+});
 
 // --- Tray IPC Handlers ---
 ipcMain.on('tray:create', createTray);
@@ -169,6 +287,12 @@ ipcMain.on('tray:update-tooltip', (event, tooltip) => {
 ipcMain.on('tray:start-timer', (event, info) => {
   activeTaskInfo = info;
   if (trayTimerInterval) clearInterval(trayTimerInterval);
+
+  // Reset fatigue warning state for new session
+  hasSentFatigueWarning = false;
+  // Try to refresh insights (need userId in info ideally, or use global if single user)
+  // For now, assuming insights are loaded via login or dashboard load.
+
   updateTrayTitle();
   trayTimerInterval = setInterval(updateTrayTitle, 1000);
 });
@@ -187,6 +311,28 @@ ipcMain.on('tray:stop-timer', () => {
 ipcMain.on('tray:get-icon-path', (event) => {
   event.returnValue = trayIconPath; // Return the icon path synchronously
 });
+
+// --- Background Productivity Checks (Peak Hours) ---
+setInterval(() => {
+  if (!cachedInsights) return;
+
+  const now = new Date();
+  const currentHour = now.getHours();
+  const dateString = now.toDateString(); // "Tue Dec 09 2025"
+
+  // Only notify once per day
+  if (lastPeakHourNotificationDate !== dateString) {
+    if (cachedInsights.peakHours.includes(currentHour)) {
+      new Notification({
+        title: '🚀 Golden Hour',
+        body: `It's ${currentHour}:00! Statistics show this is your most productive time of day. Focus on High Priority tasks.`,
+        icon: getAssetPath('icon.png'),
+      }).show();
+      lastPeakHourNotificationDate = dateString;
+    }
+  }
+}, 15 * 60 * 1000); // Check every 15 minutes
+
 
 if (process.env.NODE_ENV === 'production') {
   const sourceMapSupport = require('source-map-support');

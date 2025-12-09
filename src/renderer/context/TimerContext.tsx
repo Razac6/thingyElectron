@@ -14,6 +14,8 @@ import {
   getDailyProductivity,
   getContributionData,
   getHourlyProductivity,
+  getProductivityInsights,
+  getDailyChallenge,
   createTask as createTaskService,
   deleteTask as deleteTaskService,
 } from '../services/DatabaseService';
@@ -21,6 +23,32 @@ import {
 interface DailyProgressEntry {
   date: string;
   totalDuration: number;
+}
+
+interface AnalysisResult {
+  peakHours: number[];
+  peakHourRange: string;
+  fatigueProfile: {
+    averageSession: number;
+    maxRecommended: number;
+    isFatigued: boolean;
+  };
+  trend: {
+    slope: number;
+    direction: 'increasing' | 'decreasing' | 'stable';
+    description: string;
+  };
+  focusScore: number;
+}
+
+interface DailyChallenge {
+  id: number;
+  type: string;
+  target: number;
+  progress: number;
+  description: string;
+  xpReward: number;
+  status: 'ACTIVE' | 'COMPLETED';
 }
 
 const getWorkdayISO = () => {
@@ -48,6 +76,8 @@ interface TimerContextType {
   contributionData: any[];
   isLoadingContribution: boolean;
   hourlyProductivity: any[];
+  insights: AnalysisResult | null;
+  dailyChallenge: DailyChallenge | null;
   totalSpendTimeToday: number;
 }
 
@@ -61,6 +91,8 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
   const [contributionData, setContributionData] = useState<any[]>([]);
   const [isLoadingContribution, setIsLoadingContribution] = useState(true);
   const [hourlyProductivity, setHourlyProductivity] = useState<any[]>([]);
+  const [insights, setInsights] = useState<AnalysisResult | null>(null);
+  const [dailyChallenge, setDailyChallenge] = useState<DailyChallenge | null>(null);
   const [totalSpendTimeToday, setTotalSpendTimeToday] = useState(0);
   const navigate = useNavigate();
 
@@ -69,16 +101,20 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
     setIsLoadingProductivity(true);
     setIsLoadingContribution(true);
     try {
-      const [taskData, prodData, contData, hourlyData] = await Promise.all([
+      const [taskData, prodData, contData, hourlyData, insightsData, challengeData] = await Promise.all([
         fetchTasks(navigate),
         getDailyProductivity(),
         getContributionData(),
         getHourlyProductivity(),
+        getProductivityInsights(),
+        getDailyChallenge(),
       ]);
       setTasks(taskData || []);
       setProductivityData(prodData || []);
       setContributionData(contData || []);
       setHourlyProductivity(hourlyData || []);
+      setInsights(insightsData);
+      setDailyChallenge(challengeData);
     } catch (error) {
       console.error('Failed to fetch data', error);
     } finally {
@@ -101,11 +137,16 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const activeTask = tasks.find(task => task.startTimer !== null);
     if (activeTask && activeTask.startTimer) {
+      // Get userId from localStorage for the tray
+      const userStr = localStorage.getItem('userId');
+      const userId = userStr ? JSON.parse(userStr) : undefined;
+      
       window.electron.ipcRenderer.send('tray:start-timer', {
         title: activeTask.title,
         startTime: activeTask.startTimer,
         estimate: activeTask.estimate || 0,
-        initialSpendTime: activeTask.spendTime || 0
+        initialSpendTime: activeTask.spendTime || 0,
+        userId: userId
       });
     } else {
       window.electron.ipcRenderer.send('tray:stop-timer');
@@ -212,6 +253,8 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
         contributionData,
         isLoadingContribution,
         hourlyProductivity,
+        insights,
+        dailyChallenge,
         totalSpendTimeToday,
       }}
     >

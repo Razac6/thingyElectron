@@ -10,6 +10,7 @@ import { StatusEnum } from '../../enums/status.enum';
 import { useTimer } from '../context/TimerContext';
 import DailyProductivityBarChart from '../components/DailyProductivityBarChart';
 import ContributionGraph from '../components/ContributionGraph';
+import SmartInsightWidget from '../components/SmartInsightWidget';
 
 function formatTime(ms: number): string {
   if (ms <= 0) return '0h 0m';
@@ -71,14 +72,15 @@ export default function Dashboard() {
             <Typography variant="h3" sx={{ mt: 1 }}>
               {formatTime(totalSpendTimeToday)}
             </Typography>
+            <SmartInsightWidget />
           </Item>
         </Grid>
         <Grid item xs={12} md={6}>
-          <Item sx={{ height: 200 }}>
+          <Item sx={{ display: 'flex', flexDirection: 'column' }}>
              <Typography variant="h5" gutterBottom>
               Last 7 Days Activity
             </Typography>
-            <Box sx={{ height: '100%', width: '100%' }}>
+            <Box sx={{ flexGrow: 1, minHeight: 200, width: '100%' }}>
               <DailyProductivityBarChart />
             </Box>
           </Item>

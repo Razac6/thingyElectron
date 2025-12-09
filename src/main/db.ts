@@ -41,6 +41,7 @@ export const initDB = async () => {
   db.run(`CREATE TABLE IF NOT EXISTS tags (id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL)`);
   db.run(`CREATE TABLE IF NOT EXISTS task_tags (taskId INTEGER, tagId INTEGER, PRIMARY KEY (taskId, tagId), FOREIGN KEY(taskId) REFERENCES tasks(id) ON DELETE CASCADE, FOREIGN KEY(tagId) REFERENCES tags(id) ON DELETE CASCADE)`);
   db.run(`CREATE TABLE IF NOT EXISTS work_sessions (id INTEGER PRIMARY KEY, taskId INTEGER, startTime TEXT, endTime TEXT, duration INTEGER, FOREIGN KEY(taskId) REFERENCES tasks(id) ON DELETE CASCADE)`);
+  db.run(`CREATE TABLE IF NOT EXISTS daily_challenges (id INTEGER PRIMARY KEY, userId INTEGER, date TEXT, type TEXT, target INTEGER, progress INTEGER DEFAULT 0, description TEXT, xpReward INTEGER, status TEXT DEFAULT 'ACTIVE', FOREIGN KEY(userId) REFERENCES users(id))`);
 
 
   try {
@@ -80,6 +81,80 @@ export const logWorkSession = (session: { taskId: number, startTime: string, end
 
 
 // --- Analytics Functions ---
+export const getRecentWorkSessions = (userId: number, days: number = 30) => {
+  if (!db) return [];
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - days);
+
+  const stmt = db.prepare(`
+    SELECT startTime, duration
+    FROM work_sessions ws
+    JOIN tasks t ON ws.taskId = t.id
+    WHERE t.userId = :userId AND ws.startTime >= :cutoffDate
+  `);
+  stmt.bind({ ':userId': userId, ':cutoffDate': cutoffDate.toISOString() });
+  const results: any[] = [];
+  while (stmt.step()) {
+    results.push(stmt.getAsObject());
+  }
+  stmt.free();
+  return results;
+};
+
+export const getLast14DaysProductivity = (userId: number) => {
+  if (!db) return [];
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - 14);
+
+  // Using the same "Day starts at 4 AM" logic for consistency
+  const stmt = db.prepare(`
+    SELECT
+      strftime('%Y-%m-%d', datetime(ws.startTime, 'localtime', '-4 hours')) as date,
+      SUM(ws.duration) as totalDuration
+    FROM work_sessions ws
+    JOIN tasks t ON ws.taskId = t.id
+    WHERE t.userId = :userId AND ws.startTime >= :cutoffDate
+    GROUP BY date
+    ORDER BY date
+  `);
+  stmt.bind({ ':userId': userId, ':cutoffDate': cutoffDate.toISOString() });
+  const results: any[] = [];
+  while (stmt.step()) {
+    results.push(stmt.getAsObject());
+  }
+  stmt.free();
+  return results;
+};
+
+// --- Daily Challenges ---
+export const getDailyChallenge = (userId: number, date: string) => {
+  if (!db) return null;
+  const stmt = db.prepare('SELECT * FROM daily_challenges WHERE userId = :userId AND date = :date');
+  stmt.bind({ ':userId': userId, ':date': date });
+  if (stmt.step()) {
+    const result = stmt.getAsObject();
+    stmt.free();
+    return result;
+  }
+  stmt.free();
+  return null;
+};
+
+export const createDailyChallenge = (challenge: any) => {
+  if (!db) throw new Error('DB not initialized');
+  db.run('INSERT INTO daily_challenges (userId, date, type, target, progress, description, xpReward, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', 
+    [challenge.userId, challenge.date, challenge.type, challenge.target, challenge.progress || 0, challenge.description, challenge.xpReward, 'ACTIVE']);
+  const id = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
+  saveDB();
+  return { ...challenge, id, status: 'ACTIVE', progress: 0 };
+};
+
+export const updateDailyChallengeProgress = (id: number, progress: number, status: string) => {
+  if (!db) throw new Error('DB not initialized');
+  db.run('UPDATE daily_challenges SET progress = ?, status = ? WHERE id = ?', [progress, status, id]);
+  saveDB();
+};
+
 export const getContributionData = (userId: number) => {
   if (!db) return [];
   const oneYearAgo = new Date();

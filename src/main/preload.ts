@@ -40,6 +40,8 @@ contextBridge.exposeInMainWorld('electron', {
     getHourlyProductivity: () => ipcRenderer.invoke('db:get-hourly-productivity'),
     getDailyProductivity: (userId: number) => ipcRenderer.invoke('db:get-daily-productivity', userId),
     getContributionData: (userId: number) => ipcRenderer.invoke('db:get-contribution-data', userId),
+    getProductivityInsights: (userId: number) => ipcRenderer.invoke('db:get-productivity-insights', userId),
+    getDailyChallenge: (userId: number) => ipcRenderer.invoke('db:get-daily-challenge', userId),
   },
   ipcRenderer: {
     on(channel: string, func: (...args: unknown[]) => void) {

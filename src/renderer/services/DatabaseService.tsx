@@ -198,6 +198,32 @@ const getHourlyProductivity = async () => {
   }
 };
 
+const getProductivityInsights = async () => {
+  try {
+    const userStr = localStorage.getItem('userId');
+    const userId = userStr ? JSON.parse(userStr) : null;
+    if (!userId) return null;
+    const data = await window.electron.database.getProductivityInsights(userId);
+    return data;
+  } catch (error) {
+    console.error('[DatabaseService] Error fetching productivity insights:', error);
+    return null;
+  }
+};
+
+const getDailyChallenge = async () => {
+  try {
+    const userStr = localStorage.getItem('userId');
+    const userId = userStr ? JSON.parse(userStr) : null;
+    if (!userId) return null;
+    const data = await window.electron.database.getDailyChallenge(userId);
+    return data;
+  } catch (error) {
+    console.error('[DatabaseService] Error fetching daily challenge:', error);
+    return null;
+  }
+};
+
 export {
   getToken,
   checkAuth,
@@ -215,4 +241,6 @@ export {
   getDailyProductivity,
   getContributionData,
   getHourlyProductivity,
+  getProductivityInsights,
+  getDailyChallenge,
 };
