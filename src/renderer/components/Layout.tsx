@@ -142,7 +142,7 @@ export default function Layout({ children }: LayoutProps) {
     window.electron.ipcRenderer.on('open-search', handleOpenSearch);
 
     return () => {
-      window.electron.ipcRenderer.on('open-search', handleOpenSearch); // This is incorrect, should be `removeListener` but it's not available
+      window.electron.ipcRenderer.removeListener('open-search', handleOpenSearch);
     };
   }, []);
 
@@ -183,7 +183,7 @@ export default function Layout({ children }: LayoutProps) {
             <IconButton color="inherit" onClick={() => setSearchOpen(true)}><SearchIcon /></IconButton>
             {activeTask && (
               <>
-                <Typography variant="body1" noWrap>{activeTask.title}</Typography>
+                <Typography variant="body1" noWrap sx={{ color: 'white' }}>{activeTask.title}</Typography>
                 <Box sx={{ color: 'white', minWidth: '110px' }}>
                    <Timer startTimer={activeTask.startTimer} spendTime={activeTask.spendTime} estimate={activeTask.estimate} context="header" />
                 </Box>

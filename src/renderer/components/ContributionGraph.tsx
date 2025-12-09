@@ -1,14 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useMemo } from 'react';
 import CalendarHeatmap from 'react-calendar-heatmap';
 import { Tooltip } from 'react-tooltip';
 import 'react-calendar-heatmap/dist/styles.css';
 import { Paper, Box } from '@mui/material';
-import { getContributionData } from '../services/DatabaseService';
-
-interface ContributionData {
-  date: string;
-  count: number; // Total minutes
-}
+import { useTimer } from '../context/TimerContext';
 
 const formatTooltipContent = (value: any) => {
   if (!value || !value.date) {
@@ -32,19 +27,14 @@ const formatTooltipContent = (value: any) => {
 };
 
 const ContributionGraph = () => {
-  const [data, setData] = useState<ContributionData[]>([]);
+  const { contributionData } = useTimer();
 
-  useEffect(() => {
-    const fetchData = async () => {
-      const results = await getContributionData();
-      const formattedData = results.map((r: any) => ({
-        date: r.date,
-        count: Math.ceil(r.totalDuration / (1000 * 60)), // Convert to minutes
-      }));
-      setData(formattedData);
-    };
-    fetchData();
-  }, []);
+  const data = useMemo(() => {
+     return contributionData.map((r: any) => ({
+      date: r.date,
+      count: Math.ceil(r.totalDuration / (1000 * 60)), // Convert to minutes
+    }));
+  }, [contributionData]);
 
   const endDate = new Date();
   const startDate = new Date();

@@ -2,27 +2,33 @@ import React, { useMemo } from 'react';
 import { Bar } from 'react-chartjs-2';
 import 'chart.js/auto';
 import { useTheme } from '@mui/material';
-import { useTimer } from '../context/TimerContext'; // Import useTimer
+import { useTimer } from '../context/TimerContext';
 
 const getISODateString = (date: Date): string => {
-  return date.toISOString().split('T')[0];
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 function DailyProductivityBarChart() {
   const theme = useTheme();
-  // Get productivity data and loading state from the context
   const { productivityData, isLoadingProductivity } = useTimer();
 
   const chartData = useMemo(() => {
     const labels: string[] = [];
     const data: number[] = [];
     const today = new Date();
+    if (today.getHours() < 4) {
+        today.setDate(today.getDate() - 1);
+    }
 
     const productivityMap = new Map(
       productivityData.map((p) => [p.date, p.totalDuration]),
     );
 
-    for (let i = 4; i >= 0; i--) {
+    // Show last 7 days (including today)
+    for (let i = 6; i >= 0; i--) {
       const day = new Date(today);
       day.setDate(today.getDate() - i);
 
@@ -31,7 +37,6 @@ function DailyProductivityBarChart() {
 
       const isoDate = getISODateString(day);
       const durationMs = productivityMap.get(isoDate) || 0;
-      // Use Math.ceil to show even small amounts of work
       const timeInMinutes = Math.ceil(durationMs / (1000 * 60));
       data.push(timeInMinutes);
     }

@@ -14,7 +14,7 @@ const formatDateForInput = (date: Date): string => {
 };
 
 function Statistics() {
-  const { tasks } = useTimer();
+  const { tasks, productivityData } = useTimer();
   const [startDate, setStartDate] = useState<string>(() => {
     const date = new Date();
     date.setDate(date.getDate() - 7); // Default to last 7 days
@@ -24,19 +24,24 @@ function Statistics() {
 
   // Memoized data for Productivity Line Chart based on date range
   const productivityChartData = useMemo(() => {
-    const storedDataString = localStorage.getItem('dailyProgress');
-    const dailyProgress: { date: string; dayTimeSpend: number }[] = storedDataString ? JSON.parse(storedDataString) : [];
+    // productivityData from Context is already in { date: 'YYYY-MM-DD', totalDuration: ms } format
+    // and aligned with local timezone/productivity day logic.
 
-    // Filter by comparing strings directly in YYYY-MM-DD format
-    const filteredProgress = dailyProgress.filter(entry => {
+    const filteredProgress = productivityData.filter(entry => {
       return entry.date >= startDate && entry.date <= endDate;
     });
 
     // Sort the filtered data just in case it's not in order
     filteredProgress.sort((a, b) => a.date.localeCompare(b.date));
 
-    const labels = filteredProgress.map(entry => new Date(entry.date).toLocaleDateString([], { month: 'short', day: 'numeric' }));
-    const data = filteredProgress.map(entry => Math.round(entry.dayTimeSpend / (1000 * 60)));
+    const labels = filteredProgress.map(entry => {
+       // Parse YYYY-MM-DD manually to avoid UTC conversion issues in Date constructor
+       const [y, m, d] = entry.date.split('-').map(Number);
+       const localDate = new Date(y, m - 1, d);
+       return localDate.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    });
+    
+    const data = filteredProgress.map(entry => Math.ceil(entry.totalDuration / (1000 * 60)));
 
     return {
       labels,
@@ -48,7 +53,7 @@ function Statistics() {
         borderColor: 'rgba(75, 192, 192, 0.2)',
       }],
     };
-  }, [startDate, endDate]);
+  }, [startDate, endDate, productivityData]);
 
   // Data for Status Pie Chart (always shows current state)
   const statusPieData = useMemo(() => {

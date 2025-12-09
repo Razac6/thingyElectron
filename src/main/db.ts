@@ -14,6 +14,7 @@ const saveDB = () => {
   const data = db.export();
   const buffer = Buffer.from(data);
   fs.writeFileSync(dbPath, buffer);
+  console.log('[DB] Database saved to disk.');
 };
 
 const hashPassword = (password: string) => {
@@ -74,6 +75,7 @@ export const logWorkSession = (session: { taskId: number, startTime: string, end
   if (!db) throw new Error('DB not initialized');
   db.run('INSERT INTO work_sessions (taskId, startTime, endTime, duration) VALUES (?, ?, ?, ?)', [session.taskId, session.startTime, session.endTime, session.duration]);
   saveDB();
+  console.log('[DB] Work session logged and DB saved.');
 };
 
 
@@ -83,9 +85,10 @@ export const getContributionData = (userId: number) => {
   const oneYearAgo = new Date();
   oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
 
+  // Use 'localtime' and '-4 hours' to align with "Productivity Day" (starts at 4 AM)
   const stmt = db.prepare(`
     SELECT
-      strftime('%Y-%m-%d', ws.startTime) as date,
+      strftime('%Y-%m-%d', datetime(ws.startTime, 'localtime', '-4 hours')) as date,
       SUM(ws.duration) as totalDuration
     FROM work_sessions ws
     JOIN tasks t ON ws.taskId = t.id
@@ -99,14 +102,17 @@ export const getContributionData = (userId: number) => {
     results.push(stmt.getAsObject());
   }
   stmt.free();
+  console.log('[DB] getContributionData returned:', results);
   return results;
 };
 
 export const getDailyProductivity = (userId: number) => {
   if (!db) return [];
+  console.log('[DB] getDailyProductivity called for userId:', userId);
+  // Use 'localtime' and '-4 hours' to align with "Productivity Day" (starts at 4 AM)
   const stmt = db.prepare(`
     SELECT
-      strftime('%Y-%m-%d', ws.startTime) as date,
+      strftime('%Y-%m-%d', datetime(ws.startTime, 'localtime', '-4 hours')) as date,
       SUM(ws.duration) as totalDuration
     FROM work_sessions ws
     JOIN tasks t ON ws.taskId = t.id
@@ -120,6 +126,7 @@ export const getDailyProductivity = (userId: number) => {
     results.push(stmt.getAsObject());
   }
   stmt.free();
+  console.log('[DB] getDailyProductivity returned:', results);
   return results;
 };
 
@@ -127,7 +134,7 @@ export const getHourlyProductivity = () => {
   if (!db) return [];
   const stmt = db.prepare(`
     SELECT
-      CAST(strftime('%H', startTime) AS INTEGER) as hour,
+      CAST(strftime('%H', datetime(startTime, 'localtime')) AS INTEGER) as hour,
       SUM(duration) as totalDuration
     FROM work_sessions
     WHERE startTime IS NOT NULL
@@ -139,6 +146,7 @@ export const getHourlyProductivity = () => {
     results.push(stmt.getAsObject());
   }
   stmt.free();
+  console.log('[DB] getHourlyProductivity returned:', results);
   return results;
 };
 
@@ -151,6 +159,7 @@ export const getAverageTimeForTaskType = (taskType: string) => {
     result = stmt.get()[0] as number || 0;
   }
   stmt.free();
+  console.log('[DB] getAverageTimeForTaskType returned:', result);
   return result;
 };
 
@@ -175,7 +184,7 @@ export const getAverageSprintCapacity = () => {
     taskSumStmt.reset();
   });
   taskSumStmt.free();
-
+  console.log('[DB] getAverageSprintCapacity returned:', totalCapacity / sprintIds.length);
   return totalCapacity / sprintIds.length;
 };
 
@@ -207,8 +216,16 @@ export const globalSearch = (userId: number, query: string) => {
     results.push(noteStmt.getAsObject());
   }
   noteStmt.free();
-
+  console.log('[DB] globalSearch returned:', results);
   return results;
+};
+
+export const deleteTask = (taskId: number) => {
+  if (!db) throw new Error('DB not initialized');
+  db.run('DELETE FROM tasks WHERE id = ?', [taskId]);
+  saveDB();
+  console.log('[DB] Task deleted and DB saved.');
+  return taskId;
 };
 
 // ... (rest of the file)
@@ -224,6 +241,7 @@ export const updateTasksOrder = (taskIds: number[]) => {
   } finally {
     stmt.free();
     saveDB();
+    console.log('[DB] Tasks order updated and DB saved.');
   }
 };
 
@@ -246,6 +264,7 @@ export const getTasks = (userId: number) => {
     tasks.push(task);
   }
   stmt.free();
+  console.log('[DB] getTasks returned:', tasks);
   return tasks;
 };
 
@@ -261,6 +280,7 @@ export const createTask = (task: any, userId: number) => {
 
   const id = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
   saveDB();
+  console.log('[DB] Task created and DB saved.');
   return { ...task, id, userId, displayOrder: newOrder };
 };
 
@@ -271,6 +291,7 @@ export const updateTask = (task: any) => {
   }
   db.run(`UPDATE tasks SET title = ?, description = ?, status = ?, updateStatusDate = ?, estimate = ?, priority = ?, link = ?, spendTime = ?, startTimer = ?, sprintId = ?, type = ? WHERE id = ?`, [task.title, task.description, task.status, task.updateStatusDate, task.estimate, task.priority, task.link, task.spendTime, task.startTimer, task.sprintId, task.type || 'TASK', task.id]);
   saveDB();
+  console.log('[DB] Task updated and DB saved.');
   return task;
 };
 
@@ -291,6 +312,7 @@ export const setTaskTags = (taskId: number, tagNames: string[]) => {
   });
   stmt.free();
   saveDB();
+  console.log('[DB] Task tags updated and DB saved.');
 };
 
 export const getProfile = (userId: number) => {
@@ -302,6 +324,7 @@ export const getProfile = (userId: number) => {
     profile = stmt.getAsObject();
   }
   stmt.free();
+  console.log('[DB] getProfile returned:', profile);
   return profile;
 };
 
@@ -309,6 +332,7 @@ export const updateProfile = (profile: { userId: number, level: number, xp: numb
   if (!db) throw new Error('DB not initialized');
   db.run('UPDATE user_profile SET level = ?, xp = ? WHERE userId = ?', [profile.level, profile.xp, profile.userId]);
   saveDB();
+  console.log('[DB] Profile updated and DB saved.');
   return profile;
 };
 
@@ -319,6 +343,7 @@ export const getEarnedAchievements = (userId: number) => {
   const achievements: string[] = [];
   while (stmt.step()) { achievements.push(stmt.get()[0] as string); }
   stmt.free();
+  console.log('[DB] getEarnedAchievements returned:', achievements);
   return achievements;
 };
 
@@ -326,6 +351,7 @@ export const grantAchievement = (userId: number, achievementId: string) => {
   if (!db) throw new Error('DB not initialized');
   db.run('INSERT OR IGNORE INTO user_achievements (userId, achievementId, earnedAt) VALUES (?, ?, ?)', [userId, achievementId, new Date().toISOString()]);
   saveDB();
+  console.log('[DB] Achievement granted and DB saved.');
   return { userId, achievementId };
 };
 
@@ -335,6 +361,7 @@ export const getSprints = () => {
   const sprints: any[] = [];
   while (stmt.step()) { sprints.push(stmt.getAsObject()); }
   stmt.free();
+  console.log('[DB] getSprints returned:', sprints);
   return sprints;
 };
 
@@ -343,6 +370,7 @@ export const createSprint = (sprint: { name: string, startDate: string, endDate:
   db.run('INSERT INTO sprints (name, startDate, endDate, status) VALUES (?, ?, ?, ?)', [sprint.name, sprint.startDate, sprint.endDate, 'UPCOMING']);
   const id = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
   saveDB();
+  console.log('[DB] Sprint created and DB saved.');
   return { ...sprint, id, status: 'UPCOMING' };
 };
 
@@ -350,6 +378,7 @@ export const updateSprintStatus = (sprintId: number, status: string) => {
   if (!db) throw new Error('DB not initialized');
   db.run('UPDATE sprints SET status = ? WHERE id = ?', [status, sprintId]);
   saveDB();
+  console.log('[DB] Sprint status updated and DB saved.');
   return { id: sprintId, status };
 };
 
@@ -360,6 +389,7 @@ export const getNotes = (userId: number) => {
   const notes: any[] = [];
   while (stmt.step()) { notes.push(stmt.getAsObject()); }
   stmt.free();
+  console.log('[DB] getNotes returned:', notes);
   return notes;
 };
 
@@ -368,6 +398,7 @@ export const createNote = (note: any, userId: number) => {
   db.run('INSERT INTO notes (title, content, createdAt, userId) VALUES (?, ?, ?, ?)', [note.title, note.content, note.createdAt, userId]);
   const id = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
   saveDB();
+  console.log('[DB] Note created and DB saved.');
   return { ...note, id, userId };
 };
 
@@ -375,6 +406,7 @@ export const updateNote = (note: any) => {
   if (!db) throw new Error('DB not initialized');
   db.run('UPDATE notes SET title = ?, content = ? WHERE id = ?', [note.title, note.content, note.id]);
   saveDB();
+  console.log('[DB] Note updated and DB saved.');
   return note;
 };
 
@@ -382,6 +414,7 @@ export const deleteNote = (noteId: number) => {
   if (!db) throw new Error('DB not initialized');
   db.run('DELETE FROM notes WHERE id = ?', [noteId]);
   saveDB();
+  console.log('[DB] Note deleted and DB saved.');
   return noteId;
 };
 
@@ -390,8 +423,12 @@ export const registerUser = (username: string, password: string) => {
   try {
     db.run('INSERT INTO users (username, password) VALUES (?, ?)', [username, hashPassword(password)]);
     saveDB();
+    console.log('[DB] User registered and DB saved.');
     return true;
-  } catch (e) { return false; }
+  } catch (e) {
+    console.error('[DB] Error registering user:', e);
+    return false;
+  }
 };
 
 export const loginUser = (username: string, password: string) => {
@@ -401,9 +438,11 @@ export const loginUser = (username: string, password: string) => {
   if (stmt.step()) {
     const user = stmt.getAsObject();
     stmt.free();
+    console.log('[DB] User logged in:', user);
     return user;
   }
   stmt.free();
+  console.log('[DB] Login failed for user:', username);
   return null;
 };
 
@@ -411,5 +450,6 @@ export const closeDB = () => {
   if (db) {
     saveDB();
     db.close();
+    console.log('[DB] Database closed.');
   }
 };

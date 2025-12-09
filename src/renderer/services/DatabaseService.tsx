@@ -30,13 +30,14 @@ const fetchData = async (navigate: any) => {
     const userId = userStr ? JSON.parse(userStr) : null;
     if (!userId) {
       navigate(-1);
-      return;
+      return [];
     }
     const data = await window.electron.database.getTasks(userId);
     return data;
   } catch (error) {
-    console.error(error);
+    console.error('[DatabaseService] Failed to fetch tasks:', error);
     navigate(-1);
+    return [];
   }
 };
 
@@ -45,27 +46,30 @@ const createTask = async (task: any) => {
     const userStr = localStorage.getItem('userId');
     const userId = userStr ? JSON.parse(userStr) : null;
     if (!userId) throw new Error('User not logged in');
-    return await window.electron.database.createTask(task, userId);
+    const created = await window.electron.database.createTask(task, userId);
+    return created;
   } catch (error) {
-    console.error('Error creating task:', error);
+    console.error('[DatabaseService] Error creating task:', error);
     throw error;
   }
 };
 
 const updateTask = async (task: any) => {
   try {
-    return await window.electron.database.updateTask(task);
+    const updated = await window.electron.database.updateTask(task);
+    return updated;
   } catch (error) {
-    console.error('Error updating task:', error);
+    console.error('[DatabaseService] Error updating task:', error);
     throw error;
   }
 };
 
 const deleteTask = async (taskId: number) => {
   try {
-    return await window.electron.database.deleteTask(taskId);
+    const deleted = await window.electron.database.deleteTask(taskId);
+    return deleted;
   } catch (error) {
-    console.error('Error deleting task:', error);
+    console.error('[DatabaseService] Error deleting task:', error);
     throw error;
   }
 };
@@ -74,10 +78,13 @@ const fetchNotes = async () => {
   try {
     const userStr = localStorage.getItem('userId');
     const userId = userStr ? JSON.parse(userStr) : null;
-    if (!userId) return [];
-    return await window.electron.database.getNotes(userId);
+    if (!userId) {
+      return [];
+    }
+    const data = await window.electron.database.getNotes(userId);
+    return data;
   } catch (error) {
-    console.error('Error fetching notes:', error);
+    console.error('[DatabaseService] Error fetching notes:', error);
     return [];
   }
 };
@@ -87,36 +94,40 @@ const createNote = async (note: any) => {
     const userStr = localStorage.getItem('userId');
     const userId = userStr ? JSON.parse(userStr) : null;
     if (!userId) throw new Error('User not logged in');
-    return await window.electron.database.createNote(note, userId);
+    const created = await window.electron.database.createNote(note, userId);
+    return created;
   } catch (error) {
-    console.error('Error creating note:', error);
+    console.error('[DatabaseService] Error creating note:', error);
     throw error;
   }
 };
 
 const updateNote = async (note: any) => {
   try {
-    return await window.electron.database.updateNote(note);
+    const updated = await window.electron.database.updateNote(note);
+    return updated;
   } catch (error) {
-    console.error('Error updating note:', error);
+    console.error('[DatabaseService] Error updating note:', error);
     throw error;
   }
 };
 
 const deleteNote = async (noteId: number) => {
   try {
-    return await window.electron.database.deleteNote(noteId);
+    const deleted = await window.electron.database.deleteNote(noteId);
+    return deleted;
   } catch (error) {
-    console.error('Error deleting note:', error);
+    console.error('[DatabaseService] Error deleting note:', error);
     throw error;
   }
 };
 
 const register = async (username: string, password: string) => {
   try {
-    return await window.electron.database.register({ username, password });
+    const registered = await window.electron.database.register({ username, password });
+    return registered;
   } catch (error) {
-    console.error('Error registering:', error);
+    console.error('[DatabaseService] Error registering:', error);
     throw error;
   }
 };
@@ -125,19 +136,24 @@ const globalSearch = async (query: string) => {
   try {
     const userStr = localStorage.getItem('userId');
     const userId = userStr ? JSON.parse(userStr) : null;
-    if (!userId) return [];
-    return await window.electron.database.globalSearch(userId, query);
+    if (!userId) {
+      return [];
+    }
+    const results = await window.electron.database.globalSearch(userId, query);
+    return results;
   } catch (error) {
-    console.error('Error during global search:', error);
+    console.error('[DatabaseService] Error during global search:', error);
     return [];
   }
 };
 
 const logWorkSession = async (session: { taskId: number, startTime: string, endTime: string, duration: number }) => {
   try {
-    return await window.electron.database.logWorkSession(session);
-  } catch (error) {
-    console.error('Error logging work session:', error);
+    const logged = await window.electron.database.logWorkSession(session);
+    return logged;
+  }
+  catch (error) {
+    console.error('[DatabaseService] Error logging work session:', error);
     throw error;
   }
 };
@@ -146,10 +162,13 @@ const getDailyProductivity = async () => {
   try {
     const userStr = localStorage.getItem('userId');
     const userId = userStr ? JSON.parse(userStr) : null;
-    if (!userId) return [];
-    return await window.electron.database.getDailyProductivity(userId);
+    if (!userId) {
+      return [];
+    }
+    const data = await window.electron.database.getDailyProductivity(userId);
+    return data;
   } catch (error) {
-    console.error('Error fetching daily productivity:', error);
+    console.error('[DatabaseService] Error fetching daily productivity:', error);
     return [];
   }
 };
@@ -158,10 +177,23 @@ const getContributionData = async () => {
   try {
     const userStr = localStorage.getItem('userId');
     const userId = userStr ? JSON.parse(userStr) : null;
-    if (!userId) return [];
-    return await window.electron.database.getContributionData(userId);
+    if (!userId) {
+      return [];
+    }
+    const data = await window.electron.database.getContributionData(userId);
+    return data;
   } catch (error) {
-    console.error('Error fetching contribution data:', error);
+    console.error('[DatabaseService] Error fetching contribution data:', error);
+    return [];
+  }
+};
+
+const getHourlyProductivity = async () => {
+  try {
+    const data = await window.electron.database.getHourlyProductivity();
+    return data;
+  } catch (error) {
+    console.error('[DatabaseService] Error fetching hourly productivity:', error);
     return [];
   }
 };
@@ -182,4 +214,5 @@ export {
   logWorkSession,
   getDailyProductivity,
   getContributionData,
+  getHourlyProductivity,
 };

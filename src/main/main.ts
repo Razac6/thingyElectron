@@ -8,7 +8,7 @@ import MenuBuilder from './menu';
 import { resolveHtmlPath } from './util';
 import {
   initDB,
-  getTasks, createTask, updateTask, deleteTask, updateTasksOrder,
+  getTasks, createTask, updateTask, deleteTask, updateTasksOrder, // Use deleteTask directly
   getSprints, createSprint, updateSprintStatus,
   getNotes, createNote, updateNote, deleteNote,
   loginUser, registerUser,
@@ -126,7 +126,7 @@ ipcMain.handle('db:global-search', (event, userId, query) => globalSearch(userId
 ipcMain.handle('db:get-tasks', (event, userId) => getTasks(userId));
 ipcMain.handle('db:create-task', (event, task, userId) => createTask(task, userId));
 ipcMain.handle('db:update-task', (event, task) => updateTask(task));
-ipcMain.handle('db:delete-task', (event, taskId) => deleteTask(taskId));
+ipcMain.handle('db:delete-task', (event, taskId) => deleteTask(taskId)); // Use deleteTask directly
 ipcMain.handle('db:update-tasks-order', (event, taskIds) => updateTasksOrder(taskIds));
 ipcMain.handle('db:get-sprints', () => getSprints());
 ipcMain.handle('db:create-sprint', (event, sprint) => createSprint(sprint));

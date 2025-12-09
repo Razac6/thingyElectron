@@ -2,7 +2,6 @@ import Grid from '@mui/material/Grid';
 import { styled } from '@mui/material/styles';
 import Paper from '@mui/material/Paper';
 import {
-  CardContent,
   Typography,
   Box,
 } from '@mui/material';
@@ -10,31 +9,23 @@ import React from 'react';
 import { StatusEnum } from '../../enums/status.enum';
 import { useTimer } from '../context/TimerContext';
 import DailyProductivityBarChart from '../components/DailyProductivityBarChart';
-import ContributionGraph from '../components/ContributionGraph'; // Import the new component
+import ContributionGraph from '../components/ContributionGraph';
 
 function formatTime(ms: number): string {
   if (ms <= 0) return '0h 0m';
-  let seconds = Math.floor(ms / 1000);
-  let minutes = Math.floor(seconds / 60);
-  let hours = Math.floor(minutes / 60);
-  minutes %= 60;
+  // Use ceil for consistency with charts
+  let totalMinutes = Math.ceil(ms / (1000 * 60));
+  let hours = Math.floor(totalMinutes / 60);
+  let minutes = totalMinutes % 60;
   return `${hours}h ${minutes}m`;
 }
 
 export default function Dashboard() {
-  const { tasks, isLoading } = useTimer();
+  const { tasks, isLoading, totalSpendTimeToday } = useTimer();
 
   if (isLoading) {
     return <Typography>Loading...</Typography>;
   }
-
-  const workday = new Date().toLocaleDateString(); // Simple version for daily stats
-  const todaysTasks = tasks.filter((task) => task.updateStatusDate === workday);
-
-  const totalSpendTimeToday = todaysTasks.reduce(
-    (acc, task) => acc + (task.spendTime || 0),
-    0,
-  );
 
   const toDoTasksCount = tasks.filter(
     (task) => task.status === StatusEnum.TO_DO,
@@ -85,7 +76,7 @@ export default function Dashboard() {
         <Grid item xs={12} md={6}>
           <Item sx={{ height: 200 }}>
              <Typography variant="h5" gutterBottom>
-              Last 5 Days Activity
+              Last 7 Days Activity
             </Typography>
             <Box sx={{ height: '100%', width: '100%' }}>
               <DailyProductivityBarChart />

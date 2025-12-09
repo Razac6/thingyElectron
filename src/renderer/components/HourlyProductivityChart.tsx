@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useMemo } from 'react';
 import { Bar } from 'react-chartjs-2';
 import { useTheme } from '@mui/material';
+import { useTimer } from '../context/TimerContext';
 
 interface HourlyProductivityData {
   hour: number;
@@ -8,21 +9,20 @@ interface HourlyProductivityData {
 }
 
 function HourlyProductivityChart() {
-  const [chartData, setChartData] = useState<any>(null);
+  const { hourlyProductivity } = useTimer();
   const theme = useTheme();
 
-  useEffect(() => {
-    const fetchHourlyData = async () => {
-      const data: HourlyProductivityData[] = await window.electron.database.getHourlyProductivity();
-
+  const chartData = useMemo(() => {
       const labels = Array.from({ length: 24 }, (_, i) => `${i}:00`);
       const datasetData = new Array(24).fill(0);
 
-      data.forEach(item => {
-        datasetData[item.hour] = Math.round(item.totalDuration / (1000 * 60)); // Convert ms to minutes
+      hourlyProductivity.forEach((item: HourlyProductivityData) => {
+        if (item.hour >= 0 && item.hour < 24) {
+             datasetData[item.hour] = Math.round(item.totalDuration / (1000 * 60)); // Convert ms to minutes
+        }
       });
 
-      setChartData({
+      return {
         labels,
         datasets: [{
           label: 'Minutes Worked',
@@ -31,11 +31,8 @@ function HourlyProductivityChart() {
           borderColor: theme.palette.secondary.dark,
           borderWidth: 1,
         }],
-      });
-    };
-
-    fetchHourlyData();
-  }, [theme.palette.secondary.main, theme.palette.secondary.dark]);
+      };
+  }, [hourlyProductivity, theme.palette.secondary.main, theme.palette.secondary.dark]);
 
   const options = {
     responsive: true,
@@ -70,10 +67,6 @@ function HourlyProductivityChart() {
       },
     },
   };
-
-  if (!chartData) {
-    return <p>Loading productivity data...</p>;
-  }
 
   return <Bar data={chartData} options={options as any} />;
 }

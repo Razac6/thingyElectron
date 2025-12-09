@@ -56,13 +56,17 @@ function Timer({ startTimer, spendTime, estimate, context }: TimerProps) {
     }
   }, [startTimer, spendTime, estimate]);
 
-  let overtimeColor = 'inherit';
+  let textColor = 'inherit';
+  if (context === 'header') {
+    textColor = 'white'; // Always white in the header
+  }
   if (isOvertime) {
-    overtimeColor = context === 'header' ? 'white' : 'red';
+    textColor = 'red'; // Overtime is always red, regardless of context
   }
 
+
   return (
-    <div style={{ color: overtimeColor }}>
+    <div style={{ color: textColor }}>
       {isOvertime ? `+${formatTime(displaySeconds)}` : formatTime(displaySeconds)}
     </div>
   );
