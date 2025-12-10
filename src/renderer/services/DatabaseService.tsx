@@ -254,6 +254,16 @@ const getAllTags = async () => {
   }
 };
 
+const getSystemLogs = async (limit?: number) => {
+  try {
+    const data = await window.electron.database.getSystemLogs(limit);
+    return data;
+  } catch (error) {
+    console.error('[DatabaseService] Error fetching system logs:', error);
+    return [];
+  }
+};
+
 export {
   getToken,
   checkAuth,
@@ -276,4 +286,5 @@ export {
   getTagAnalytics,
   getTagByName,
   getAllTags,
+  getSystemLogs,
 };

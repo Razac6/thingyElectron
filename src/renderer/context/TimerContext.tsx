@@ -157,10 +157,27 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
 
     // Register listener (using the generic 'on' from preload)
     window.electron.ipcRenderer.on('activity:idle-detected', handleIdle);
+    
+    // Listener for notification action "Stop Timer"
+    const handleStopRequest = () => {
+        const currentTasks = tasksRef.current;
+        const activeTask = currentTasks.find(t => t.startTimer);
+        if (activeTask) {
+            stopTimer(activeTask.id);
+            
+            const userStr = localStorage.getItem('userId');
+            if (userStr) {
+                const userId = JSON.parse(userStr);
+                window.electron.rewardFatigueCompliance(userId);
+            }
+        }
+    };
+    window.electron.ipcRenderer.on('timer:stop-requested', handleStopRequest);
 
     // Cleanup (optional for singleton, but good practice if we had a working removeListener)
     return () => {
        // window.electron.ipcRenderer.removeListener('activity:idle-detected', handleIdle);
+       // window.electron.ipcRenderer.removeListener('timer:stop-requested', handleStopRequest);
     };
   }, []); // Mount once
 

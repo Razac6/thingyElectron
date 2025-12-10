@@ -21,6 +21,8 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SaveIcon from '@mui/icons-material/Save';
 import EditIcon from '@mui/icons-material/Edit';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import TimerIcon from '@mui/icons-material/Timer';
+import TimerOffIcon from '@mui/icons-material/TimerOff';
 import { useTimer } from '../../context/TimerContext';
 import { getSprints } from '../../services/SprintService';
 import { getAllTags } from '../../services/DatabaseService';
@@ -33,7 +35,7 @@ import TaskStats from '../../components/TaskStats'; // Import the new component
 function TaskDetail() {
   const { taskId } = useParams<{ taskId: string }>();
   const navigate = useNavigate();
-  const { tasks, updateTask } = useTimer();
+  const { tasks, updateTask, startTimer, stopTimer } = useTimer();
   const { addXp, checkForAchievements, triggerRewardAnimation } = useGamification();
 
   const [task, setTask] = useState<any>(null);
@@ -178,7 +180,18 @@ function TaskDetail() {
           <Typography variant="body1" paragraph sx={{ whiteSpace: 'pre-wrap' }}>{task.description || 'No description provided.'}</Typography>
           <TaskStats task={task} />
           <Divider sx={{ my: 2 }} />
-          <Grid container spacing={2} sx={{ mt: 2 }}>
+          <Grid container spacing={2} sx={{ mt: 2, alignItems: 'center' }}>
+            <Grid item>
+                {task.startTimer ? (
+                    <Button variant="contained" color="secondary" startIcon={<TimerOffIcon />} onClick={() => stopTimer(task.id)}>
+                        Stop Timer
+                    </Button>
+                ) : (
+                    <Button variant="contained" color="primary" startIcon={<TimerIcon />} onClick={() => startTimer(task.id)}>
+                        Start Timer
+                    </Button>
+                )}
+            </Grid>
             <Grid item><Chip label={`Type: ${task.type}`} /></Grid>
             <Grid item><Chip label={`Status: ${task.status}`} /></Grid>
             <Grid item><Chip label={`Priority: ${task.priority}`} /></Grid>

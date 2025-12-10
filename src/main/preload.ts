@@ -40,11 +40,10 @@ contextBridge.exposeInMainWorld('electron', {
     getHourlyProductivity: () => ipcRenderer.invoke('db:get-hourly-productivity'),
     getDailyProductivity: (userId: number) => ipcRenderer.invoke('db:get-daily-productivity', userId),
     getContributionData: (userId: number) => ipcRenderer.invoke('db:get-contribution-data', userId),
-    getProductivityInsights: (userId: number) => ipcRenderer.invoke('db:get-productivity-insights', userId),
-    getDailyChallenge: (userId: number) => ipcRenderer.invoke('db:get-daily-challenge', userId),
-    getTagAnalytics: (tagId: number) => ipcRenderer.invoke('db:get-tag-analytics', tagId),
     getTagByName: (name: string) => ipcRenderer.invoke('db:get-tag-by-name', name),
     getAllTags: () => ipcRenderer.invoke('db:get-all-tags'),
+    getSystemLogs: (limit?: number) => ipcRenderer.invoke('db:get-system-logs', limit),
+    getProductivityInsights: (userId: number) => ipcRenderer.invoke('db:get-productivity-insights', userId),
   },
   ipcRenderer: {
     on(channel: string, func: (...args: unknown[]) => void) {
@@ -59,4 +58,8 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.removeListener(channel, (event, ...args) => func(...args));
     },
   },
+  shell: {
+    openExternal: (url: string) => ipcRenderer.send('electron-shell-open-external', url),
+  },
+  rewardFatigueCompliance: (userId: number) => ipcRenderer.invoke('gamification:reward-fatigue-compliance', userId),
 });

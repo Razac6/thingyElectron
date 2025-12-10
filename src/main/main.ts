@@ -28,6 +28,8 @@ import {
   getTagByName,
   getTagAnalyticsWithNames,
   getAllTags,
+  getSystemLogs,
+  logSystemEvent,
 } from './db';
 import { ProductivityAnalyst, AnalysisResult } from './ProductivityAnalysis';
 
@@ -149,11 +151,21 @@ const updateTrayTitle = () => {
 
     // Notify if exceeded limit (and limit is reasonable > 10m)
     if (elapsedMinutes > limit && limit > 10) {
-      new Notification({
+      const notification = new Notification({
         title: '🧠 Brain Fatigue Detected',
         body: `You've passed your optimal session limit of ${limit}m. A 5m break increases subsequent efficiency by 40%.`,
         icon: getAssetPath('icon.png'),
-      }).show();
+        actions: [{ type: 'button', text: 'Stop Timer & Rest' }]
+      });
+      
+      notification.on('action', () => {
+        log.info('User clicked Stop Timer on Fatigue Notification');
+        if (mainWindow) {
+          mainWindow.webContents.send('timer:stop-requested');
+        }
+      });
+
+      notification.show();
       hasSentFatigueWarning = true; // Don't spam
     }
   }
@@ -277,10 +289,24 @@ ipcMain.handle('db:get-contribution-data', (event, userId) => getContributionDat
 ipcMain.handle('db:get-tag-analytics', (event, tagId) => getTagAnalytics(tagId));
 ipcMain.handle('db:get-tag-by-name', (event, name) => getTagByName(name));
 ipcMain.handle('db:get-all-tags', () => getAllTags());
+ipcMain.handle('db:get-system-logs', (event, limit) => getSystemLogs(limit));
 
 ipcMain.handle('db:get-productivity-insights', async (event, userId) => {
   refreshInsights(userId); // Ensure fresh data
   return cachedInsights;
+});
+
+ipcMain.handle('gamification:reward-fatigue-compliance', (event, userId) => {
+  const profile = getProfile(userId);
+  if (profile) {
+    updateProfile({ ...profile, xp: profile.xp + 15 });
+    logSystemEvent('Fatigue Model Validated: User accepted warning. (+15 XP)', 'LEARNING');
+    new Notification({
+       title: 'Mindful Rest Reward',
+       body: 'Good job listening to your body! +15 XP',
+       icon: getAssetPath('icon.png')
+    }).show();
+  }
 });
 
 // --- Tray IPC Handlers ---
@@ -337,6 +363,7 @@ setInterval(() => {
   // Only notify once per day
   if (lastPeakHourNotificationDate !== dateString) {
     if (cachedInsights.peakHours.includes(currentHour)) {
+      logSystemEvent(`Golden Hour Detected: It's ${currentHour}:00 - your peak productivity time.`, 'PRODUCTIVITY');
       new Notification({
         title: '🚀 Golden Hour',
         body: `It's ${currentHour}:00! Statistics show this is your most productive time of day. Focus on High Priority tasks.`,

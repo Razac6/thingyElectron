@@ -6,6 +6,7 @@ import List from './pages/list/List';
 import Notes from './pages/notes/Notes';
 import Statistics from './pages/statistics/Statistics';
 import Profile from './pages/profile/Profile';
+import SystemLogs from './pages/logs/SystemLogs';
 import SprintsPage from './pages/sprints/Sprints';
 import TaskDetail from './pages/task/TaskDetail';
 import { TimerProvider } from './context/TimerContext';
@@ -26,6 +27,7 @@ export default function App() {
                 <Route path="/notes" element={<Notes />} />
                 <Route path="/statistics" element={<Statistics />} />
                 <Route path="/profile" element={<Profile />} />
+                <Route path="/logs" element={<SystemLogs />} />
                 <Route path="/sprints" element={<SprintsPage />} />
                 <Route path="/task/:taskId" element={<TaskDetail />} />
                 <Route path="/" element={<Dashboard />} />

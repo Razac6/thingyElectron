@@ -52,6 +52,7 @@ export const initDB = async () => {
       FOREIGN KEY(tag_id) REFERENCES tags(id) ON DELETE CASCADE
     )
   `);
+  db.run(`CREATE TABLE IF NOT EXISTS system_logs (id INTEGER PRIMARY KEY, timestamp TEXT, event_type TEXT, message TEXT)`);
 
 
   try {
@@ -81,6 +82,26 @@ export const initDB = async () => {
   saveDB();
 };
 
+// --- System Logging ---
+export const logSystemEvent = (message: string, type: string = 'INFO') => {
+  if (!db) return;
+  const timestamp = new Date().toISOString();
+  db.run('INSERT INTO system_logs (timestamp, event_type, message) VALUES (?, ?, ?)', [timestamp, type, message]);
+  saveDB(); // Persist logs immediately
+};
+
+export const getSystemLogs = (limit: number = 50) => {
+  if (!db) return [];
+  const stmt = db.prepare('SELECT * FROM system_logs ORDER BY id DESC LIMIT ?');
+  const logs: any[] = [];
+  stmt.bind([limit]);
+  while (stmt.step()) {
+    logs.push(stmt.getAsObject());
+  }
+  stmt.free();
+  return logs;
+};
+
 // --- Analytics Engine ---
 export const getTagAnalytics = (tagId: number) => {
   if (!db) return null;
@@ -107,23 +128,39 @@ export const getTagAnalyticsWithNames = () => {
 
 const updateTagAnalytics = (tagId: number, duration: number) => {
   if (!db) return;
+  const safeDuration = Number(duration) || 0; // Ensure duration is a number
   const currentAnalytics: any = getTagAnalytics(tagId);
-  const n = currentAnalytics.completed_count + 1;
+  
+  // Fetch tag name for logging
+  const tagStmt = db.prepare('SELECT name FROM tags WHERE id = ?');
+  const tagResult = tagStmt.get([tagId]);
+  tagStmt.free();
+  const tagName = tagResult ? tagResult[0] : 'Unknown';
+
+  const currentCount = Number(currentAnalytics.completed_count) || 0;
+  const currentEma = Number(currentAnalytics.ema) || 0;
+  const currentVariance = Number(currentAnalytics.variance) || 0;
+
+  const n = currentCount + 1;
   const alpha = 2 / (n + 1); // Smoothing factor
 
-  const newEma = (duration * alpha) + (currentAnalytics.ema * (1 - alpha));
+  const newEma = (safeDuration * alpha) + (currentEma * (1 - alpha));
 
   // Welford's online algorithm for variance
-  const oldMean = currentAnalytics.ema;
-  const oldVariance = currentAnalytics.variance;
-  const newMean = oldMean + (duration - oldMean) / n;
-  const newVariance = ((n - 1) * oldVariance + (duration - oldMean) * (duration - newMean)) / n;
+  const oldMean = currentEma;
+  const oldVariance = currentVariance;
+  const newMean = oldMean + (safeDuration - oldMean) / n;
+  const newVariance = ((n - 1) * oldVariance + (safeDuration - oldMean) * (safeDuration - newMean)) / n;
   const newStdDev = Math.sqrt(newVariance);
 
   db.run(
     'INSERT OR REPLACE INTO tag_analytics (tag_id, ema, std_dev, variance, completed_count) VALUES (?, ?, ?, ?, ?)',
     [tagId, newEma, newStdDev, newVariance, n]
   );
+  
+  // Log the learning event
+  const hours = (newEma / (1000 * 60 * 60)).toFixed(2);
+  logSystemEvent(`Analyzed #${tagName}: Updated EMA to ${hours}h (Samples: ${n})`, 'LEARNING');
 };
 
 // --- Work Session Logging ---
@@ -421,9 +458,9 @@ export const getTasks = (userId: number) => {
 
 export const createTask = (task: any, userId: number) => {
   if (!db) throw new Error('DB not initialized');
-  const maxOrderResult = db.exec('SELECT MAX(displayOrder) FROM tasks');
-  const maxOrder = maxOrderResult[0]?.values[0][0] as number | null;
-  const newOrder = (maxOrder === null) ? 0 : maxOrder + 1;
+  const minOrderResult = db.exec('SELECT MIN(displayOrder) FROM tasks');
+  const minOrder = minOrderResult[0]?.values[0][0] as number | null;
+  const newOrder = (minOrder === null) ? 0 : minOrder - 1;
 
   const stmt = db.prepare(`INSERT INTO tasks (title, description, status, updateStatusDate, estimate, priority, link, createdAt, spendTime, startTimer, type, userId, sprintId, displayOrder) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   stmt.run([task.title, task.description, task.status, task.updateStatusDate, task.estimate, task.priority, task.link, task.createdAt, task.spendTime || 0, task.startTimer, task.type || 'TASK', userId, task.sprintId || null, newOrder]);
@@ -454,9 +491,14 @@ export const updateTask = (task: any) => {
   }
   db.run(`UPDATE tasks SET title = ?, description = ?, status = ?, updateStatusDate = ?, estimate = ?, priority = ?, link = ?, spendTime = ?, startTimer = ?, sprintId = ?, type = ? WHERE id = ?`, [task.title, task.description, task.status, task.updateStatusDate, task.estimate, task.priority, task.link, task.spendTime, task.startTimer, task.sprintId, task.type || 'TASK', task.id]);
 
-  if (oldStatus !== 'COMPLETED' && task.status === 'COMPLETED') {
+  if (oldStatus !== 'Completed' && task.status === 'Completed') {
     const tagIdsStmt = db.prepare('SELECT tagId FROM task_tags WHERE taskId = ?');
-    const tagIds = tagIdsStmt.all([task.id]).map((row: any) => row.tagId);
+    tagIdsStmt.bind([task.id]);
+    const tagIds: number[] = [];
+    while (tagIdsStmt.step()) {
+        const row = tagIdsStmt.getAsObject();
+        tagIds.push(row.tagId as number);
+    }
     tagIdsStmt.free();
 
     tagIds.forEach(tagId => {
@@ -526,6 +568,7 @@ export const getEarnedAchievements = (userId: number) => {
 export const grantAchievement = (userId: number, achievementId: string) => {
   if (!db) throw new Error('DB not initialized');
   db.run('INSERT OR IGNORE INTO user_achievements (userId, achievementId, earnedAt) VALUES (?, ?, ?)', [userId, achievementId, new Date().toISOString()]);
+  logSystemEvent(`Achievement Unlocked: ${achievementId}`, 'GAMIFICATION');
   saveDB();
   console.log('[DB] Achievement granted and DB saved.');
   return { userId, achievementId };
