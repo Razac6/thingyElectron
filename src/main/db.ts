@@ -42,6 +42,16 @@ export const initDB = async () => {
   db.run(`CREATE TABLE IF NOT EXISTS task_tags (taskId INTEGER, tagId INTEGER, PRIMARY KEY (taskId, tagId), FOREIGN KEY(taskId) REFERENCES tasks(id) ON DELETE CASCADE, FOREIGN KEY(tagId) REFERENCES tags(id) ON DELETE CASCADE)`);
   db.run(`CREATE TABLE IF NOT EXISTS work_sessions (id INTEGER PRIMARY KEY, taskId INTEGER, startTime TEXT, endTime TEXT, duration INTEGER, FOREIGN KEY(taskId) REFERENCES tasks(id) ON DELETE CASCADE)`);
   db.run(`CREATE TABLE IF NOT EXISTS daily_challenges (id INTEGER PRIMARY KEY, userId INTEGER, date TEXT, type TEXT, target INTEGER, progress INTEGER DEFAULT 0, description TEXT, xpReward INTEGER, status TEXT DEFAULT 'ACTIVE', FOREIGN KEY(userId) REFERENCES users(id))`);
+  db.run(`
+    CREATE TABLE IF NOT EXISTS tag_analytics (
+      tag_id INTEGER PRIMARY KEY,
+      ema REAL DEFAULT 0,
+      std_dev REAL DEFAULT 0,
+      variance REAL DEFAULT 0,
+      completed_count INTEGER DEFAULT 0,
+      FOREIGN KEY(tag_id) REFERENCES tags(id) ON DELETE CASCADE
+    )
+  `);
 
 
   try {
@@ -69,6 +79,51 @@ export const initDB = async () => {
   stmt.free();
 
   saveDB();
+};
+
+// --- Analytics Engine ---
+export const getTagAnalytics = (tagId: number) => {
+  if (!db) return null;
+  const stmt = db.prepare('SELECT * FROM tag_analytics WHERE tag_id = ?');
+  const result = stmt.get([tagId]);
+  stmt.free();
+  return result || { tag_id: tagId, ema: 0, std_dev: 0, variance: 0, completed_count: 0 };
+};
+
+export const getTagAnalyticsWithNames = () => {
+  if (!db) return [];
+  const stmt = db.prepare(`
+    SELECT t.id, t.name, ta.ema, ta.std_dev, ta.completed_count 
+    FROM tag_analytics ta 
+    JOIN tags t ON ta.tag_id = t.id
+  `);
+  const results: any[] = [];
+  while (stmt.step()) {
+    results.push(stmt.getAsObject());
+  }
+  stmt.free();
+  return results;
+};
+
+const updateTagAnalytics = (tagId: number, duration: number) => {
+  if (!db) return;
+  const currentAnalytics: any = getTagAnalytics(tagId);
+  const n = currentAnalytics.completed_count + 1;
+  const alpha = 2 / (n + 1); // Smoothing factor
+
+  const newEma = (duration * alpha) + (currentAnalytics.ema * (1 - alpha));
+
+  // Welford's online algorithm for variance
+  const oldMean = currentAnalytics.ema;
+  const oldVariance = currentAnalytics.variance;
+  const newMean = oldMean + (duration - oldMean) / n;
+  const newVariance = ((n - 1) * oldVariance + (duration - oldMean) * (duration - newMean)) / n;
+  const newStdDev = Math.sqrt(newVariance);
+
+  db.run(
+    'INSERT OR REPLACE INTO tag_analytics (tag_id, ema, std_dev, variance, completed_count) VALUES (?, ?, ?, ?, ?)',
+    [tagId, newEma, newStdDev, newVariance, n]
+  );
 };
 
 // --- Work Session Logging ---
@@ -177,13 +232,13 @@ export const getContributionData = (userId: number) => {
     results.push(stmt.getAsObject());
   }
   stmt.free();
-  console.log('[DB] getContributionData returned:', results);
+
   return results;
 };
 
 export const getDailyProductivity = (userId: number) => {
   if (!db) return [];
-  console.log('[DB] getDailyProductivity called for userId:', userId);
+
   // Use 'localtime' and '-4 hours' to align with "Productivity Day" (starts at 4 AM)
   const stmt = db.prepare(`
     SELECT
@@ -201,7 +256,7 @@ export const getDailyProductivity = (userId: number) => {
     results.push(stmt.getAsObject());
   }
   stmt.free();
-  console.log('[DB] getDailyProductivity returned:', results);
+
   return results;
 };
 
@@ -221,7 +276,7 @@ export const getHourlyProductivity = () => {
     results.push(stmt.getAsObject());
   }
   stmt.free();
-  console.log('[DB] getHourlyProductivity returned:', results);
+
   return results;
 };
 
@@ -234,7 +289,7 @@ export const getAverageTimeForTaskType = (taskType: string) => {
     result = stmt.get()[0] as number || 0;
   }
   stmt.free();
-  console.log('[DB] getAverageTimeForTaskType returned:', result);
+
   return result;
 };
 
@@ -259,7 +314,7 @@ export const getAverageSprintCapacity = () => {
     taskSumStmt.reset();
   });
   taskSumStmt.free();
-  console.log('[DB] getAverageSprintCapacity returned:', totalCapacity / sprintIds.length);
+
   return totalCapacity / sprintIds.length;
 };
 
@@ -291,7 +346,7 @@ export const globalSearch = (userId: number, query: string) => {
     results.push(noteStmt.getAsObject());
   }
   noteStmt.free();
-  console.log('[DB] globalSearch returned:', results);
+
   return results;
 };
 
@@ -299,9 +354,30 @@ export const deleteTask = (taskId: number) => {
   if (!db) throw new Error('DB not initialized');
   db.run('DELETE FROM tasks WHERE id = ?', [taskId]);
   saveDB();
-  console.log('[DB] Task deleted and DB saved.');
   return taskId;
 };
+
+export const getTagByName = (name: string) => {
+  if (!db) return null;
+  const stmt = db.prepare('SELECT id FROM tags WHERE name = ?');
+  const result = stmt.get([name]);
+  stmt.free();
+  return result;
+};
+
+export const getAllTags = () => {
+  if (!db) return [];
+  const stmt = db.prepare('SELECT name FROM tags ORDER BY name ASC');
+  const tags: string[] = [];
+  while (stmt.step()) {
+    tags.push(stmt.get()[0] as string);
+  }
+  stmt.free();
+  return tags;
+};
+
+// ... (rest of the file)
+
 
 // ... (rest of the file)
 export const updateTasksOrder = (taskIds: number[]) => {
@@ -339,7 +415,7 @@ export const getTasks = (userId: number) => {
     tasks.push(task);
   }
   stmt.free();
-  console.log('[DB] getTasks returned:', tasks);
+
   return tasks;
 };
 
@@ -354,6 +430,12 @@ export const createTask = (task: any, userId: number) => {
   stmt.free();
 
   const id = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
+  
+  // Set task tags if they exist
+  if (task.tags && Array.isArray(task.tags) && task.tags.length > 0) {
+    setTaskTags(id, task.tags);
+  }
+
   saveDB();
   console.log('[DB] Task created and DB saved.');
   return { ...task, id, userId, displayOrder: newOrder };
@@ -361,10 +443,27 @@ export const createTask = (task: any, userId: number) => {
 
 export const updateTask = (task: any) => {
   if (!db) throw new Error('DB not initialized');
+  
+  const oldStatusStmt = db.prepare('SELECT status FROM tasks WHERE id = ?');
+  const oldStatusResult = oldStatusStmt.get([task.id]);
+  oldStatusStmt.free();
+  const oldStatus = oldStatusResult ? oldStatusResult[0] : null;
+
   if (task.tags && Array.isArray(task.tags)) {
     setTaskTags(task.id, task.tags);
   }
   db.run(`UPDATE tasks SET title = ?, description = ?, status = ?, updateStatusDate = ?, estimate = ?, priority = ?, link = ?, spendTime = ?, startTimer = ?, sprintId = ?, type = ? WHERE id = ?`, [task.title, task.description, task.status, task.updateStatusDate, task.estimate, task.priority, task.link, task.spendTime, task.startTimer, task.sprintId, task.type || 'TASK', task.id]);
+
+  if (oldStatus !== 'COMPLETED' && task.status === 'COMPLETED') {
+    const tagIdsStmt = db.prepare('SELECT tagId FROM task_tags WHERE taskId = ?');
+    const tagIds = tagIdsStmt.all([task.id]).map((row: any) => row.tagId);
+    tagIdsStmt.free();
+
+    tagIds.forEach(tagId => {
+      updateTagAnalytics(tagId, task.spendTime);
+    });
+  }
+
   saveDB();
   console.log('[DB] Task updated and DB saved.');
   return task;
@@ -373,7 +472,9 @@ export const updateTask = (task: any) => {
 export const getOrCreateTag = (name: string): number => {
   if (!db) throw new Error('DB not initialized');
   db.run('INSERT OR IGNORE INTO tags (name) VALUES (?)', [name]);
-  const tag = db.getAsObject('SELECT id FROM tags WHERE name = ?', [name]);
+  const stmt = db.prepare('SELECT id FROM tags WHERE name = ?');
+  const tag = stmt.getAsObject([name]);
+  stmt.free();
   return tag.id as number;
 };
 
@@ -399,7 +500,7 @@ export const getProfile = (userId: number) => {
     profile = stmt.getAsObject();
   }
   stmt.free();
-  console.log('[DB] getProfile returned:', profile);
+
   return profile;
 };
 
@@ -418,7 +519,7 @@ export const getEarnedAchievements = (userId: number) => {
   const achievements: string[] = [];
   while (stmt.step()) { achievements.push(stmt.get()[0] as string); }
   stmt.free();
-  console.log('[DB] getEarnedAchievements returned:', achievements);
+
   return achievements;
 };
 
@@ -436,7 +537,7 @@ export const getSprints = () => {
   const sprints: any[] = [];
   while (stmt.step()) { sprints.push(stmt.getAsObject()); }
   stmt.free();
-  console.log('[DB] getSprints returned:', sprints);
+
   return sprints;
 };
 
@@ -464,7 +565,7 @@ export const getNotes = (userId: number) => {
   const notes: any[] = [];
   while (stmt.step()) { notes.push(stmt.getAsObject()); }
   stmt.free();
-  console.log('[DB] getNotes returned:', notes);
+
   return notes;
 };
 
@@ -513,11 +614,11 @@ export const loginUser = (username: string, password: string) => {
   if (stmt.step()) {
     const user = stmt.getAsObject();
     stmt.free();
-    console.log('[DB] User logged in:', user);
+  
     return user;
   }
   stmt.free();
-  console.log('[DB] Login failed for user:', username);
+
   return null;
 };
 

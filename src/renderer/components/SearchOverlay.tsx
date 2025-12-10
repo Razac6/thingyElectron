@@ -14,11 +14,12 @@ import {
   IconButton,
   InputAdornment,
   Chip,
+  Button,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import SearchIcon from '@mui/icons-material/Search';
 import { useTimer } from '../context/TimerContext';
-import { globalSearch } from '../services/DatabaseService';
+import { globalSearch, getTagAnalytics, getTagByName, getAllTags } from '../services/DatabaseService';
 import { Task } from '../../interfaces/task.interface';
 import { TaskTypeEnum } from '../../enums/TaskTypeEnum';
 import { StatusEnum } from '../../enums/status.enum';
@@ -46,20 +47,142 @@ interface SearchOverlayProps {
   onClose: () => void;
 }
 
+const TYPE_OPTIONS = ['BUG', 'FEATURE', 'DOC', 'TASK'];
+
 export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
   const [query, setQuery] = useState('');
-  const [isAdding, setIsAdding] = useState(true); // Default to "add mode"
+  const [isAdding, setIsAdding] = useState(true);
   const [results, setResults] = useState<SearchResult[]>([]);
-  const { createTask } = useTimer(); // Use createTask from context
+  const [suggestion, setSuggestion] = useState<string | null>(null);
+  
+  // Autocomplete State
+  const [availableTags, setAvailableTags] = useState<string[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState<'TYPE' | 'TAG' | null>(null);
+  const [suggestionList, setSuggestionList] = useState<string[]>([]);
+  const [suggestionIndex, setSuggestionIndex] = useState(0);
+
+  const { createTask } = useTimer();
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (open) {
-      // Focus the input when the modal opens
       setTimeout(() => inputRef.current?.focus(), 100);
+      const fetchTags = async () => {
+        const tags = await getAllTags();
+        setAvailableTags(tags || []);
+      };
+      fetchTags();
     }
   }, [open]);
+
+  // Handle Autocomplete Trigger
+  useEffect(() => {
+    if (!isAdding) {
+      setShowSuggestions(null);
+      return;
+    }
+
+    const lastChar = query.slice(-1);
+    const words = query.split(' ');
+    const currentWord = words[words.length - 1];
+
+    if (currentWord.startsWith('@')) {
+      const filter = currentWord.substring(1).toUpperCase();
+      const filtered = TYPE_OPTIONS.filter(t => t.startsWith(filter));
+      // Always show if started typing @, even if no match (though types are fixed)
+      if (filtered.length > 0) {
+        setSuggestionList(filtered);
+        setShowSuggestions('TYPE');
+        setSuggestionIndex(0);
+      } else {
+        setShowSuggestions(null);
+      }
+    } else if (currentWord.includes('#')) {
+      // Robust detection for # inside word or at start
+      const parts = currentWord.split('#');
+      const tagPart = parts[parts.length - 1]; // Get everything after the last #
+      const filter = tagPart.toLowerCase();
+      
+      const filtered = availableTags.filter(t => t.toLowerCase().startsWith(filter));
+      
+      // We show suggestions if there are matches. 
+      // If there are NO matches, we DON'T show the dropdown, 
+      // but the user can still type the new tag and it will be parsed by handleQuickAdd.
+      if (filtered.length > 0) {
+        setSuggestionList(filtered);
+        setShowSuggestions('TAG');
+        setSuggestionIndex(0);
+      } else {
+        setShowSuggestions(null);
+      }
+    } else {
+      setShowSuggestions(null);
+    }
+  }, [query, isAdding, availableTags]);
+
+  const handleApplySuggestion = (value: string) => {
+    // Split the query by space to find the current word
+    const words = query.split(' ');
+    const lastWord = words[words.length - 1];
+
+    let newLastWord = '';
+    if (showSuggestions === 'TAG') {
+      const lastHashIndex = lastWord.lastIndexOf('#');
+      if (lastHashIndex !== -1) {
+        newLastWord = lastWord.substring(0, lastHashIndex + 1) + value;
+      } else {
+        // Fallback, though this state should ideally not be reached if showSuggestions is 'TAG'
+        newLastWord = '#' + value; 
+      }
+    } else if (showSuggestions === 'TYPE') {
+      const lastAtIndex = lastWord.lastIndexOf('@');
+      if (lastAtIndex !== -1) {
+        newLastWord = lastWord.substring(0, lastAtIndex + 1) + value;
+      } else {
+        // Fallback, though this state should ideally not be reached if showSuggestions is 'TYPE'
+        newLastWord = '@' + value;
+      }
+    }
+
+    // Replace the last word in the words array with the newLastWord
+    words[words.length - 1] = newLastWord;
+    
+    // Join all words back and add a space at the end for continuous typing
+    setQuery(words.join(' ') + ' ');
+    setShowSuggestions(null);
+    inputRef.current?.focus();
+  };
+
+  useEffect(() => {
+    const handleAnalytics = async () => {
+      if (!isAdding || !query.includes('#')) {
+        setSuggestion(null);
+        return;
+      }
+      const tagRegex = /#(\w+)/g;
+      const matches = query.match(tagRegex);
+      if (matches) {
+        const lastTag = matches[matches.length - 1].substring(1);
+        const tag: any = await getTagByName(lastTag);
+        if (tag && tag.id) {
+          const analytics: any = await getTagAnalytics(tag.id);
+          if (analytics && analytics.completed_count > 0) {
+            const hours = (analytics.ema / (1000 * 60 * 60)).toFixed(1);
+            const stdDevHours = (analytics.std_dev / (1000 * 60 * 60)).toFixed(1);
+            setSuggestion(`Avg time for #${lastTag}: ~${hours}h (± ${stdDevHours}h)`);
+          } else {
+            setSuggestion(`No analytics for #${lastTag} yet. Complete some tasks with this tag!`);
+          }
+        } else {
+          setSuggestion(null);
+        }
+      }
+    };
+
+    const debounce = setTimeout(handleAnalytics, 500);
+    return () => clearTimeout(debounce);
+  }, [query, isAdding]);
 
   useEffect(() => {
     if (!query || isAdding) {
@@ -88,29 +211,51 @@ export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
   const handleQuickAdd = async () => {
     if (!query) return;
 
-    let title = query;
+    let mutableTitle = query; // Use a mutable variable for progressive cleaning
     let type = TaskTypeEnum.TASK;
     let estimate = 1;
+    let tags: string[] = [];
 
-    const typeRegex = /\s#(\w+)\b/;
-    const typeMatch = title.match(typeRegex);
-    if (typeMatch && typeMatch[1]) {
-      const tag = typeMatch[1].toUpperCase();
-      if (Object.values(TaskTypeEnum).includes(tag as TaskTypeEnum)) {
-        type = tag as TaskTypeEnum;
-        title = title.replace(typeRegex, '').trim();
-      }
+    // 1. Parse Type (@bug, @feature, @doc, @task)
+    const typeMatch = mutableTitle.match(/@(bug|feature|doc|task)/i);
+    if (typeMatch) {
+      const typeStr = typeMatch[1].toUpperCase();
+      if (typeStr === 'BUG') type = TaskTypeEnum.BUG;
+      else if (typeStr === 'FEATURE') type = TaskTypeEnum.FEATURE;
+      else if (typeStr === 'DOC') type = TaskTypeEnum.DOC;
+      else if (typeStr === 'TASK') type = TaskTypeEnum.TASK;
+      
+      mutableTitle = mutableTitle.replace(typeMatch[0], '').trim();
     }
 
-    const timeRegex = /\s(\d+(\.\d+)?)[hH]$/;
-    const timeMatch = title.match(timeRegex);
-    if (timeMatch && timeMatch[1]) {
-      estimate = parseFloat(timeMatch[1]);
-      title = title.replace(timeRegex, '').trim();
+    // 2. Parse Estimate (e.g., 2h, 0.5h, 30m)
+    const timeMatch = mutableTitle.match(/\b(\d+(\.\d+)?)(h|m)\b/i);
+    if (timeMatch) {
+      const value = parseFloat(timeMatch[1]);
+      const unit = timeMatch[3].toLowerCase();
+      if (unit === 'h') estimate = value;
+      else if (unit === 'm') estimate = parseFloat((value / 60).toFixed(2));
+      
+      mutableTitle = mutableTitle.replace(timeMatch[0], '').trim();
     }
+
+    // 3. Parse Tags (#tag) for the DB array
+    const tagMatches = mutableTitle.matchAll(/(?:\s|^)#([\w-]+)(?=\s|$)/g);
+    let tempTags: string[] = [];
+    for (const match of tagMatches) {
+        tempTags.push(match[1]);
+    }
+    tags = [...new Set(tempTags)]; // Remove duplicates
+    
+    // Clean mutableTitle from extracted tags for the final title
+    for (const tag of tags) {
+        mutableTitle = mutableTitle.replace(new RegExp(`\\s?#${tag}\\b`, 'g'), '').trim();
+    }
+    const finalTitle = mutableTitle.trim();
+
 
     const newTask: Partial<Task> = {
-      title,
+      title: finalTitle,
       description: '',
       status: StatusEnum.TO_DO,
       updateStatusDate: new Date().toLocaleDateString(),
@@ -121,21 +266,44 @@ export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
       spendTime: 0,
       startTimer: null,
       type,
-      tags: [],
+      tags: tags, // Pass extracted tags to DB
     };
 
     try {
-      // Use the context's createTask to ensure the UI updates
-      await createTask(newTask);
+      const createdTask = await createTask(newTask);
       onClose();
       setQuery('');
-      // No need to navigate, the task list will update automatically
+      if (createdTask && createdTask.id) {
+        navigate(`/task/${createdTask.id}`);
+      }
     } catch (error) {
       console.error('Failed to quick-add task', error);
     }
   };
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (showSuggestions && suggestionList.length > 0) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setSuggestionIndex((prev) => (prev + 1) % suggestionList.length);
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setSuggestionIndex((prev) => (prev - 1 + suggestionList.length) % suggestionList.length);
+        return;
+      }
+      if (event.key === 'Enter' || event.key === 'Tab') {
+        event.preventDefault();
+        handleApplySuggestion(suggestionList[suggestionIndex]);
+        return;
+      }
+      if (event.key === 'Escape') {
+         setShowSuggestions(null);
+         return;
+      }
+    }
+
     if (event.key === 'Enter') {
       if (isAdding) {
         handleQuickAdd();
@@ -146,7 +314,7 @@ export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
   };
 
   const placeholder = isAdding
-    ? "Add a new task... e.g., 'Fix login 3.5h #bug'"
+    ? "Add task: 'Fix login @bug #backend 2h'"
     : 'Search tasks and notes...';
 
   return (
@@ -155,6 +323,7 @@ export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
       onClose={() => {
         onClose();
         setQuery('');
+        setSuggestion(null);
       }}
       sx={{ backdropFilter: 'blur(4px)', backgroundColor: 'rgba(0,0,0,0.5)' }}
     >
@@ -188,6 +357,32 @@ export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
             ),
           }}
         />
+        
+        {/* Suggestion Popover UI */}
+        {showSuggestions && suggestionList.length > 0 && (
+          <Paper elevation={3} sx={{ mt: 1, maxHeight: 200, overflow: 'auto' }}>
+            <List dense>
+              {suggestionList.map((item, index) => (
+                <ListItemButton 
+                  key={item} 
+                  selected={index === suggestionIndex}
+                  onClick={() => handleApplySuggestion(item)}
+                >
+                   <ListItemText primary={showSuggestions === 'TYPE' ? `@${item}` : `#${item}`} />
+                   {index === suggestionIndex && <Typography variant="caption" color="text.secondary">↵ Enter</Typography>}
+                </ListItemButton>
+              ))}
+            </List>
+          </Paper>
+        )}
+
+        {suggestion && !showSuggestions && (
+          <Box sx={{ mt: 1 }}>
+            <Typography variant="caption" color="text.secondary">
+              {suggestion}
+            </Typography>
+          </Box>
+        )}
         {!isAdding && query && (
           <List>
             {results.length > 0 ? (

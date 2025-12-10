@@ -23,6 +23,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { useTimer } from '../../context/TimerContext';
 import { getSprints } from '../../services/SprintService';
+import { getAllTags } from '../../services/DatabaseService';
 import { StatusEnum } from '../../../enums/status.enum';
 import { PriorityEnum } from '../../../enums/priority.enum';
 import { TaskTypeEnum } from '../../../enums/TaskTypeEnum';
@@ -37,23 +38,43 @@ function TaskDetail() {
 
   const [task, setTask] = useState<any>(null);
   const [sprints, setSprints] = useState<any[]>([]);
+  const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
 
   useEffect(() => {
-    const taskIdNum = Number(taskId);
-    const foundTask = tasks.find(t => t.id === taskIdNum);
-    if (foundTask) {
-      setTask({ ...foundTask, tags: foundTask.tags || [], type: foundTask.type || TaskTypeEnum.TASK });
-    }
+    const fetchAndSetTask = async () => {
+      setIsLoading(true); // Start loading
 
-    const fetchSprints = async () => {
+      const taskIdNum = Number(taskId);
+      let currentTask: Task | null = null;
+
+      // Try to find task in context first
+      const foundTaskInContext = tasks.find(t => t.id === taskIdNum);
+      if (foundTaskInContext) {
+        currentTask = foundTaskInContext;
+      } else {
+        // If not found in context, fetch directly from DB
+        const fetchedTaskFromDb = await window.electron.db.getTask(taskIdNum);
+        currentTask = fetchedTaskFromDb;
+      }
+      
+      if (currentTask) {
+        setTask({ ...currentTask, tags: currentTask.tags || [], type: currentTask.type || TaskTypeEnum.TASK });
+      } else {
+        setTask(null); // Task not found
+      }
+
       const sprintsData = await getSprints();
       setSprints(sprintsData);
-    };
 
-    fetchSprints();
-    setIsLoading(false);
+      const allAvailableTags = await getAllTags();
+      setAvailableTags(allAvailableTags || []);
+
+      setIsLoading(false); // End loading after all data is fetched
+    };
+    
+    fetchAndSetTask();
   }, [taskId, tasks]);
 
   const handleSave = async () => {
@@ -80,7 +101,11 @@ function TaskDetail() {
   const handleLinkClick = (e: React.MouseEvent) => {
     e.preventDefault();
     if (task?.link) {
-      window.electron.shell.openExternal(task.link);
+      let url = task.link;
+      if (!/^https?:\/\//i.test(url)) {
+        url = 'https://' + url;
+      }
+      window.electron.shell.openExternal(url);
     }
   };
 
@@ -123,8 +148,21 @@ function TaskDetail() {
           <Grid item xs={12}><TextField label="Title" fullWidth value={task.title} onChange={(e) => setTask({ ...task, title: e.target.value })} /></Grid>
           <Grid item xs={12}><TextField label="Description" fullWidth multiline rows={4} value={task.description} onChange={(e) => setTask({ ...task, description: e.target.value })} /></Grid>
           <Grid item xs={12}><TextField label="URL / Link" fullWidth value={task.link || ''} onChange={(e) => setTask({ ...task, link: e.target.value })} /></Grid>
-          <Grid item xs={12}><Autocomplete multiple freeSolo options={[]} value={task.tags} onChange={(event, newValue) => setTask({ ...task, tags: newValue })} renderTags={(value, getTagProps) => value.map((option, index) => (<Chip variant="outlined" label={option} {...getTagProps({ index })} />))} renderInput={(params) => (<TextField {...params} variant="outlined" label="Tags" placeholder="Add tags" />)} /></Grid>
-          <Grid item xs={12} md={6}><FormControl fullWidth><InputLabel>Type</InputLabel><Select value={task.type} label="Type" onChange={(e) => setTask({ ...task, type: e.target.value as TaskTypeEnum })}><MenuItem value={TaskTypeEnum.TASK}>Task</MenuItem><MenuItem value={TaskTypeEnum.BUG}>Bug</MenuItem><MenuItem value={TaskTypeEnum.FEATURE}>Feature</MenuItem><MenuItem value={TaskTypeEnum.DOC}>Doc</MenuItem></Select></FormControl></Grid>
+          <Grid item xs={12}><Autocomplete multiple freeSolo options={availableTags} value={task.tags} onChange={(event, newValue) => setTask({ ...task, tags: newValue })} renderTags={(value, getTagProps) => value.map((option, index) => (<Chip variant="outlined" label={option} {...getTagProps({ index })} />))} renderInput={(params) => (<TextField {...params} variant="outlined" label="Tags" placeholder="Add tags" />)} /></Grid>
+          <Grid item xs={12} md={6}>
+            <Autocomplete
+                fullWidth
+                options={Object.values(TaskTypeEnum)}
+                value={task.type}
+                onChange={(event, newValue) => {
+                  if (newValue) {
+                    setTask({ ...task, type: newValue as TaskTypeEnum });
+                  }
+                }}
+                renderInput={(params) => <TextField {...params} label="Type" />}
+                disableClearable
+             />
+          </Grid>
           <Grid item xs={12} md={6}><FormControl fullWidth><InputLabel>Status</InputLabel><Select value={task.status} label="Status" onChange={(e) => setTask({ ...task, status: e.target.value as StatusEnum })}><MenuItem value={StatusEnum.TO_DO}>To Do</MenuItem><MenuItem value={StatusEnum.IN_PROGRESS}>In Progress</MenuItem><MenuItem value={StatusEnum.IN_REVIEW}>In Review</MenuItem><MenuItem value={StatusEnum.COMPLETED}>Completed</MenuItem></Select></FormControl></Grid>
           <Grid item xs={12} md={6}><FormControl fullWidth><InputLabel>Priority</InputLabel><Select value={task.priority} label="Priority" onChange={(e) => setTask({ ...task, priority: e.target.value as PriorityEnum })}><MenuItem value={PriorityEnum.LOW}>Low</MenuItem><MenuItem value={PriorityEnum.MEDIUM}>Medium</MenuItem><MenuItem value={PriorityEnum.HIGH}>High</MenuItem></Select></FormControl></Grid>
           <Grid item xs={12} md={6}><FormControl fullWidth><InputLabel>Sprint</InputLabel><Select value={task.sprintId || ''} label="Sprint" onChange={(e) => setTask({ ...task, sprintId: e.target.value === '' ? null : e.target.value })}><MenuItem value=""><em>Backlog</em></MenuItem>{sprints.map(sprint => (<MenuItem key={sprint.id} value={sprint.id}>{sprint.name}</MenuItem>))}</Select></FormControl></Grid>

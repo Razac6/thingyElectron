@@ -24,6 +24,10 @@ import {
   getDailyChallenge,
   createDailyChallenge,
   updateDailyChallengeProgress,
+  getTagAnalytics,
+  getTagByName,
+  getTagAnalyticsWithNames,
+  getAllTags,
 } from './db';
 import { ProductivityAnalyst, AnalysisResult } from './ProductivityAnalysis';
 
@@ -59,12 +63,19 @@ const refreshInsights = (userId: number) => {
   try {
     const recentSessions = getRecentWorkSessions(userId, 30);
     const trendData = getLast14DaysProductivity(userId);
+    const tagData = getTagAnalyticsWithNames();
+    
+    // Create a map for the analysis
+    const tagMap = new Map<number, string>();
+    tagData.forEach((t: any) => tagMap.set(t.id, t.name));
+
     cachedInsights = {
       peakHours: ProductivityAnalyst.identifyPeakHours(recentSessions).peakHours,
       peakHourRange: ProductivityAnalyst.identifyPeakHours(recentSessions).formattedRange,
       fatigueProfile: ProductivityAnalyst.analyzeFatigue(recentSessions),
       trend: ProductivityAnalyst.analyzeTrend(trendData),
       focusScore: ProductivityAnalyst.analyzeFocusQuality(recentSessions),
+      tagConsistency: ProductivityAnalyst.analyzeTagConsistency(tagData, tagMap),
     };
     log.info('Smart Insights Refreshed:', cachedInsights);
 
@@ -190,7 +201,7 @@ ipcMain.handle('db:log-work-session', async (event, session) => {
   // Retrieve userId from the task to identify the user
   // This is a bit roundabout but necessary if session doesn't have userId
   // We can pass userId in session object from frontend? Yes, let's assume we will add userId to session log payload from frontend.
-  // BUT the interface in db.ts for logWorkSession is specific. 
+  // BUT the interface in db.ts for logWorkSession is specific.
   // Let's just fetch the challenge for the user involved.
   // Optimization: activeTaskInfo has userId if we add it.
 
@@ -198,10 +209,10 @@ ipcMain.handle('db:log-work-session', async (event, session) => {
      const userId = activeTaskInfo.userId;
      const today = new Date().toISOString().split('T')[0];
      const challenge: any = getDailyChallenge(userId, today);
-     
+
      if (challenge && challenge.status === 'ACTIVE') {
        let newProgress = challenge.progress;
-       
+
        if (challenge.type === 'TOTAL_DURATION') {
          // Add duration (ms) converted to minutes
          newProgress += Math.round(session.duration / (1000 * 60));
@@ -211,10 +222,10 @@ ipcMain.handle('db:log-work-session', async (event, session) => {
             newProgress += Math.round(durationMin);
          }
        }
-       
+
        const status = newProgress >= challenge.target ? 'COMPLETED' : 'ACTIVE';
        updateDailyChallengeProgress(challenge.id, newProgress, status);
-       
+
        if (status === 'COMPLETED') {
          // Grant XP
          // grantAchievement(userId, 'DAILY_CHALLENGE_COMPLETED'); // Optional
@@ -263,6 +274,9 @@ ipcMain.handle('db:get-average-sprint-capacity', () => getAverageSprintCapacity(
 ipcMain.handle('db:get-hourly-productivity', () => getHourlyProductivity());
 ipcMain.handle('db:get-daily-productivity', (event, userId) => getDailyProductivity(userId));
 ipcMain.handle('db:get-contribution-data', (event, userId) => getContributionData(userId));
+ipcMain.handle('db:get-tag-analytics', (event, tagId) => getTagAnalytics(tagId));
+ipcMain.handle('db:get-tag-by-name', (event, name) => getTagByName(name));
+ipcMain.handle('db:get-all-tags', () => getAllTags());
 
 ipcMain.handle('db:get-productivity-insights', async (event, userId) => {
   refreshInsights(userId); // Ensure fresh data
@@ -343,7 +357,7 @@ setInterval(() => {
       if (mainWindow) {
         mainWindow.webContents.send('activity:idle-detected');
       }
-      
+
       // Optionally notify immediately here, but better to let Renderer handle the stop logic
       // so it updates the UI state correctly.
     }

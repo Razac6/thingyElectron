@@ -20,6 +20,10 @@ export interface AnalysisResult {
     description: string;
   };
   focusScore: number; // 0-100%
+  tagConsistency: {
+    consistent: string[];
+    volatile: string[];
+  };
 }
 
 export interface ChallengeConfig {
@@ -224,5 +228,40 @@ export class ProductivityAnalyst {
     }
 
     return { slope, direction, description };
+  }
+
+  /**
+   * Algorithm 5: Tag Consistency Analysis
+   * Uses Standard Deviation (from Welford's algorithm in DB) to identify consistent vs volatile tasks.
+   * Low CV (Coefficient of Variation) = Consistent.
+   * High CV = Volatile.
+   */
+  static analyzeTagConsistency(tagAnalytics: any[], tagsMap: Map<number, string>): { consistent: string[], volatile: string[] } {
+    const consistent: string[] = [];
+    const volatile: string[] = [];
+
+    tagAnalytics.forEach(stat => {
+      // Filter out tags with insufficient data
+      if (stat.completed_count < 3 || stat.ema < (1000 * 60 * 5)) return; // Ignore < 5 min avg
+
+      // Coefficient of Variation (CV) = StdDev / Mean
+      // This normalizes volatility regardless of task length (e.g. 1h vs 10m tasks)
+      const cv = stat.std_dev / stat.ema;
+      const tagName = tagsMap.get(stat.tag_id) || `Tag ${stat.tag_id}`;
+
+      // Benchmarks:
+      // CV < 0.2 (20% variance) is very consistent
+      // CV > 0.5 (50% variance) is highly volatile
+      if (cv < 0.25) {
+        consistent.push(tagName);
+      } else if (cv > 0.6) {
+        volatile.push(tagName);
+      }
+    });
+
+    return { 
+      consistent: consistent.slice(0, 3), // Top 3
+      volatile: volatile.slice(0, 3) 
+    };
   }
 }

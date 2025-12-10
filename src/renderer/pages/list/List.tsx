@@ -23,6 +23,8 @@ import {
   ListItemIcon,
   ListItemText,
   Divider,
+  Alert,
+  Autocomplete,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
@@ -39,11 +41,11 @@ import { StatusEnum } from '../../../enums/status.enum';
 import { PriorityEnum } from '../../../enums/priority.enum';
 import { TaskTypeEnum } from '../../../enums/TaskTypeEnum';
 import Timer from '../../components/Timer';
-import { createTask, deleteTask as deleteTaskService } from '../../services/DatabaseService';
 import { getSprints } from '../../services/SprintService';
 import { useTimer } from '../../context/TimerContext';
 import { useGamification } from '../../context/GamificationContext';
 import { Task } from '../../../interfaces/task.interface';
+import { getAllTags } from '../../services/DatabaseService';
 
 const getPriorityColor = (priority: PriorityEnum) => {
   switch (priority) {
@@ -56,7 +58,7 @@ const getPriorityColor = (priority: PriorityEnum) => {
 
 function List() {
   const navigate = useNavigate();
-  const { tasks, setTasks, startTimer, stopTimer, updateTask } = useTimer();
+  const { tasks, setTasks, startTimer, stopTimer, updateTask, createTask, deleteTask } = useTimer();
   const { addXp, checkForAchievements, triggerRewardAnimation } = useGamification();
   const [sprints, setSprints] = useState<any[]>([]);
   const [openDialog, setOpenDialog] = useState(false);
@@ -76,13 +78,19 @@ function List() {
   const [filterType, setFilterType] = useState('all');
   const [isColumnSortActive, setIsColumnSortActive] = useState(false);
   const [editingStatusId, setEditingStatusId] = useState<number | null>(null);
+  const [availableTags, setAvailableTags] = useState<string[]>([]);
 
   useEffect(() => {
     const fetchSprints = async () => {
       const sprintsData = await getSprints();
       setSprints(sprintsData);
     };
+    const fetchTags = async () => {
+      const tags = await getAllTags();
+      setAvailableTags(tags || []);
+    };
     fetchSprints();
+    fetchTags();
   }, []);
 
   const anyTimerRunning = tasks.some((task) => task.startTimer !== null);
@@ -101,6 +109,10 @@ function List() {
       processedTasks = processedTasks.filter(task => task.status !== StatusEnum.COMPLETED);
     }
     return processedTasks;
+  }, [tasks, showCompletedTasks, filterSprint, filterType]);
+
+  useEffect(() => {
+    // Force re-filtering when dependencies change
   }, [tasks, showCompletedTasks, filterSprint, filterType]);
 
   const handleMoveTask = async (taskId: number, direction: 'up' | 'down' | 'top' | 'bottom') => {
@@ -138,8 +150,7 @@ function List() {
     }
     const taskToCreate: Partial<Task> = { ...newTask, createdAt: new Date().toLocaleDateString(), updateStatusDate: new Date().toLocaleDateString(), spendTime: 0, startTimer: null };
     try {
-      const createdTask = await createTask(taskToCreate, 1);
-      setTasks((prev) => [...prev, createdTask]);
+      await createTask(taskToCreate);
       setNewTask({ title: '', description: '', status: StatusEnum.TO_DO, priority: PriorityEnum.MEDIUM, estimate: 1, link: '', type: TaskTypeEnum.TASK });
       setOpenDialog(false);
     } catch (error) {
@@ -165,10 +176,9 @@ function List() {
     }
   };
 
-  const deleteTask = async (id: number) => {
+  const handleDeleteTask = async (id: number) => {
     try {
-      await deleteTaskService(id);
-      setTasks((prev) => prev.filter((task) => task.id !== id));
+      await deleteTask(id);
     } catch (error) {
       console.error('Failed to delete task', error);
     }
@@ -359,12 +369,112 @@ function List() {
           <ListItemText>Move to Bottom</ListItemText>
         </MenuItem>
         <Divider />
-        <MenuItem onClick={() => deleteTask(currentMenuTaskId!)}>
+        <MenuItem onClick={() => handleDeleteTask(currentMenuTaskId!)}>
           <ListItemIcon><DeleteIcon fontSize="small" color="error" /></ListItemIcon>
           <ListItemText>Delete</ListItemText>
         </MenuItem>
       </Menu>
-      {/* ... Dialogs and SpeedDial ... */}
+      
+      <SpeedDial
+        ariaLabel="Task Actions"
+        sx={{ position: 'absolute', bottom: 16, right: 16 }}
+        icon={<SpeedDialIcon />}
+        onClose={() => {}}
+        onOpen={() => {}}
+        direction="up"
+      >
+        <SpeedDialAction
+          key="add"
+          icon={<AddIcon />}
+          tooltipTitle="Add New Task"
+          onClick={() => setOpenDialog(true)}
+        />
+        <SpeedDialAction
+          key="toggle-completed"
+          icon={showCompletedTasks ? <VisibilityOffIcon /> : <VisibilityIcon />}
+          tooltipTitle={showCompletedTasks ? 'Hide Completed' : 'Show Completed'}
+          onClick={() => setShowCompletedTasks(!showCompletedTasks)}
+        />
+      </SpeedDial>
+
+      <Dialog open={openDialog} onClose={() => setOpenDialog(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Add New Task</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Title"
+            fullWidth
+            variant="standard"
+            value={newTask.title}
+            onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
+          />
+          <TextField
+            margin="dense"
+            label="Description"
+            fullWidth
+            variant="standard"
+            multiline
+            rows={3}
+            value={newTask.description}
+            onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
+          />
+          <Box sx={{ mt: 2, display: 'flex', gap: 2 }}>
+             <FormControl fullWidth>
+                <InputLabel>Priority</InputLabel>
+                <Select
+                  value={newTask.priority}
+                  label="Priority"
+                  onChange={(e) => setNewTask({ ...newTask, priority: e.target.value as PriorityEnum })}
+                >
+                  <MenuItem value={PriorityEnum.LOW}>Low</MenuItem>
+                  <MenuItem value={PriorityEnum.MEDIUM}>Medium</MenuItem>
+                  <MenuItem value={PriorityEnum.HIGH}>High</MenuItem>
+                </Select>
+             </FormControl>
+             <TextField
+               label="Estimate (h)"
+               type="number"
+               fullWidth
+               value={newTask.estimate}
+               onChange={(e) => setNewTask({ ...newTask, estimate: Number(e.target.value) })}
+             />
+             <Autocomplete
+                fullWidth
+                options={Object.values(TaskTypeEnum)}
+                value={newTask.type}
+                onChange={(event, newValue) => {
+                  if (newValue) {
+                    setNewTask({ ...newTask, type: newValue as TaskTypeEnum });
+                  }
+                }}
+                renderInput={(params) => <TextField {...params} label="Type" />}
+                disableClearable
+             />
+          </Box>
+          <Box sx={{ mt: 2 }}>
+            <Autocomplete
+              multiple
+              freeSolo
+              options={availableTags}
+              value={newTask.tags || []}
+              onChange={(event, newValue) => setNewTask({ ...newTask, tags: newValue })}
+              renderTags={(value: readonly string[], getTagProps) =>
+                value.map((option: string, index: number) => (
+                  <Chip variant="outlined" label={option} {...getTagProps({ index })} />
+                ))
+              }
+              renderInput={(params) => (
+                <TextField {...params} variant="standard" label="Tags" placeholder="Add tags" />
+              )}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenDialog(false)}>Cancel</Button>
+          <Button onClick={handleAddTask} variant="contained" color="primary">Add Task</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

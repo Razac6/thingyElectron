@@ -42,6 +42,9 @@ contextBridge.exposeInMainWorld('electron', {
     getContributionData: (userId: number) => ipcRenderer.invoke('db:get-contribution-data', userId),
     getProductivityInsights: (userId: number) => ipcRenderer.invoke('db:get-productivity-insights', userId),
     getDailyChallenge: (userId: number) => ipcRenderer.invoke('db:get-daily-challenge', userId),
+    getTagAnalytics: (tagId: number) => ipcRenderer.invoke('db:get-tag-analytics', tagId),
+    getTagByName: (name: string) => ipcRenderer.invoke('db:get-tag-by-name', name),
+    getAllTags: () => ipcRenderer.invoke('db:get-all-tags'),
   },
   ipcRenderer: {
     on(channel: string, func: (...args: unknown[]) => void) {

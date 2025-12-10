@@ -6,6 +6,7 @@ import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import TrendingFlatIcon from '@mui/icons-material/TrendingFlat';
 import CenterFocusStrongIcon from '@mui/icons-material/CenterFocusStrong';
+import SpeedIcon from '@mui/icons-material/Speed';
 import { useTimer } from '../context/TimerContext';
 
 const SmartInsightWidget = () => {
@@ -13,7 +14,7 @@ const SmartInsightWidget = () => {
 
   if (!insights) return null;
 
-  const { peakHourRange, fatigueProfile, trend, focusScore } = insights;
+  const { peakHourRange, fatigueProfile, trend, focusScore, tagConsistency } = insights;
 
   const getTrendIcon = () => {
     switch (trend.direction) {
@@ -59,6 +60,24 @@ const SmartInsightWidget = () => {
                </Typography>
             </Box>
          </Tooltip>
+
+         {tagConsistency && tagConsistency.consistent.length > 0 && (
+           <Box display="flex" alignItems="center" gap={1}>
+             <SpeedIcon fontSize="small" color="success" />
+             <Typography variant="body2">
+               <strong>Consistent:</strong> #{tagConsistency.consistent[0]}
+             </Typography>
+           </Box>
+         )}
+
+         {tagConsistency && tagConsistency.volatile.length > 0 && (
+           <Box display="flex" alignItems="center" gap={1}>
+             <SpeedIcon fontSize="small" color="error" />
+             <Typography variant="body2">
+               <strong>Volatile:</strong> #{tagConsistency.volatile[0]}
+             </Typography>
+           </Box>
+         )}
        </Stack>
     </Box>
   );

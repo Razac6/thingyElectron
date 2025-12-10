@@ -19,6 +19,7 @@ import {
   Chip,
   LinearProgress,
   Tooltip,
+  Alert,
 } from '@mui/material';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
@@ -27,6 +28,7 @@ import { getSprints, createSprint, updateSprintStatus } from '../../services/Spr
 import { useTimer } from '../../context/TimerContext';
 import { Task } from '../../../interfaces/task.interface';
 import { StatusEnum } from '../../../enums/status.enum';
+import { analyzeSprintOptimism } from '../../services/DDAService';
 
 const formatDateForInput = (date: Date): string => {
   return date.toISOString().split('T')[0];
@@ -50,6 +52,7 @@ function Sprints() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestedCapacity, setSuggestedCapacity] = useState(0);
+  const [optimismWarning, setOptimismWarning] = useState<string | null>(null);
 
   const fetchSprintsAndCapacity = async () => {
     const sprintsData = await getSprints();
@@ -82,6 +85,18 @@ function Sprints() {
     if (!selectedSprint) return [];
     return tasks.filter(task => task.sprintId === selectedSprint.id);
   }, [tasks, selectedSprint]);
+
+  useEffect(() => {
+    const analyze = async () => {
+      if (tasksInSelectedSprint.length > 0) {
+        const warning = await analyzeSprintOptimism(tasksInSelectedSprint);
+        setOptimismWarning(warning);
+      } else {
+        setOptimismWarning(null);
+      }
+    };
+    analyze();
+  }, [tasksInSelectedSprint]);
 
   const currentSprintLoad = useMemo(() => {
     return tasksInSelectedSprint.reduce((acc, task) => acc + (task.estimate || 0), 0);
@@ -160,6 +175,12 @@ function Sprints() {
                   </Box>
                 </Tooltip>
               </Box>
+            )}
+
+            {optimismWarning && (
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                {optimismWarning}
+              </Alert>
             )}
 
             <Divider sx={{ my: 2 }} />

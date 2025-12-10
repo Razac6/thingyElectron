@@ -39,6 +39,10 @@ interface AnalysisResult {
     description: string;
   };
   focusScore: number;
+  tagConsistency: {
+    consistent: string[];
+    volatile: string[];
+  };
 }
 
 interface DailyChallenge {
@@ -235,9 +239,10 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
     await fetchAllData();
   };
 
-  const createTask = async (newTask: Partial<Task>) => {
-    await createTaskService(newTask);
+  const createTask = async (newTask: Partial<Task>): Promise<Task> => {
+    const createdTask = await createTaskService(newTask);
     await fetchAllData();
+    return createdTask;
   };
 
   const deleteTask = async (taskId: number) => {

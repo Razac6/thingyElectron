@@ -41,12 +41,12 @@ const fetchData = async (navigate: any) => {
   }
 };
 
-const createTask = async (task: any) => {
+const createTask = async (task: any): Promise<Task> => {
   try {
     const userStr = localStorage.getItem('userId');
     const userId = userStr ? JSON.parse(userStr) : null;
     if (!userId) throw new Error('User not logged in');
-    const created = await window.electron.database.createTask(task, userId);
+    const created: Task = await window.electron.database.createTask(task, userId);
     return created;
   } catch (error) {
     console.error('[DatabaseService] Error creating task:', error);
@@ -224,6 +224,36 @@ const getDailyChallenge = async () => {
   }
 };
 
+const getTagAnalytics = async (tagId: number) => {
+  try {
+    const data = await window.electron.database.getTagAnalytics(tagId);
+    return data;
+  } catch (error) {
+    console.error('[DatabaseService] Error fetching tag analytics:', error);
+    return null;
+  }
+};
+
+const getTagByName = async (name: string) => {
+  try {
+    const data = await window.electron.database.getTagByName(name);
+    return data;
+  } catch (error) {
+    console.error('[DatabaseService] Error fetching tag by name:', error);
+    return null;
+  }
+};
+
+const getAllTags = async () => {
+  try {
+    const data = await window.electron.database.getAllTags();
+    return data;
+  } catch (error) {
+    console.error('[DatabaseService] Error fetching all tags:', error);
+    return [];
+  }
+};
+
 export {
   getToken,
   checkAuth,
@@ -243,4 +273,7 @@ export {
   getHourlyProductivity,
   getProductivityInsights,
   getDailyChallenge,
+  getTagAnalytics,
+  getTagByName,
+  getAllTags,
 };
