@@ -6,7 +6,7 @@ import List from './pages/list/List';
 import Notes from './pages/notes/Notes';
 import Statistics from './pages/statistics/Statistics';
 import Profile from './pages/profile/Profile';
-import SystemLogs from './pages/logs/SystemLogs';
+import SystemLogs from './pages/system-logs/SystemLogs';
 import SprintsPage from './pages/sprints/Sprints';
 import TaskDetail from './pages/task/TaskDetail';
 import { TimerProvider } from './context/TimerContext';
