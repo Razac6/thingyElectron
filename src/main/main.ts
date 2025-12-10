@@ -72,13 +72,33 @@ const refreshInsights = (userId: number) => {
     const tagMap = new Map<number, string>();
     tagData.forEach((t: any) => tagMap.set(t.id, t.name));
 
+    const newConsistency = ProductivityAnalyst.analyzeTagConsistency(tagData, tagMap);
+
+    // --- Detect & Log Consistency Shifts ---
+    if (cachedInsights && cachedInsights.tagConsistency) {
+        const oldConsistent = new Set(cachedInsights.tagConsistency.consistent);
+        const oldVolatile = new Set(cachedInsights.tagConsistency.volatile);
+
+        newConsistency.consistent.forEach(tag => {
+            if (!oldConsistent.has(tag)) {
+                logSystemEvent(`Tag #${tag} achieved CONSISTENCY stability. Standard Deviation is low.`, 'LEARNING');
+            }
+        });
+
+        newConsistency.volatile.forEach(tag => {
+            if (!oldVolatile.has(tag)) {
+                logSystemEvent(`Tag #${tag} is now VOLATILE. High variance detected in session times.`, 'LEARNING');
+            }
+        });
+    }
+
     cachedInsights = {
       peakHours: ProductivityAnalyst.identifyPeakHours(recentSessions).peakHours,
       peakHourRange: ProductivityAnalyst.identifyPeakHours(recentSessions).formattedRange,
       fatigueProfile: ProductivityAnalyst.analyzeFatigue(recentSessions),
       trend: ProductivityAnalyst.analyzeTrend(trendData),
       focusScore: ProductivityAnalyst.analyzeFocusQuality(recentSessions),
-      tagConsistency: ProductivityAnalyst.analyzeTagConsistency(tagData, tagMap),
+      tagConsistency: newConsistency,
     };
     log.info('Smart Insights Refreshed:', cachedInsights);
 
@@ -354,27 +374,63 @@ ipcMain.on('tray:get-icon-path', (event) => {
   event.returnValue = trayIconPath; // Return the icon path synchronously
 });
 
-// --- Background Productivity Checks (Peak Hours) ---
+// --- Background Productivity Checks (Peak Hours & Fragmentation) ---
+let lastFragmentationNotificationTime = 0;
+
 setInterval(() => {
-  if (!cachedInsights) return;
+  const now = Date.now();
+  
+  // 1. Peak Hours Check (Existing)
+  if (cachedInsights) {
+    const currentHour = new Date().getHours();
+    const dateString = new Date().toDateString();
 
-  const now = new Date();
-  const currentHour = now.getHours();
-  const dateString = now.toDateString(); // "Tue Dec 09 2025"
-
-  // Only notify once per day
-  if (lastPeakHourNotificationDate !== dateString) {
-    if (cachedInsights.peakHours.includes(currentHour)) {
-      logSystemEvent(`Golden Hour Detected: It's ${currentHour}:00 - your peak productivity time.`, 'PRODUCTIVITY');
-      new Notification({
-        title: '🚀 Golden Hour',
-        body: `It's ${currentHour}:00! Statistics show this is your most productive time of day. Focus on High Priority tasks.`,
-        icon: getAssetPath('icon.png'),
-      }).show();
-      lastPeakHourNotificationDate = dateString;
+    if (lastPeakHourNotificationDate !== dateString) {
+      if (cachedInsights.peakHours.includes(currentHour)) {
+        logSystemEvent(`Golden Hour Detected: It's ${currentHour}:00 - your peak productivity time.`, 'PRODUCTIVITY');
+        new Notification({
+          title: '🚀 Golden Hour',
+          body: `It's ${currentHour}:00! Statistics show this is your most productive time of day. Focus on High Priority tasks.`,
+          icon: getAssetPath('icon.png'),
+        }).show();
+        lastPeakHourNotificationDate = dateString;
+      }
     }
   }
-}, 15 * 60 * 1000); // Check every 15 minutes
+
+  // 2. Fragmentation / Context Switching Check
+  // Run this check max once every 30 minutes to avoid spam
+  if (now - lastFragmentationNotificationTime > 30 * 60 * 1000) {
+      // We need a userId. This background task is global, so it's tricky in multi-user, 
+      // but for local app we can use activeTaskInfo.userId if available, or just skip if no active user context.
+      // Alternatively, check for the last logged in user if available? 
+      // Safe bet: only check if a timer is active or recently active.
+      
+      if (activeTaskInfo && activeTaskInfo.userId) {
+          const sessions = getRecentWorkSessions(activeTaskInfo.userId, 1); // Get last 1 day sessions
+          const oneHourAgo = now - (60 * 60 * 1000);
+          
+          // Filter sessions from last hour
+          const recentShortSessions = sessions.filter((s: any) => {
+              const endTime = new Date(s.endTime || s.startTime).getTime(); // Fallback if endTime missing
+              return endTime > oneHourAgo && s.duration < (10 * 60 * 1000); // Less than 10 mins
+          });
+
+          if (recentShortSessions.length >= 5) {
+              logSystemEvent(`High Fragmentation Detected: ${recentShortSessions.length} short sessions (<10m) in the last hour.`, 'PRODUCTIVITY');
+              
+              new Notification({
+                  title: '⚠️ Fragmented Focus',
+                  body: 'You are switching contexts rapidly. Consider sticking to one task for at least 20 minutes.',
+                  icon: getAssetPath('icon.png')
+              }).show();
+              
+              lastFragmentationNotificationTime = now;
+          }
+      }
+  }
+
+}, 5 * 60 * 1000); // Check every 5 minutes (reduced from 15 for better responsiveness)
 
 // --- Activity Monitor (Idle Detection) ---
 setInterval(() => {
