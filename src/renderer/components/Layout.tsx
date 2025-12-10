@@ -57,9 +57,12 @@ const menuItems = [
   { text: 'Tasks', path: '/list', icon: <AssignmentIcon /> },
   { text: 'Sprints', path: '/sprints', icon: <SprintIcon /> },
   { text: 'Statistics', path: '/statistics', icon: <BarChartIcon /> },
-  { text: 'System Logs', path: '/logs', icon: <TerminalIcon /> },
   { text: 'Profile', path: '/profile', icon: <PersonIcon /> },
   { text: 'Notes', path: '/notes', icon: <NoteAltIcon /> },
+];
+
+const bottomMenuItems = [
+  { text: 'System Logs', path: '/logs', icon: <TerminalIcon /> },
 ];
 
 const openedMixin = (theme: Theme): CSSObject => ({
@@ -126,7 +129,6 @@ const Drawer = styled(MuiDrawer, { shouldForwardProp: (prop) => prop !== 'open' 
   }),
 );
 
-
 interface LayoutProps {
   children: React.ReactNode;
 }
@@ -154,7 +156,8 @@ export default function Layout({ children }: LayoutProps) {
   const handleDrawerClose = () => setOpen(false);
 
   const getPageTitle = () => {
-    const currentItem = menuItems.find(item => item.path === location.pathname);
+    const allItems = [...menuItems, ...bottomMenuItems];
+    const currentItem = allItems.find(item => item.path === location.pathname);
     return currentItem ? currentItem.text : 'Thingy';
   };
 
@@ -199,16 +202,29 @@ export default function Layout({ children }: LayoutProps) {
       </AppBar>
       <Drawer variant="permanent" open={open}>
         <DrawerHeader><IconButton onClick={handleDrawerClose}><ChevronLeftIcon /></IconButton></DrawerHeader>
-        <List>
-          {menuItems.map((item) => (
-            <ListItem key={item.text} disablePadding sx={{ display: 'block' }}>
-              <ListItemButton sx={{ minHeight: 48, justifyContent: open ? 'initial' : 'center', px: 2.5 }} selected={location.pathname === item.path} onClick={() => navigate(item.path)}>
-                <ListItemIcon sx={{ minWidth: 0, mr: open ? 3 : 'auto', justifyContent: 'center' }}>{item.icon}</ListItemIcon>
-                <ListItemText primary={item.text} sx={{ opacity: open ? 1 : 0 }} />
-              </ListItemButton>
-            </ListItem>
-          ))}
-        </List>
+        <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <List>
+              {menuItems.map((item) => (
+                <ListItem key={item.text} disablePadding sx={{ display: 'block' }}>
+                  <ListItemButton sx={{ minHeight: 48, justifyContent: open ? 'initial' : 'center', px: 2.5 }} selected={location.pathname === item.path} onClick={() => navigate(item.path)}>
+                    <ListItemIcon sx={{ minWidth: 0, mr: open ? 3 : 'auto', justifyContent: 'center' }}>{item.icon}</ListItemIcon>
+                    <ListItemText primary={item.text} sx={{ opacity: open ? 1 : 0 }} />
+                  </ListItemButton>
+                </ListItem>
+              ))}
+            </List>
+            <Box sx={{ flexGrow: 1 }} />
+            <List>
+              {bottomMenuItems.map((item) => (
+                <ListItem key={item.text} disablePadding sx={{ display: 'block' }}>
+                  <ListItemButton sx={{ minHeight: 48, justifyContent: open ? 'initial' : 'center', px: 2.5 }} selected={location.pathname === item.path} onClick={() => navigate(item.path)}>
+                    <ListItemIcon sx={{ minWidth: 0, mr: open ? 3 : 'auto', justifyContent: 'center' }}>{item.icon}</ListItemIcon>
+                    <ListItemText primary={item.text} sx={{ opacity: open ? 1 : 0 }} />
+                  </ListItemButton>
+                </ListItem>
+              ))}
+            </List>
+        </Box>
       </Drawer>
       <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
         <Toolbar />

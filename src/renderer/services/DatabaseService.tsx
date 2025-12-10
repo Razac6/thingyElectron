@@ -264,6 +264,16 @@ const getSystemLogs = async (limit?: number) => {
   }
 };
 
+const getNeuralConfidence = async () => {
+  try {
+    const score = await window.electron.database.getNeuralConfidence();
+    return score;
+  } catch (error) {
+    console.error('[DatabaseService] Error fetching neural confidence:', error);
+    return 0;
+  }
+};
+
 export {
   getToken,
   checkAuth,
@@ -287,4 +297,5 @@ export {
   getTagByName,
   getAllTags,
   getSystemLogs,
+  getNeuralConfidence,
 };

@@ -30,6 +30,7 @@ import {
   getAllTags,
   getSystemLogs,
   logSystemEvent,
+  getNeuralConfidence,
 } from './db';
 import { ProductivityAnalyst, AnalysisResult } from './ProductivityAnalysis';
 
@@ -290,6 +291,7 @@ ipcMain.handle('db:get-tag-analytics', (event, tagId) => getTagAnalytics(tagId))
 ipcMain.handle('db:get-tag-by-name', (event, name) => getTagByName(name));
 ipcMain.handle('db:get-all-tags', () => getAllTags());
 ipcMain.handle('db:get-system-logs', (event, limit) => getSystemLogs(limit));
+ipcMain.handle('db:get-neural-confidence', () => getNeuralConfidence());
 
 ipcMain.handle('db:get-productivity-insights', async (event, userId) => {
   refreshInsights(userId); // Ensure fresh data

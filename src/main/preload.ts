@@ -43,6 +43,7 @@ contextBridge.exposeInMainWorld('electron', {
     getTagByName: (name: string) => ipcRenderer.invoke('db:get-tag-by-name', name),
     getAllTags: () => ipcRenderer.invoke('db:get-all-tags'),
     getSystemLogs: (limit?: number) => ipcRenderer.invoke('db:get-system-logs', limit),
+    getNeuralConfidence: () => ipcRenderer.invoke('db:get-neural-confidence'),
     getProductivityInsights: (userId: number) => ipcRenderer.invoke('db:get-productivity-insights', userId),
   },
   ipcRenderer: {

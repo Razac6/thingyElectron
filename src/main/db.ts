@@ -102,6 +102,41 @@ export const getSystemLogs = (limit: number = 50) => {
   return logs;
 };
 
+export const getNeuralConfidence = () => {
+  if (!db) return 0;
+  
+  try {
+      // 1. Task Volume (Max 50 pts)
+      const taskCountStmt = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE status = 'Completed'");
+      const taskRow = taskCountStmt.get();
+      const taskCount = taskRow ? (taskRow[0] as number) : 0;
+      taskCountStmt.free();
+      const taskScore = Math.min(50, taskCount); // 1 pt per task up to 50
+
+      // 2. Tag Maturity (Max 30 pts)
+      // Tags with at least 3 samples
+      const tagStmt = db.prepare("SELECT COUNT(*) FROM tag_analytics WHERE completed_count >= 3");
+      const tagRow = tagStmt.get();
+      const matureTags = tagRow ? (tagRow[0] as number) : 0;
+      tagStmt.free();
+      const tagScore = Math.min(30, matureTags * 5); // 5 pts per mature tag up to 30 (6 tags)
+
+      // 3. Sprint History (Max 20 pts)
+      const sprintStmt = db.prepare("SELECT COUNT(*) FROM sprints WHERE status = 'COMPLETED'");
+      const sprintRow = sprintStmt.get();
+      const sprintCount = sprintRow ? (sprintRow[0] as number) : 0;
+      sprintStmt.free();
+      const sprintScore = Math.min(20, sprintCount * 5); // 5 pts per sprint up to 20 (4 sprints)
+      
+      const total = Math.round(taskScore + tagScore + sprintScore);
+      console.log(`[DB] Neural Confidence: Tasks=${taskScore}, Tags=${tagScore}, Sprints=${sprintScore}, Total=${total}`);
+      return total || 0;
+  } catch (error) {
+      console.error('[DB] Error calculating neural confidence:', error);
+      return 0;
+  }
+};
+
 // --- Analytics Engine ---
 export const getTagAnalytics = (tagId: number) => {
   if (!db) return null;
