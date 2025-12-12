@@ -31,6 +31,14 @@ import {
   getSystemLogs,
   logSystemEvent,
   getNeuralConfidence,
+  getChecklistItems,
+  addChecklistItem,
+  toggleChecklistItem,
+  deleteChecklistItem,
+  getAllSettings,
+  setSetting,
+  getDailyMode,
+  setDailyMode,
 } from './db';
 import { ProductivityAnalyst, AnalysisResult } from './ProductivityAnalysis';
 
@@ -105,18 +113,22 @@ const refreshInsights = (userId: number) => {
     // --- Daily Challenge Generation ---
     const today = new Date().toISOString().split('T')[0];
     const existingChallenge = getDailyChallenge(userId, today);
+    logSystemEvent(`[DEBUG CHALLENGE] Date: ${today}, Existing: ${JSON.stringify(existingChallenge)}`, 'DEBUG');
+
     if (!existingChallenge && cachedInsights) {
-      const config = ProductivityAnalyst.generateDailyChallenge(cachedInsights.trend, cachedInsights.fatigueProfile);
+      const config = ProductivityAnalyst.generateDailyChallenge(cachedInsights.trend, cachedInsights.fatigueProfile, dailyMode);
       createDailyChallenge({
         userId,
         date: today,
         ...config
       });
       log.info('New Daily Challenge Generated:', config);
+      logSystemEvent(`New Daily Challenge: ${config.description}`, 'GAMIFICATION');
     }
 
-  } catch (e) {
+  } catch (e: any) {
     log.error('Failed to refresh insights', e);
+    logSystemEvent(`Insights Refresh Error: ${e.message}`, 'DEBUG');
   }
 };
 
@@ -279,7 +291,48 @@ ipcMain.handle('db:get-daily-challenge', (event, userId) => {
 });
 ipcMain.handle('db:get-tasks', (event, userId) => getTasks(userId));
 ipcMain.handle('db:create-task', (event, task, userId) => createTask(task, userId));
-ipcMain.handle('db:update-task', (event, task) => updateTask(task));
+ipcMain.handle('db:update-task', (event, task) => {
+  const updated = updateTask(task);
+
+  // --- Check Daily Challenge (Task-based) ---
+  if (task.status === 'Completed' && task.userId) { // Ensure we have userId
+      const today = new Date().toISOString().split('T')[0];
+      const challenge: any = getDailyChallenge(task.userId, today);
+
+      if (challenge && challenge.status === 'ACTIVE') {
+          let newProgress = challenge.progress;
+          let shouldUpdate = false;
+
+          if (challenge.type === 'FROG_EATER') {
+              // High Priority Task
+              if (task.priority === 'High') {
+                  newProgress += 1;
+                  shouldUpdate = true;
+              }
+          } else if (challenge.type === 'BACKLOG_CLEANER') {
+              // Any task (or maybe small tasks? Let's say any for now to be simple, or < 1h)
+              newProgress += 1;
+              shouldUpdate = true;
+          }
+
+          if (shouldUpdate) {
+              const status = newProgress >= challenge.target ? 'COMPLETED' : 'ACTIVE';
+              updateDailyChallengeProgress(challenge.id, newProgress, status);
+              if (status === 'COMPLETED') {
+                  new Notification({
+                      title: '🎉 Challenge Completed!',
+                      body: `You completed: ${challenge.description} (+${challenge.xpReward} XP)`,
+                      icon: getAssetPath('icon.png'),
+                  }).show();
+                  // Grant XP (optional, frontend handles it usually via checkForAchievements? No, backend should grant.)
+                  const profile = getProfile(task.userId);
+                  if (profile) updateProfile({ ...profile, xp: profile.xp + challenge.xpReward });
+              }
+          }
+      }
+  }
+  return updated;
+});
 ipcMain.handle('db:delete-task', (event, taskId) => deleteTask(taskId)); // Use deleteTask directly
 ipcMain.handle('db:update-tasks-order', (event, taskIds) => updateTasksOrder(taskIds));
 ipcMain.handle('db:get-sprints', () => getSprints());
@@ -306,12 +359,26 @@ ipcMain.handle('db:get-average-time-for-task-type', (event, taskType) => getAver
 ipcMain.handle('db:get-average-sprint-capacity', () => getAverageSprintCapacity());
 ipcMain.handle('db:get-hourly-productivity', () => getHourlyProductivity());
 ipcMain.handle('db:get-daily-productivity', (event, userId) => getDailyProductivity(userId));
-ipcMain.handle('db:get-contribution-data', (event, userId) => getContributionData(userId));
+ipcMain.handle('db:get-contribution-data', (event, userId, days) => getContributionData(userId, days));
 ipcMain.handle('db:get-tag-analytics', (event, tagId) => getTagAnalytics(tagId));
 ipcMain.handle('db:get-tag-by-name', (event, name) => getTagByName(name));
 ipcMain.handle('db:get-all-tags', () => getAllTags());
 ipcMain.handle('db:get-system-logs', (event, limit) => getSystemLogs(limit));
 ipcMain.handle('db:get-neural-confidence', () => getNeuralConfidence());
+
+// Settings Handlers
+ipcMain.handle('db:get-all-settings', () => getAllSettings());
+ipcMain.handle('db:set-setting', (event, key, value) => setSetting(key, value));
+
+// Checklist Handlers
+ipcMain.handle('db:get-checklist-items', (event, taskId) => getChecklistItems(taskId));
+ipcMain.handle('db:add-checklist-item', (event, taskId, text) => addChecklistItem(taskId, text));
+ipcMain.handle('db:toggle-checklist-item', (event, itemId, isCompleted) => toggleChecklistItem(itemId, isCompleted));
+ipcMain.handle('db:delete-checklist-item', (event, itemId) => deleteChecklistItem(itemId));
+
+// Daily Mode Handlers
+ipcMain.handle('db:get-daily-mode', (event, date) => getDailyMode(date));
+ipcMain.handle('db:set-daily-mode', (event, date, mode) => setDailyMode(date, mode));
 
 ipcMain.handle('db:get-productivity-insights', async (event, userId) => {
   refreshInsights(userId); // Ensure fresh data

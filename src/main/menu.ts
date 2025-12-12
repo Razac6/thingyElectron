@@ -162,9 +162,9 @@ export default class MenuBuilder {
       label: 'Config',
       submenu: [
         {
-          label: 'Change tokens',
-          click() {
-            console.log('Not working yet');
+          label: 'Settings',
+          click: () => {
+            this.mainWindow.webContents.send('open-settings');
           },
         },
       ],
@@ -263,9 +263,9 @@ export default class MenuBuilder {
         label: 'Config',
         submenu: [
           {
-            label: `Version: ${app.getVersion()}`,
-            click() {
-              console.log('not working yet');
+            label: 'Settings',
+            click: () => {
+              this.mainWindow.webContents.send('open-settings');
             },
           },
         ],

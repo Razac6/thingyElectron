@@ -173,14 +173,14 @@ const getDailyProductivity = async () => {
   }
 };
 
-const getContributionData = async () => {
+const getContributionData = async (days: number = 365) => {
   try {
     const userStr = localStorage.getItem('userId');
     const userId = userStr ? JSON.parse(userStr) : null;
     if (!userId) {
       return [];
     }
-    const data = await window.electron.database.getContributionData(userId);
+    const data = await window.electron.database.getContributionData(userId, days);
     return data;
   } catch (error) {
     console.error('[DatabaseService] Error fetching contribution data:', error);
@@ -201,7 +201,7 @@ const getHourlyProductivity = async () => {
 const getProductivityInsights = async () => {
   try {
     const userStr = localStorage.getItem('userId');
-    const userId = userStr ? JSON.parse(userStr) : null;
+    const userId = userStr ? JSON.parse(userStr) : 1; // Default to 1 for dev/single user
     if (!userId) return null;
     const data = await window.electron.database.getProductivityInsights(userId);
     return data;
@@ -214,9 +214,11 @@ const getProductivityInsights = async () => {
 const getDailyChallenge = async () => {
   try {
     const userStr = localStorage.getItem('userId');
-    const userId = userStr ? JSON.parse(userStr) : null;
+    const userId = userStr ? JSON.parse(userStr) : 1; // Default to 1
     if (!userId) return null;
+    console.log('[Frontend DEBUG] Fetching Challenge for UserID:', userId);
     const data = await window.electron.database.getDailyChallenge(userId);
+    console.log('[Frontend DEBUG] Challenge Data:', data);
     return data;
   } catch (error) {
     console.error('[DatabaseService] Error fetching daily challenge:', error);
@@ -274,6 +276,38 @@ const getNeuralConfidence = async () => {
   }
 };
 
+const getChecklistItems = async (taskId: number) => {
+  return await window.electron.database.getChecklistItems(taskId);
+};
+
+const addChecklistItem = async (taskId: number, text: string) => {
+  return await window.electron.database.addChecklistItem(taskId, text);
+};
+
+const toggleChecklistItem = async (itemId: number, isCompleted: boolean) => {
+  return await window.electron.database.toggleChecklistItem(itemId, isCompleted);
+};
+
+const deleteChecklistItem = async (itemId: number) => {
+  return await window.electron.database.deleteChecklistItem(itemId);
+};
+
+const getAllSettings = async () => {
+  return await window.electron.database.getAllSettings();
+};
+
+const setSetting = async (key: string, value: string) => {
+  return await window.electron.database.setSetting(key, value);
+};
+
+const getDailyMode = async (date: string) => {
+  return await window.electron.database.getDailyMode(date);
+};
+
+const setDailyMode = async (date: string, mode: string) => {
+  return await window.electron.database.setDailyMode(date, mode);
+};
+
 export {
   getToken,
   checkAuth,
@@ -298,4 +332,12 @@ export {
   getAllTags,
   getSystemLogs,
   getNeuralConfidence,
+  getChecklistItems,
+  addChecklistItem,
+  toggleChecklistItem,
+  deleteChecklistItem,
+  getAllSettings,
+  setSetting,
+  getDailyMode,
+  setDailyMode,
 };

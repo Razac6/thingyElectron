@@ -53,6 +53,9 @@ export const initDB = async () => {
     )
   `);
   db.run(`CREATE TABLE IF NOT EXISTS system_logs (id INTEGER PRIMARY KEY, timestamp TEXT, event_type TEXT, message TEXT)`);
+  db.run(`CREATE TABLE IF NOT EXISTS task_checklist_items (id INTEGER PRIMARY KEY, taskId INTEGER, text TEXT, isCompleted INTEGER DEFAULT 0, FOREIGN KEY(taskId) REFERENCES tasks(id) ON DELETE CASCADE)`);
+  db.run(`CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)`);
+  db.run(`CREATE TABLE IF NOT EXISTS daily_energy_logs (date TEXT PRIMARY KEY, mode TEXT)`);
 
 
   try {
@@ -65,6 +68,16 @@ export const initDB = async () => {
       db.run("ALTER TABLE tasks ADD COLUMN type TEXT DEFAULT 'TASK'");
     }
   } catch (e) { /* ignore */ }
+
+  // Seed Default Settings
+  const defaultSettings = [
+      { key: 'complexityThreshold', value: '8' },
+      { key: 'enableRewardAnimations', value: 'true' },
+      { key: 'enableFatigueWarnings', value: 'true' },
+  ];
+  const settingStmt = db.prepare('INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)');
+  defaultSettings.forEach(s => settingStmt.run([s.key, s.value]));
+  settingStmt.free();
 
 
   const achievementsToSeed = [
@@ -107,30 +120,37 @@ export const getNeuralConfidence = () => {
   
   try {
       // 1. Task Volume (Max 50 pts)
-      const taskCountStmt = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE status = 'Completed'");
-      const taskRow = taskCountStmt.get();
-      const taskCount = taskRow ? (taskRow[0] as number) : 0;
+      const taskCountStmt = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE status = 'Completed' COLLATE NOCASE");
+      let taskCount = 0;
+      if (taskCountStmt.step()) {
+          const row = taskCountStmt.getAsObject();
+          taskCount = Number(row.count) || 0;
+      }
       taskCountStmt.free();
-      const taskScore = Math.min(50, taskCount); // 1 pt per task up to 50
+      const taskScore = Math.min(50, taskCount);
 
       // 2. Tag Maturity (Max 30 pts)
-      // Tags with at least 3 samples
-      const tagStmt = db.prepare("SELECT COUNT(*) FROM tag_analytics WHERE completed_count >= 3");
-      const tagRow = tagStmt.get();
-      const matureTags = tagRow ? (tagRow[0] as number) : 0;
+      const tagStmt = db.prepare("SELECT COUNT(*) as count FROM tag_analytics WHERE completed_count >= 3");
+      let matureTags = 0;
+      if (tagStmt.step()) {
+          const row = tagStmt.getAsObject();
+          matureTags = Number(row.count) || 0;
+      }
       tagStmt.free();
-      const tagScore = Math.min(30, matureTags * 5); // 5 pts per mature tag up to 30 (6 tags)
+      const tagScore = Math.min(30, matureTags * 5);
 
       // 3. Sprint History (Max 20 pts)
-      const sprintStmt = db.prepare("SELECT COUNT(*) FROM sprints WHERE status = 'COMPLETED'");
-      const sprintRow = sprintStmt.get();
-      const sprintCount = sprintRow ? (sprintRow[0] as number) : 0;
+      const sprintStmt = db.prepare("SELECT COUNT(*) as count FROM sprints WHERE status = 'COMPLETED' COLLATE NOCASE");
+      let sprintCount = 0;
+      if (sprintStmt.step()) {
+          const row = sprintStmt.getAsObject();
+          sprintCount = Number(row.count) || 0;
+      }
       sprintStmt.free();
-      const sprintScore = Math.min(20, sprintCount * 5); // 5 pts per sprint up to 20 (4 sprints)
+      const sprintScore = Math.min(20, sprintCount * 5);
       
       const total = Math.round(taskScore + tagScore + sprintScore);
-      console.log(`[DB] Neural Confidence: Tasks=${taskScore}, Tags=${tagScore}, Sprints=${sprintScore}, Total=${total}`);
-      return total || 0;
+      return total;
   } catch (error) {
       console.error('[DB] Error calculating neural confidence:', error);
       return 0;
@@ -141,9 +161,16 @@ export const getNeuralConfidence = () => {
 export const getTagAnalytics = (tagId: number) => {
   if (!db) return null;
   const stmt = db.prepare('SELECT * FROM tag_analytics WHERE tag_id = ?');
-  const result = stmt.get([tagId]);
+  const result = stmt.getAsObject([tagId]); // Use getAsObject to return { column: value }
   stmt.free();
-  return result || { tag_id: tagId, ema: 0, std_dev: 0, variance: 0, completed_count: 0 };
+  // Check if result is empty (all props null/undefined if not found usually, or empty object)
+  // sql.js getAsObject returns object with keys but values might be null if no row? 
+  // Actually getAsObject returns empty object if no result? No, it usually returns object with columns if bind works.
+  // Safer to check if tag_id is present in result.
+  if (result && result.tag_id) {
+      return result;
+  }
+  return { tag_id: tagId, ema: 0, std_dev: 0, variance: 0, completed_count: 0 };
 };
 
 export const getTagAnalyticsWithNames = () => {
@@ -171,6 +198,8 @@ const updateTagAnalytics = (tagId: number, duration: number) => {
   const tagResult = tagStmt.get([tagId]);
   tagStmt.free();
   const tagName = tagResult ? tagResult[0] : 'Unknown';
+
+  logSystemEvent(`[DEBUG] Tag Update: ID=${tagId} (${tagName}), Count=${currentAnalytics.completed_count}, EMA=${currentAnalytics.ema}`, 'DEBUG');
 
   const currentCount = Number(currentAnalytics.completed_count) || 0;
   const currentEma = Number(currentAnalytics.ema) || 0;
@@ -282,10 +311,10 @@ export const updateDailyChallengeProgress = (id: number, progress: number, statu
   saveDB();
 };
 
-export const getContributionData = (userId: number) => {
+export const getContributionData = (userId: number, days: number = 365) => {
   if (!db) return [];
-  const oneYearAgo = new Date();
-  oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - days);
 
   // Use 'localtime' and '-4 hours' to align with "Productivity Day" (starts at 4 AM)
   const stmt = db.prepare(`
@@ -294,11 +323,11 @@ export const getContributionData = (userId: number) => {
       SUM(ws.duration) as totalDuration
     FROM work_sessions ws
     JOIN tasks t ON ws.taskId = t.id
-    WHERE t.userId = :userId AND ws.startTime >= :oneYearAgo
+    WHERE t.userId = :userId AND ws.startTime >= :startDate
     GROUP BY date
     ORDER BY date
   `);
-  stmt.bind({ ':userId': userId, ':oneYearAgo': oneYearAgo.toISOString() });
+  stmt.bind({ ':userId': userId, ':startDate': startDate.toISOString() });
   const results: any[] = [];
   while (stmt.step()) {
     results.push(stmt.getAsObject());
@@ -698,6 +727,100 @@ export const loginUser = (username: string, password: string) => {
   stmt.free();
 
   return null;
+};
+
+// --- Checklist Helpers ---
+export const getChecklistItems = (taskId: number) => {
+  if (!db) return [];
+  const stmt = db.prepare('SELECT * FROM task_checklist_items WHERE taskId = ? ORDER BY id ASC');
+  stmt.bind([taskId]);
+  const items: any[] = [];
+  while (stmt.step()) {
+    items.push(stmt.getAsObject());
+  }
+  stmt.free();
+  return items;
+};
+
+export const addChecklistItem = (taskId: number, text: string) => {
+  if (!db) throw new Error('DB not initialized');
+  db.run('INSERT INTO task_checklist_items (taskId, text, isCompleted) VALUES (?, ?, 0)', [taskId, text]);
+  saveDB();
+  return getChecklistItems(taskId);
+};
+
+export const toggleChecklistItem = (itemId: number, isCompleted: boolean) => {
+  if (!db) throw new Error('DB not initialized');
+  db.run('UPDATE task_checklist_items SET isCompleted = ? WHERE id = ?', [isCompleted ? 1 : 0, itemId]);
+  saveDB();
+  // Get taskId to return fresh list
+  const idStmt = db.prepare('SELECT taskId FROM task_checklist_items WHERE id = ?');
+  const result = idStmt.get([itemId]);
+  idStmt.free();
+  if (result) {
+      return getChecklistItems(result[0] as number);
+  }
+  return [];
+};
+
+export const deleteChecklistItem = (itemId: number) => {
+  if (!db) throw new Error('DB not initialized');
+  
+  // Get taskId first to return list later
+  const idStmt = db.prepare('SELECT taskId FROM task_checklist_items WHERE id = ?');
+  const result = idStmt.get([itemId]);
+  idStmt.free();
+  const taskId = result ? (result[0] as number) : null;
+
+  db.run('DELETE FROM task_checklist_items WHERE id = ?', [itemId]);
+  saveDB();
+  
+  if (taskId) return getChecklistItems(taskId);
+  return [];
+};
+
+// --- Settings Helpers ---
+export const getAllSettings = () => {
+  if (!db) return {};
+  const stmt = db.prepare('SELECT * FROM app_settings');
+  const settings: any = {};
+  while (stmt.step()) {
+    const row = stmt.getAsObject();
+    settings[row.key as string] = row.value;
+  }
+  stmt.free();
+  return settings;
+};
+
+export const getSetting = (key: string) => {
+  if (!db) return null;
+  const stmt = db.prepare('SELECT value FROM app_settings WHERE key = ?');
+  const result = stmt.getAsObject([key]);
+  stmt.free();
+  return result.value || null;
+};
+
+export const setSetting = (key: string, value: string) => {
+  if (!db) throw new Error('DB not initialized');
+  db.run('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)', [key, value]);
+  saveDB();
+  return getAllSettings();
+};
+
+// --- Daily Mode Helpers ---
+export const getDailyMode = (date: string) => {
+  if (!db) return 'normal'; // Default
+  const stmt = db.prepare('SELECT mode FROM daily_energy_logs WHERE date = ?');
+  const result = stmt.getAsObject([date]);
+  stmt.free();
+  return result.mode || 'normal';
+};
+
+export const setDailyMode = (date: string, mode: string) => {
+  if (!db) throw new Error('DB not initialized');
+  db.run('INSERT OR REPLACE INTO daily_energy_logs (date, mode) VALUES (?, ?)', [date, mode]);
+  saveDB();
+  return mode;
 };
 
 export const closeDB = () => {

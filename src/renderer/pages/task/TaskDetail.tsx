@@ -16,6 +16,7 @@ import {
   Chip,
   IconButton,
   Link,
+  Alert,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SaveIcon from '@mui/icons-material/Save';
@@ -23,13 +24,17 @@ import EditIcon from '@mui/icons-material/Edit';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import TimerIcon from '@mui/icons-material/Timer';
 import TimerOffIcon from '@mui/icons-material/TimerOff';
+import CheckBoxIcon from '@mui/icons-material/CheckBox';
+import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
+import DeleteIcon from '@mui/icons-material/Delete';
 import { useTimer } from '../../context/TimerContext';
 import { getSprints } from '../../services/SprintService';
-import { getAllTags } from '../../services/DatabaseService';
+import { getAllTags, getChecklistItems, addChecklistItem, toggleChecklistItem, deleteChecklistItem } from '../../services/DatabaseService';
 import { StatusEnum } from '../../../enums/status.enum';
 import { PriorityEnum } from '../../../enums/priority.enum';
 import { TaskTypeEnum } from '../../../enums/TaskTypeEnum';
 import { useGamification } from '../../context/GamificationContext';
+import { useSettings } from '../../context/SettingsContext';
 import TaskStats from '../../components/TaskStats'; // Import the new component
 
 function TaskDetail() {
@@ -37,10 +42,13 @@ function TaskDetail() {
   const navigate = useNavigate();
   const { tasks, updateTask, startTimer, stopTimer } = useTimer();
   const { addXp, checkForAchievements, triggerRewardAnimation } = useGamification();
+  const { settings } = useSettings();
 
   const [task, setTask] = useState<any>(null);
   const [sprints, setSprints] = useState<any[]>([]);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
+  const [checklist, setChecklist] = useState<any[]>([]);
+  const [newChecklistItem, setNewChecklistItem] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
 
@@ -63,6 +71,8 @@ function TaskDetail() {
       
       if (currentTask) {
         setTask({ ...currentTask, tags: currentTask.tags || [], type: currentTask.type || TaskTypeEnum.TASK });
+        const items = await getChecklistItems(taskIdNum);
+        setChecklist(items);
       } else {
         setTask(null); // Task not found
       }
@@ -78,6 +88,24 @@ function TaskDetail() {
     
     fetchAndSetTask();
   }, [taskId, tasks]);
+
+  const handleAddChecklist = async () => {
+      if (newChecklistItem.trim()) {
+          const updated = await addChecklistItem(Number(taskId), newChecklistItem);
+          setChecklist(updated);
+          setNewChecklistItem('');
+      }
+  };
+
+  const handleToggleChecklist = async (id: number, currentStatus: number) => {
+      const updated = await toggleChecklistItem(id, !currentStatus);
+      setChecklist(updated);
+  };
+
+  const handleDeleteChecklist = async (id: number) => {
+      const updated = await deleteChecklistItem(id);
+      setChecklist(updated);
+  };
 
   const handleSave = async () => {
     if (!task) return;
@@ -179,6 +207,55 @@ function TaskDetail() {
           )}
           <Typography variant="body1" paragraph sx={{ whiteSpace: 'pre-wrap' }}>{task.description || 'No description provided.'}</Typography>
           <TaskStats task={task} />
+          
+          {/* Complexity Warnings */}
+          {task.estimate >= (Number(settings.complexityThreshold) || 8) && checklist.length === 0 && (
+              <Alert severity="warning" sx={{ mt: 2, mb: 1 }}>
+                  <strong>High Complexity Detected:</strong> This task is estimated for {task.estimate}h but has no sub-steps. 
+                  Consider breaking it down into a checklist for better tracking.
+              </Alert>
+          )}
+          {task.estimate < 0.5 && checklist.length > 5 && (
+              <Alert severity="info" sx={{ mt: 2, mb: 1 }}>
+                  <strong>Granularity Notice:</strong> You have many steps for a short task. Ensure you aren't micro-managing.
+              </Alert>
+          )}
+
+          {/* Smart Checklist Section */}
+          <Box sx={{ mt: 3, mb: 2, p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
+            <Typography variant="h6" gutterBottom>Smart Checklist</Typography>
+            {checklist.map((item) => (
+                <Box key={item.id} sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                    <IconButton size="small" onClick={() => handleToggleChecklist(item.id, item.isCompleted)}>
+                        {item.isCompleted ? <CheckBoxIcon color="primary" /> : <CheckBoxOutlineBlankIcon />}
+                    </IconButton>
+                    <Typography 
+                        sx={{ 
+                            flexGrow: 1, 
+                            textDecoration: item.isCompleted ? 'line-through' : 'none',
+                            color: item.isCompleted ? 'text.disabled' : 'text.primary'
+                        }}
+                    >
+                        {item.text}
+                    </Typography>
+                    <IconButton size="small" onClick={() => handleDeleteChecklist(item.id)}>
+                        <DeleteIcon fontSize="small" />
+                    </IconButton>
+                </Box>
+            ))}
+            <Box sx={{ display: 'flex', alignItems: 'center', mt: 2 }}>
+                <TextField 
+                    fullWidth 
+                    size="small" 
+                    placeholder="Add sub-task or step..." 
+                    value={newChecklistItem} 
+                    onChange={(e) => setNewChecklistItem(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddChecklist()}
+                />
+                <Button variant="contained" sx={{ ml: 1 }} onClick={handleAddChecklist}>Add</Button>
+            </Box>
+          </Box>
+
           <Divider sx={{ my: 2 }} />
           <Grid container spacing={2} sx={{ mt: 2, alignItems: 'center' }}>
             <Grid item>

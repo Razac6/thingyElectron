@@ -27,7 +27,7 @@ export interface AnalysisResult {
 }
 
 export interface ChallengeConfig {
-  type: 'TOTAL_DURATION' | 'DEEP_WORK' | 'FOCUS_SCORE';
+  type: 'TOTAL_DURATION' | 'DEEP_WORK' | 'FOCUS_SCORE' | 'FROG_EATER' | 'BACKLOG_CLEANER';
   target: number;
   description: string;
   xpReward: number;
@@ -35,23 +35,51 @@ export interface ChallengeConfig {
 
 export class ProductivityAnalyst {
   /**
-   * Generates a Daily Challenge based on user's recent performance.
+   * Generates a Daily Challenge based on user's recent performance and Daily Mode.
    */
-  static generateDailyChallenge(trend: AnalysisResult['trend'], fatigue: AnalysisResult['fatigueProfile']): ChallengeConfig {
-    // Scenario 1: Slump (Decreasing Trend) -> Recovery Mode (Easy wins)
+  static generateDailyChallenge(trend: AnalysisResult['trend'], fatigue: AnalysisResult['fatigueProfile'], dailyMode: string = 'normal'): ChallengeConfig {
+    
+    // 1. Recovery Mode -> Easy Wins or Consistency
+    if (dailyMode === 'recovery') {
+       return {
+         type: 'TOTAL_DURATION',
+         target: 45, // Just 45 mins
+         description: 'Recovery Day: Log 45 minutes of work to keep the streak.',
+         xpReward: 50
+       };
+    }
+
+    // 2. Boost Mode -> High Impact
+    if (dailyMode === 'boost') {
+       // Randomize between Deep Work and Frog Eater
+       return Math.random() > 0.5 ? {
+         type: 'DEEP_WORK',
+         target: 120, // 2h Deep Work
+         description: 'Boost Mode: Accumulate 2 hours of Deep Work.',
+         xpReward: 250
+       } : {
+         type: 'FROG_EATER',
+         target: 1, // 1 High Priority Task
+         description: 'Boost Mode: Eat the Frog! Complete 1 High Priority task.',
+         xpReward: 300
+       };
+    }
+
+    // 3. Normal Mode -> Context dependent
+    
+    // Scenario 1: Slump -> Backlog Cleaning (Momentum builder)
     if (trend.direction === 'decreasing') {
-      const easyTarget = Math.max(30, Math.round(fatigue.averageSession * 2)); // e.g. 60 mins total
       return {
-        type: 'TOTAL_DURATION',
-        target: easyTarget,
-        description: `Recovery Day: Log ${easyTarget} minutes of work.`,
-        xpReward: 50
+        type: 'BACKLOG_CLEANER',
+        target: 3, // 3 tasks
+        description: 'Momentum Builder: Complete 3 tasks to get back on track.',
+        xpReward: 100
       };
     }
 
-    // Scenario 2: Increasing Trend -> Beast Mode (Challenge)
+    // Scenario 2: Increasing/Stable -> Beast Mode (Challenge)
     if (trend.direction === 'increasing') {
-      const hardTarget = Math.max(120, Math.round(fatigue.averageSession * 6)); // e.g. 4 hours
+      const hardTarget = Math.max(120, Math.round(fatigue.averageSession * 6));
       return {
         type: 'TOTAL_DURATION',
         target: hardTarget,
@@ -60,7 +88,7 @@ export class ProductivityAnalyst {
       };
     }
 
-    // Scenario 3: Stable -> Consistency/Deep Work (Medium)
+    // Default
     return {
       type: 'DEEP_WORK',
       target: 60, // 1 hour of deep work

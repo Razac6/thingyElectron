@@ -1,4 +1,5 @@
 import React, { createContext, useState, useContext, ReactNode, useCallback, useEffect } from 'react';
+import { useSettings } from './SettingsContext';
 
 // --- Ranks from Slavic Bestiary ---
 const ranks = [
@@ -52,6 +53,7 @@ export const GamificationProvider = ({ children }: { children: ReactNode }) => {
   const [rank, setRank] = useState<string>('Utopiec');
   const [isLoading, setIsLoading] = useState(true);
   const userId = 1;
+  const { settings } = useSettings();
 
   useEffect(() => {
     const loadData = async () => {
@@ -73,6 +75,8 @@ export const GamificationProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const triggerRewardAnimation = (type: 'standard' | 'achievement') => {
+    if (settings.enableRewardAnimations !== 'true') return;
+
     if (type === 'achievement') {
       setRewardAnimation('trophy');
     } else {

@@ -6,6 +6,7 @@ import React, {
   ReactNode,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useSettings } from './SettingsContext';
 import { Task } from '../../interfaces/task.interface';
 import {
   fetchData as fetchTasks,
@@ -99,6 +100,7 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
   const [dailyChallenge, setDailyChallenge] = useState<DailyChallenge | null>(null);
   const [totalSpendTimeToday, setTotalSpendTimeToday] = useState(0);
   const navigate = useNavigate();
+  const { settings } = useSettings();
   
   // Ref to access latest tasks inside the event listener closure
   const tasksRef = React.useRef(tasks);
@@ -186,14 +188,17 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
     setIsLoadingProductivity(true);
     setIsLoadingContribution(true);
     try {
-      const [taskData, prodData, contData, hourlyData, insightsData, challengeData] = await Promise.all([
+      // Fetch insights first to ensure Daily Challenge is generated if missing
+      const insightsData = await getProductivityInsights();
+      
+      const [taskData, prodData, contData, hourlyData, challengeData] = await Promise.all([
         fetchTasks(navigate),
         getDailyProductivity(),
-        getContributionData(),
+        getContributionData(Number(settings.activityGraphDays) || 365),
         getHourlyProductivity(),
-        getProductivityInsights(),
-        getDailyChallenge(),
+        getDailyChallenge(), // Now fetched after insights generation trigger
       ]);
+      
       setTasks(taskData || []);
       setProductivityData(prodData || []);
       setContributionData(contData || []);
@@ -211,7 +216,7 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     fetchAllData();
-  }, [navigate]);
+  }, [navigate, settings.activityGraphDays]);
 
   useEffect(() => {
     const todayISO = getWorkdayISO();

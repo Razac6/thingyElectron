@@ -143,12 +143,16 @@ export default function Layout({ children }: LayoutProps) {
 
   useEffect(() => {
     const handleOpenSearch = () => setSearchOpen(true);
+    const handleOpenSettings = () => navigate('/settings');
+
     window.electron.ipcRenderer.on('open-search', handleOpenSearch);
+    window.electron.ipcRenderer.on('open-settings', handleOpenSettings);
 
     return () => {
       window.electron.ipcRenderer.removeListener('open-search', handleOpenSearch);
+      window.electron.ipcRenderer.removeListener('open-settings', handleOpenSettings);
     };
-  }, []);
+  }, [navigate]);
 
   const activeTask = tasks.find(task => task.startTimer !== null);
 
