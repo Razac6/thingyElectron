@@ -547,8 +547,25 @@ export const createTask = (task: any, userId: number) => {
   const minOrder = minOrderResult[0]?.values[0][0] as number | null;
   const newOrder = (minOrder === null) ? 0 : minOrder - 1;
 
+  const newTask = {
+      title: task.title,
+      description: task.description,
+      status: task.status,
+      updateStatusDate: new Date().toISOString(),
+      estimate: task.estimate,
+      priority: task.priority,
+      link: task.link,
+      createdAt: new Date().toISOString(),
+      spendTime: task.spendTime || 0,
+      startTimer: task.startTimer,
+      type: task.type || 'TASK',
+      userId: userId,
+      sprintId: task.sprintId || null,
+      displayOrder: newOrder
+  };
+
   const stmt = db.prepare(`INSERT INTO tasks (title, description, status, updateStatusDate, estimate, priority, link, createdAt, spendTime, startTimer, type, userId, sprintId, displayOrder) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-  stmt.run([task.title, task.description, task.status, task.updateStatusDate, task.estimate, task.priority, task.link, task.createdAt, task.spendTime || 0, task.startTimer, task.type || 'TASK', userId, task.sprintId || null, newOrder]);
+  stmt.run([newTask.title, newTask.description, newTask.status, newTask.updateStatusDate, newTask.estimate, newTask.priority, newTask.link, newTask.createdAt, newTask.spendTime, newTask.startTimer, newTask.type, newTask.userId, newTask.sprintId, newTask.displayOrder]);
   stmt.free();
 
   const id = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];

@@ -13,6 +13,19 @@ const PRIORITY_MAP: { [key: string]: number } = {
 
 const MODEL_PATH = path.join(app.getPath('userData'), 'neural-core-weights.json');
 
+const parseDate = (str: string) => {
+    let d = new Date(str);
+    if (isNaN(d.getTime())) {
+        // Try DD.MM.YYYY (common locale format causing issues)
+        const parts = str.split('.');
+        if (parts.length === 3) {
+            // YYYY-MM-DD
+            d = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+        }
+    }
+    return isNaN(d.getTime()) ? new Date() : d; // Fallback to now
+};
+
 export class NeuralCore {
   model: tf.Sequential;
   isTraining: boolean = false;
@@ -39,7 +52,7 @@ export class NeuralCore {
         const weights = this.model.getWeights();
         const weightData = weights.map(w => Array.from(w.dataSync()));
         fs.writeFileSync(MODEL_PATH, JSON.stringify(weightData));
-        // logSystemEvent('NeuralCore memory saved to disk.', 'SYSTEM');
+        logSystemEvent(`NeuralCore memory saved to: ${MODEL_PATH}`, 'DEBUG');
     } catch (e) {
         console.error('Failed to save neural weights', e);
     }
@@ -69,7 +82,7 @@ export class NeuralCore {
 
     tasks.forEach(task => {
       if (task.status === 'Completed' && task.spendTime > 0) {
-        const dateObj = new Date(task.createdAt);
+        const dateObj = parseDate(task.createdAt);
         const dateStr = dateObj.toISOString().split('T')[0];
         
         const hour = dateObj.getHours();
@@ -78,12 +91,16 @@ export class NeuralCore {
         
         // Fetch bio context for that day
         const bio = getDailyBio(dateStr);
-        const sleep = bio.sleepScore !== null ? bio.sleepScore : 75; // Default 75 if missing
+        const sleep = bio.sleepScore !== null ? Number(bio.sleepScore) : 75; // Default 75 if missing
 
         inputs.push([hour, day, priority, sleep]);
         outputs.push(task.spendTime / (1000 * 60)); // Minutes
       }
     });
+
+    if (inputs.length > 0) {
+        // console.log('[NEURAL DEBUG] Sample Input:', inputs[0], 'Output:', outputs[0]);
+    }
 
     return {
       inputs: tf.tensor2d(inputs),
@@ -117,7 +134,7 @@ export class NeuralCore {
 
     try {
         await this.model.fit(inputs, outputs, {
-          epochs: 50,
+          epochs: 10,
           batchSize: 32,
           shuffle: true,
           callbacks: {
@@ -154,7 +171,7 @@ export class NeuralCore {
     const priority = PRIORITY_MAP[task.priority] || 2;
     
     const bio = getDailyBio(dateStr);
-    const sleep = bio.sleepScore !== null ? bio.sleepScore : 75;
+    const sleep = bio.sleepScore !== null ? Number(bio.sleepScore) : 75;
 
     const input = tf.tensor2d([[hour, day, priority, sleep]]);
     const prediction = this.model.predict(input) as tf.Tensor;
