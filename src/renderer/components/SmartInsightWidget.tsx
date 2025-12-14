@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, Tooltip, Stack, IconButton, ButtonGroup } from '@mui/material';
+import { Box, Typography, Tooltip, Stack, IconButton, ButtonGroup, TextField, InputAdornment, Popover, Slider } from '@mui/material';
 import WbSunnyIcon from '@mui/icons-material/WbSunny';
 import BatteryAlertIcon from '@mui/icons-material/BatteryAlert';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
@@ -10,27 +10,49 @@ import SpeedIcon from '@mui/icons-material/Speed';
 import LocalFireDepartmentIcon from '@mui/icons-material/LocalFireDepartment';
 import SpaIcon from '@mui/icons-material/Spa';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import BedIcon from '@mui/icons-material/Bed';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
 import { useTimer } from '../context/TimerContext';
-import { getDailyMode, setDailyMode } from '../services/DatabaseService';
+import { useSettings } from '../context/SettingsContext';
+import { getDailyBio, updateDailyBio } from '../services/DatabaseService';
 
 const SmartInsightWidget = () => {
   const { insights } = useTimer();
-  const [dailyMode, setDailyModeState] = useState<string>('normal');
+  const { settings } = useSettings();
+  const [dailyBio, setDailyBioState] = useState<{ mode: string, sleepScore: number | null }>({ mode: 'normal', sleepScore: null });
+  const [anchorEl, setAnchorEl] = useState<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     const fetchMode = async () => {
       const today = new Date().toISOString().split('T')[0];
-      const mode = await getDailyMode(today);
-      setDailyModeState(mode);
+      const data = await getDailyBio(today);
+      setDailyBioState(data);
     };
     fetchMode();
   }, []);
 
   const handleModeChange = async (mode: string) => {
     const today = new Date().toISOString().split('T')[0];
-    await setDailyMode(today, mode);
-    setDailyModeState(mode);
+    const updated = await updateDailyBio(today, { mode });
+    setDailyBioState(updated);
   };
+
+  const handleSleepChange = async (event: Event, newValue: number | number[]) => {
+    const val = newValue as number;
+    const today = new Date().toISOString().split('T')[0];
+    const updated = await updateDailyBio(today, { sleepScore: val });
+    setDailyBioState(updated);
+  };
+
+  const handleOpenSleep = (event: React.MouseEvent<HTMLButtonElement>) => {
+    setAnchorEl(event.currentTarget);
+  };
+
+  const handleCloseSleep = () => {
+    setAnchorEl(null);
+  };
+
+  const openSleep = Boolean(anchorEl);
 
   if (!insights) return null;
 
@@ -44,6 +66,15 @@ const SmartInsightWidget = () => {
     }
   };
 
+  const getAiColor = (category?: string) => {
+      switch(category) {
+          case 'high': return 'error';
+          case 'low': return 'success';
+          case 'focus': return 'secondary';
+          default: return 'primary';
+      }
+  };
+
   return (
     <Box sx={{ mt: 2, p: 1, backgroundColor: 'rgba(0,0,0,0.03)', borderRadius: 2 }}>
        <Typography variant="overline" color="text.secondary" display="block" gutterBottom>
@@ -53,6 +84,7 @@ const SmartInsightWidget = () => {
        <Box sx={{ display: 'flex', alignItems: 'flex-start' }}>
            {/* Left Side: Stats */}
            <Stack spacing={1} sx={{ flexGrow: 1 }}>
+             {/* ... (keep stats) ... */}
              <Box display="flex" alignItems="center" gap={1}>
                 <WbSunnyIcon fontSize="small" sx={{ color: '#ffb703' }} />
                 <Typography variant="body2">
@@ -102,25 +134,65 @@ const SmartInsightWidget = () => {
              )}
            </Stack>
 
-           {/* Right Side: Daily Mode Selector */}
-           <Box sx={{ ml: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+           {/* Right Side: Daily Mode & Bio */}
+           <Box sx={{ ml: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
               <ButtonGroup variant="text" size="small" orientation="vertical" aria-label="daily mode">
                 <Tooltip title="Boost Mode: High focus, demo day" placement="left">
-                  <IconButton onClick={() => handleModeChange('boost')} color={dailyMode === 'boost' ? 'error' : 'default'}>
+                  <IconButton onClick={() => handleModeChange('boost')} color={dailyBio.mode === 'boost' ? 'error' : 'default'}>
                     <LocalFireDepartmentIcon />
                   </IconButton>
                 </Tooltip>
                 <Tooltip title="Normal Mode: Standard productivity" placement="left">
-                  <IconButton onClick={() => handleModeChange('normal')} color={dailyMode === 'normal' ? 'primary' : 'default'}>
+                  <IconButton onClick={() => handleModeChange('normal')} color={dailyBio.mode === 'normal' ? 'primary' : 'default'}>
                     <CheckCircleIcon />
                   </IconButton>
                 </Tooltip>
                 <Tooltip title="Recovery Mode: Less pressure, more breaks" placement="left">
-                  <IconButton onClick={() => handleModeChange('recovery')} color={dailyMode === 'recovery' ? 'success' : 'default'}>
+                  <IconButton onClick={() => handleModeChange('recovery')} color={dailyBio.mode === 'recovery' ? 'success' : 'default'}>
                     <SpaIcon />
                   </IconButton>
                 </Tooltip>
               </ButtonGroup>
+              
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  {settings.enableSleepTracking === 'true' && (
+                      <>
+                        <Tooltip title={`Sleep Score: ${dailyBio.sleepScore || '-'}%`} placement="left">
+                            <IconButton size="small" onClick={handleOpenSleep} color={dailyBio.sleepScore ? 'primary' : 'default'}>
+                                <BedIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                        <Popover
+                            open={openSleep}
+                            anchorEl={anchorEl}
+                            onClose={handleCloseSleep}
+                            anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+                            transformOrigin={{ vertical: 'top', horizontal: 'center' }}
+                        >
+                            <Box sx={{ p: 2, width: 200 }}>
+                                <Typography variant="caption" gutterBottom>Sleep Score: {dailyBio.sleepScore || 0}%</Typography>
+                                <Slider
+                                    value={dailyBio.sleepScore || 75}
+                                    onChange={handleSleepChange}
+                                    step={5}
+                                    min={0}
+                                    max={100}
+                                    valueLabelDisplay="auto"
+                                />
+                            </Box>
+                        </Popover>
+                      </>
+                  )}
+
+                  {/* AI Advisor Tip */}
+                  {insights && insights.dailyTip && (
+                      <Tooltip title={insights.dailyTip} arrow placement="left">
+                          <IconButton color={getAiColor(insights.dailyTipCategory)} size="small">
+                              <SmartToyIcon fontSize="small" />
+                          </IconButton>
+                      </Tooltip>
+                  )}
+              </Box>
            </Box>
        </Box>
     </Box>

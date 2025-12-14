@@ -44,6 +44,8 @@ interface AnalysisResult {
     consistent: string[];
     volatile: string[];
   };
+  dailyTip?: string;
+  dailyTipCategory?: 'high' | 'low' | 'neutral' | 'focus';
 }
 
 interface DailyChallenge {

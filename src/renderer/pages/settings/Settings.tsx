@@ -1,9 +1,12 @@
-import React from 'react';
-import { Box, Paper, Typography, Switch, FormControlLabel, Slider, Divider, Grid } from '@mui/material';
+import React, { useState } from 'react';
+import { Box, Paper, Typography, Switch, FormControlLabel, Slider, Divider, Grid, Button, CircularProgress } from '@mui/material';
 import { useSettings } from '../../context/SettingsContext';
+import { forceNeuralTraining } from '../../services/DatabaseService';
+import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 
 function Settings() {
   const { settings, updateSetting, loading } = useSettings();
+  const [training, setTraining] = useState(false);
 
   if (loading) return <Typography>Loading settings...</Typography>;
 
@@ -19,8 +22,18 @@ function Settings() {
     updateSetting('enableFatigueWarnings', String(event.target.checked));
   };
 
+  const handleSleepTrackingChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    updateSetting('enableSleepTracking', String(event.target.checked));
+  };
+
   const handleDaysChange = (event: Event, newValue: number | number[]) => {
     updateSetting('activityGraphDays', String(newValue));
+  };
+
+  const handleCalibrate = async () => {
+      setTraining(true);
+      await forceNeuralTraining();
+      setTimeout(() => setTraining(false), 1000);
   };
 
   return (
@@ -28,7 +41,17 @@ function Settings() {
       <Typography variant="h4" gutterBottom>Settings</Typography>
       
       <Paper sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" gutterBottom>Productivity & Dashboard</Typography>
+        <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+            <Typography variant="h6">Productivity AI</Typography>
+            <Button 
+                variant="outlined" 
+                startIcon={training ? <CircularProgress size={20} /> : <AutoFixHighIcon />}
+                onClick={handleCalibrate}
+                disabled={training}
+            >
+                {training ? 'Calibrating...' : 'Calibrate AI Now'}
+            </Button>
+        </Box>
         <Divider sx={{ mb: 3 }} />
         
         <Grid container spacing={3}>
@@ -83,6 +106,21 @@ function Settings() {
                 />
                 <Typography variant="caption" display="block" color="text.secondary" sx={{ ml: 4 }}>
                     Receive notifications when you work too long without breaks or switch contexts too often.
+                </Typography>
+            </Grid>
+
+            <Grid item xs={12}>
+                <FormControlLabel
+                    control={
+                        <Switch 
+                            checked={settings.enableSleepTracking === 'true'} 
+                            onChange={handleSleepTrackingChange} 
+                        />
+                    }
+                    label="Enable Sleep Tracking Integration"
+                />
+                <Typography variant="caption" display="block" color="text.secondary" sx={{ ml: 4 }}>
+                    Show Sleep Score input in Smart Insights. Data is used to adjust fatigue recommendations.
                 </Typography>
             </Grid>
         </Grid>

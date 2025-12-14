@@ -31,16 +31,18 @@ import {
   getSystemLogs,
   logSystemEvent,
   getNeuralConfidence,
+  getAiMaturity,
   getChecklistItems,
   addChecklistItem,
   toggleChecklistItem,
   deleteChecklistItem,
   getAllSettings,
   setSetting,
-  getDailyMode,
-  setDailyMode,
+  getDailyBio,
+  updateDailyBio,
 } from './db';
 import { ProductivityAnalyst, AnalysisResult } from './ProductivityAnalysis';
+import { neuralCore } from './NeuralCore';
 
 // --- Aggressive Error Logging ---
 log.transports.file.level = 'info';
@@ -100,23 +102,30 @@ const refreshInsights = (userId: number) => {
         });
     }
 
+    const trend = ProductivityAnalyst.analyzeTrend(trendData);
+    const fatigueProfile = ProductivityAnalyst.analyzeFatigue(recentSessions);
+    const dailyBio = getDailyBio(new Date().toISOString().split('T')[0]);
+    // const algoTip = ProductivityAnalyst.generateDailyTip(trend, fatigueProfile, dailyBio.mode, dailyBio.sleepScore || 75);
+    const neuralResult = neuralCore.getNeuralAdvice(activeTaskInfo?.title);
+
     cachedInsights = {
       peakHours: ProductivityAnalyst.identifyPeakHours(recentSessions).peakHours,
       peakHourRange: ProductivityAnalyst.identifyPeakHours(recentSessions).formattedRange,
-      fatigueProfile: ProductivityAnalyst.analyzeFatigue(recentSessions),
-      trend: ProductivityAnalyst.analyzeTrend(trendData),
+      fatigueProfile,
+      trend,
       focusScore: ProductivityAnalyst.analyzeFocusQuality(recentSessions),
       tagConsistency: newConsistency,
+      dailyTip: neuralResult.text,
+      dailyTipCategory: neuralResult.category
     };
     log.info('Smart Insights Refreshed:', cachedInsights);
 
     // --- Daily Challenge Generation ---
     const today = new Date().toISOString().split('T')[0];
     const existingChallenge = getDailyChallenge(userId, today);
-    logSystemEvent(`[DEBUG CHALLENGE] Date: ${today}, Existing: ${JSON.stringify(existingChallenge)}`, 'DEBUG');
 
     if (!existingChallenge && cachedInsights) {
-      const config = ProductivityAnalyst.generateDailyChallenge(cachedInsights.trend, cachedInsights.fatigueProfile, dailyMode);
+      const config = ProductivityAnalyst.generateDailyChallenge(cachedInsights.trend, cachedInsights.fatigueProfile, dailyBio.mode);
       createDailyChallenge({
         userId,
         date: today,
@@ -235,20 +244,8 @@ const destroyTray = () => {
 };
 
 // --- IPC Handlers ---
-// Better approach: Let the Frontend trigger a "check challenge" or simply recalculate on getDailyChallenge call?
-// Actually, `updateDailyChallengeProgress` needs to be called.
-// Let's enhance logWorkSession in db.ts to handle this? No, keep logic here.
-// Re-implementing the handler to be async and do the logic.
-
 ipcMain.handle('db:log-work-session', async (event, session) => {
   logWorkSession(session);
-
-  // Retrieve userId from the task to identify the user
-  // This is a bit roundabout but necessary if session doesn't have userId
-  // We can pass userId in session object from frontend? Yes, let's assume we will add userId to session log payload from frontend.
-  // BUT the interface in db.ts for logWorkSession is specific.
-  // Let's just fetch the challenge for the user involved.
-  // Optimization: activeTaskInfo has userId if we add it.
 
   if (activeTaskInfo && activeTaskInfo.userId) {
      const userId = activeTaskInfo.userId;
@@ -324,7 +321,7 @@ ipcMain.handle('db:update-task', (event, task) => {
                       body: `You completed: ${challenge.description} (+${challenge.xpReward} XP)`,
                       icon: getAssetPath('icon.png'),
                   }).show();
-                  // Grant XP (optional, frontend handles it usually via checkForAchievements? No, backend should grant.)
+                  // Grant XP
                   const profile = getProfile(task.userId);
                   if (profile) updateProfile({ ...profile, xp: profile.xp + challenge.xpReward });
               }
@@ -346,6 +343,15 @@ ipcMain.handle('db:login', (event, { username, password }) => {
   const user = loginUser(username, password);
   if (user) {
     refreshInsights(user.id); // Load insights on login
+    
+    // Train Neural Core
+    try {
+        const tasks = getTasks(user.id);
+        neuralCore.train(tasks).catch(err => log.error('Neural Training Failed', err));
+    } catch (e) {
+        log.error('Failed to trigger neural training', e);
+    }
+
     return { access_token: 'local-session-token', userId: user.id };
   }
   throw new Error('Invalid credentials');
@@ -365,6 +371,7 @@ ipcMain.handle('db:get-tag-by-name', (event, name) => getTagByName(name));
 ipcMain.handle('db:get-all-tags', () => getAllTags());
 ipcMain.handle('db:get-system-logs', (event, limit) => getSystemLogs(limit));
 ipcMain.handle('db:get-neural-confidence', () => getNeuralConfidence());
+ipcMain.handle('db:get-ai-maturity', () => getAiMaturity());
 
 // Settings Handlers
 ipcMain.handle('db:get-all-settings', () => getAllSettings());
@@ -376,12 +383,30 @@ ipcMain.handle('db:add-checklist-item', (event, taskId, text) => addChecklistIte
 ipcMain.handle('db:toggle-checklist-item', (event, itemId, isCompleted) => toggleChecklistItem(itemId, isCompleted));
 ipcMain.handle('db:delete-checklist-item', (event, itemId) => deleteChecklistItem(itemId));
 
-// Daily Mode Handlers
-ipcMain.handle('db:get-daily-mode', (event, date) => getDailyMode(date));
-ipcMain.handle('db:set-daily-mode', (event, date, mode) => setDailyMode(date, mode));
+// Daily Bio Handlers
+ipcMain.handle('db:get-daily-bio', (event, date) => getDailyBio(date));
+ipcMain.handle('db:update-daily-bio', (event, date, data) => updateDailyBio(date, data));
+
+// Neural Handlers
+ipcMain.handle('db:predict-duration', (event, task) => neuralCore.predict(task));
+ipcMain.handle('db:force-neural-training', (event, userId) => {
+    neuralCore.resetCooldown();
+    const tasks = getTasks(userId);
+    neuralCore.train(tasks).catch(err => log.error('Manual Neural Training Failed', err));
+    return true;
+});
 
 ipcMain.handle('db:get-productivity-insights', async (event, userId) => {
   refreshInsights(userId); // Ensure fresh data
+  
+  // Trigger Neural Training in background
+  try {
+      const tasks = getTasks(userId);
+      neuralCore.train(tasks).catch(err => log.error('Neural Training Failed', err));
+  } catch (err) {
+      log.error('Failed to trigger neural training', err);
+  }
+
   return cachedInsights;
 });
 

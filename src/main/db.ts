@@ -55,7 +55,7 @@ export const initDB = async () => {
   db.run(`CREATE TABLE IF NOT EXISTS system_logs (id INTEGER PRIMARY KEY, timestamp TEXT, event_type TEXT, message TEXT)`);
   db.run(`CREATE TABLE IF NOT EXISTS task_checklist_items (id INTEGER PRIMARY KEY, taskId INTEGER, text TEXT, isCompleted INTEGER DEFAULT 0, FOREIGN KEY(taskId) REFERENCES tasks(id) ON DELETE CASCADE)`);
   db.run(`CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)`);
-  db.run(`CREATE TABLE IF NOT EXISTS daily_energy_logs (date TEXT PRIMARY KEY, mode TEXT)`);
+  db.run(`CREATE TABLE IF NOT EXISTS daily_energy_logs (date TEXT PRIMARY KEY, mode TEXT, sleepScore INTEGER)`);
 
 
   try {
@@ -66,6 +66,12 @@ export const initDB = async () => {
     }
     if (!columns.some(row => row[1] === 'type')) {
       db.run("ALTER TABLE tasks ADD COLUMN type TEXT DEFAULT 'TASK'");
+    }
+    
+    // Bio logs migration
+    const bioCols = db.exec("PRAGMA table_info(daily_energy_logs);")[0].values;
+    if (!bioCols.some(row => row[1] === 'sleepScore')) {
+        db.run('ALTER TABLE daily_energy_logs ADD COLUMN sleepScore INTEGER');
     }
   } catch (e) { /* ignore */ }
 
@@ -121,31 +127,22 @@ export const getNeuralConfidence = () => {
   try {
       // 1. Task Volume (Max 50 pts)
       const taskCountStmt = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE status = 'Completed' COLLATE NOCASE");
-      let taskCount = 0;
-      if (taskCountStmt.step()) {
-          const row = taskCountStmt.getAsObject();
-          taskCount = Number(row.count) || 0;
-      }
+      const taskRow = taskCountStmt.getAsObject();
+      const taskCount = Number(taskRow.count) || 0;
       taskCountStmt.free();
       const taskScore = Math.min(50, taskCount);
 
       // 2. Tag Maturity (Max 30 pts)
       const tagStmt = db.prepare("SELECT COUNT(*) as count FROM tag_analytics WHERE completed_count >= 3");
-      let matureTags = 0;
-      if (tagStmt.step()) {
-          const row = tagStmt.getAsObject();
-          matureTags = Number(row.count) || 0;
-      }
+      const tagRow = tagStmt.getAsObject();
+      const matureTags = Number(tagRow.count) || 0;
       tagStmt.free();
       const tagScore = Math.min(30, matureTags * 5);
 
       // 3. Sprint History (Max 20 pts)
       const sprintStmt = db.prepare("SELECT COUNT(*) as count FROM sprints WHERE status = 'COMPLETED' COLLATE NOCASE");
-      let sprintCount = 0;
-      if (sprintStmt.step()) {
-          const row = sprintStmt.getAsObject();
-          sprintCount = Number(row.count) || 0;
-      }
+      const sprintRow = sprintStmt.getAsObject();
+      const sprintCount = Number(sprintRow.count) || 0;
       sprintStmt.free();
       const sprintScore = Math.min(20, sprintCount * 5);
       
@@ -155,6 +152,18 @@ export const getNeuralConfidence = () => {
       console.error('[DB] Error calculating neural confidence:', error);
       return 0;
   }
+};
+
+export const getAiMaturity = () => {
+  if (!db) return 0;
+  const trainingCount = Number(getSetting('neural_training_count') || 0);
+  const dataCount = Number(getSetting('neural_data_count') || 0);
+  
+  // Score: Training (max 50) + Data Volume (max 50)
+  const trainingScore = Math.min(50, trainingCount * 2); // 25 trainings to max
+  const dataScore = Math.min(50, dataCount); // 50 tasks to max
+  
+  return Math.round(trainingScore + dataScore);
 };
 
 // --- Analytics Engine ---
@@ -285,7 +294,7 @@ export const getLast14DaysProductivity = (userId: number) => {
 // --- Daily Challenges ---
 export const getDailyChallenge = (userId: number, date: string) => {
   if (!db) return null;
-  const stmt = db.prepare('SELECT * FROM daily_challenges WHERE userId = :userId AND date = :date');
+  let stmt = db.prepare('SELECT * FROM daily_challenges WHERE userId = :userId AND date = :date');
   stmt.bind({ ':userId': userId, ':date': date });
   if (stmt.step()) {
     const result = stmt.getAsObject();
@@ -293,6 +302,18 @@ export const getDailyChallenge = (userId: number, date: string) => {
     return result;
   }
   stmt.free();
+
+  // Fallback: Try to find ANY challenge for today (Single User / Dev Mode fix)
+  // This handles cases where frontend sends ID=1 but DB has UUID
+  const fallbackStmt = db.prepare('SELECT * FROM daily_challenges WHERE date = :date LIMIT 1');
+  fallbackStmt.bind({ ':date': date });
+  if (fallbackStmt.step()) {
+      const result = fallbackStmt.getAsObject();
+      fallbackStmt.free();
+      return result;
+  }
+  fallbackStmt.free();
+
   return null;
 };
 
@@ -807,20 +828,26 @@ export const setSetting = (key: string, value: string) => {
   return getAllSettings();
 };
 
-// --- Daily Mode Helpers ---
-export const getDailyMode = (date: string) => {
-  if (!db) return 'normal'; // Default
-  const stmt = db.prepare('SELECT mode FROM daily_energy_logs WHERE date = ?');
+// --- Daily Bio Helpers ---
+export const getDailyBio = (date: string) => {
+  if (!db) return { mode: 'normal', sleepScore: null };
+  const stmt = db.prepare('SELECT * FROM daily_energy_logs WHERE date = ?');
   const result = stmt.getAsObject([date]);
   stmt.free();
-  return result.mode || 'normal';
+  if (!result || !result.date) return { mode: 'normal', sleepScore: null };
+  return { mode: result.mode || 'normal', sleepScore: result.sleepScore };
 };
 
-export const setDailyMode = (date: string, mode: string) => {
+export const updateDailyBio = (date: string, data: { mode?: string, sleepScore?: number }) => {
   if (!db) throw new Error('DB not initialized');
-  db.run('INSERT OR REPLACE INTO daily_energy_logs (date, mode) VALUES (?, ?)', [date, mode]);
+  
+  const current = getDailyBio(date);
+  const newMode = data.mode !== undefined ? data.mode : current.mode;
+  const newSleep = data.sleepScore !== undefined ? data.sleepScore : current.sleepScore;
+
+  db.run('INSERT OR REPLACE INTO daily_energy_logs (date, mode, sleepScore) VALUES (?, ?, ?)', [date, newMode, newSleep]);
   saveDB();
-  return mode;
+  return { mode: newMode, sleepScore: newSleep };
 };
 
 export const closeDB = () => {

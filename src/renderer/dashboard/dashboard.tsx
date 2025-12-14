@@ -4,8 +4,12 @@ import Paper from '@mui/material/Paper';
 import {
   Typography,
   Box,
+  Fab,
+  Tooltip,
+  Zoom,
 } from '@mui/material';
 import React from 'react';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
 import { StatusEnum } from '../../enums/status.enum';
 import { useTimer } from '../context/TimerContext';
 import DailyProductivityBarChart from '../components/DailyProductivityBarChart';
@@ -22,7 +26,7 @@ function formatTime(ms: number): string {
 }
 
 export default function Dashboard() {
-  const { tasks, isLoading, totalSpendTimeToday } = useTimer();
+  const { tasks, isLoading, totalSpendTimeToday, insights } = useTimer();
 
   if (isLoading) {
     return <Typography>Loading...</Typography>;

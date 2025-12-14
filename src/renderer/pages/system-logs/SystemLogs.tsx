@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Paper, Typography, LinearProgress } from '@mui/material';
-import { getSystemLogs, getNeuralConfidence } from '../../services/DatabaseService';
+import { getSystemLogs, getNeuralConfidence, getAiMaturity } from '../../services/DatabaseService';
 
 function SystemLogs() {
   const [logs, setLogs] = useState<any[]>([]);
   const [confidence, setConfidence] = useState(0);
+  const [aiMaturity, setAiMaturity] = useState(0);
 
   useEffect(() => {
     const fetchLogs = async () => {
@@ -12,6 +13,8 @@ function SystemLogs() {
       setLogs(data);
       const score = await getNeuralConfidence();
       setConfidence(score);
+      const aiScore = await getAiMaturity();
+      setAiMaturity(aiScore);
     };
     fetchLogs();
     
@@ -37,11 +40,11 @@ function SystemLogs() {
             Neural System Logs
         </Typography>
         
-        {/* Confidence Bar */}
+        {/* Confidence Bars */}
         <Box sx={{ mb: 2, p: 2, bgcolor: '#1e1e1e', border: '1px solid #333', borderRadius: 1 }}>
              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                 <Typography variant="caption" sx={{ color: '#00e5ff', fontFamily: 'monospace', flexGrow: 1 }}>
-                    {'>'} SYSTEM_CONFIDENCE_LEVEL
+                    {'>'} ALGORITHMIC_CONFIDENCE
                 </Typography>
                 <Typography variant="caption" sx={{ color: '#00e5ff', fontFamily: 'monospace' }}>
                     {Number.isNaN(confidence) ? 0 : confidence}%
@@ -52,15 +55,38 @@ function SystemLogs() {
                 value={confidence} 
                 sx={{ 
                   height: 6, 
+                  mb: 2,
                   bgcolor: '#333',
                   borderRadius: 1,
                   '& .MuiLinearProgress-bar': { 
-                      bgcolor: confidence > 70 ? '#00e5ff' : (confidence > 30 ? '#ffca28' : '#f44336') 
+                      bgcolor: confidence > 70 ? '#00e5ff' : '#f44336' 
                   }
                 }} 
               />
-              <Typography variant="caption" sx={{ color: '#666', fontFamily: 'monospace', mt: 0.5, display: 'block' }}>
-                  {confidence < 30 ? 'STATUS: GATHERING_DATA' : (confidence < 70 ? 'STATUS: CALIBRATING' : 'STATUS: OPTIMIZED')}
+
+             <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                <Typography variant="caption" sx={{ color: '#ab47bc', fontFamily: 'monospace', flexGrow: 1 }}>
+                    {'>'} NEURAL_NET_MATURITY
+                </Typography>
+                <Typography variant="caption" sx={{ color: '#ab47bc', fontFamily: 'monospace' }}>
+                    {Number.isNaN(aiMaturity) ? 0 : aiMaturity}%
+                </Typography>
+             </Box>
+             <LinearProgress 
+                variant="determinate" 
+                value={aiMaturity} 
+                sx={{ 
+                  height: 6, 
+                  bgcolor: '#333',
+                  borderRadius: 1,
+                  '& .MuiLinearProgress-bar': { 
+                      bgcolor: aiMaturity > 50 ? '#ab47bc' : '#ffca28' 
+                  }
+                }} 
+              />
+              
+              <Typography variant="caption" sx={{ color: '#666', fontFamily: 'monospace', mt: 1, display: 'block' }}>
+                  {aiMaturity < 20 ? 'STATUS: NEURAL_INIT' : 'STATUS: NEURAL_ACTIVE'}
               </Typography>
         </Box>
 

@@ -24,6 +24,8 @@ export interface AnalysisResult {
     consistent: string[];
     volatile: string[];
   };
+  dailyTip?: string;
+  dailyTipCategory?: 'high' | 'low' | 'neutral' | 'focus';
 }
 
 export interface ChallengeConfig {
@@ -95,6 +97,31 @@ export class ProductivityAnalyst {
       description: 'Focus Challenge: Accumulate 60 minutes of Deep Work (sessions > 20m).',
       xpReward: 100
     };
+  }
+
+  static generateDailyTip(
+      trend: AnalysisResult['trend'], 
+      fatigue: AnalysisResult['fatigueProfile'], 
+      dailyMode: string = 'normal',
+      sleepScore: number = 75
+  ): string {
+      // 1. Sleep based tips
+      if (sleepScore < 50) return "Low sleep detected. Your cognitive function might be reduced. Stick to administrative tasks and take frequent breaks.";
+      if (sleepScore > 90) return "Great sleep score! Your brain is primed for learning and complex problem solving today.";
+
+      // 2. Daily Mode based tips
+      if (dailyMode === 'recovery') return "You are in Recovery Mode. Be kind to yourself. Completing even one small task is a win today.";
+      if (dailyMode === 'boost') return "Boost Mode active! Channel this energy into your most challenging task first ('Eat the Frog').";
+
+      // 3. Trend based tips
+      if (trend.direction === 'decreasing') return "Your momentum has slowed recently. Try the '2-minute rule': just start a task for 2 minutes to break the inertia.";
+      if (trend.direction === 'increasing') return "You are on a roll! Consistency is key. Try to maintain this pace without burning out.";
+
+      // 4. Fatigue based tips
+      if (fatigue.maxRecommended < 30) return "Your recent sessions suggest quick fatigue. Try the Pomodoro technique (25m work / 5m break) to sustain focus.";
+
+      // Default
+      return "Productivity is not about doing more, but doing what matters. Check your priorities.";
   }
 
   /**

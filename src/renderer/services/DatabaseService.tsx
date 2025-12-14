@@ -276,6 +276,16 @@ const getNeuralConfidence = async () => {
   }
 };
 
+const getAiMaturity = async () => {
+  try {
+    const score = await window.electron.database.getAiMaturity();
+    return score;
+  } catch (error) {
+    console.error('[DatabaseService] Error fetching AI maturity:', error);
+    return 0;
+  }
+};
+
 const getChecklistItems = async (taskId: number) => {
   return await window.electron.database.getChecklistItems(taskId);
 };
@@ -292,6 +302,27 @@ const deleteChecklistItem = async (itemId: number) => {
   return await window.electron.database.deleteChecklistItem(itemId);
 };
 
+const predictDuration = async (task: any) => {
+  try {
+    return await window.electron.database.predictDuration(task);
+  } catch (error) {
+    console.error('[DatabaseService] Prediction error:', error);
+    return 0;
+  }
+};
+
+const forceNeuralTraining = async () => {
+  try {
+    const userStr = localStorage.getItem('userId');
+    const userId = userStr ? JSON.parse(userStr) : 1;
+    await window.electron.database.forceNeuralTraining(userId);
+    return true;
+  } catch (error) {
+    console.error('[DatabaseService] Force training error:', error);
+    return false;
+  }
+};
+
 const getAllSettings = async () => {
   return await window.electron.database.getAllSettings();
 };
@@ -300,12 +331,12 @@ const setSetting = async (key: string, value: string) => {
   return await window.electron.database.setSetting(key, value);
 };
 
-const getDailyMode = async (date: string) => {
-  return await window.electron.database.getDailyMode(date);
+const getDailyBio = async (date: string) => {
+  return await window.electron.database.getDailyBio(date);
 };
 
-const setDailyMode = async (date: string, mode: string) => {
-  return await window.electron.database.setDailyMode(date, mode);
+const updateDailyBio = async (date: string, data: any) => {
+  return await window.electron.database.updateDailyBio(date, data);
 };
 
 export {
@@ -332,12 +363,15 @@ export {
   getAllTags,
   getSystemLogs,
   getNeuralConfidence,
+  getAiMaturity,
   getChecklistItems,
   addChecklistItem,
   toggleChecklistItem,
   deleteChecklistItem,
   getAllSettings,
   setSetting,
-  getDailyMode,
-  setDailyMode,
+  getDailyBio,
+  updateDailyBio,
+  predictDuration,
+  forceNeuralTraining,
 };
