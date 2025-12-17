@@ -169,6 +169,22 @@ export const getAiMaturity = () => {
   return Math.round(trainingScore + dataScore);
 };
 
+export const getAiStats = () => {
+  if (!db) return { maturity: 0, confidence: 0, trainingCount: 0, dataCount: 0 };
+  
+  const maturity = getAiMaturity();
+  const confidence = getNeuralConfidence();
+  const trainingCount = Number(getSetting('neural_training_count') || 0);
+  const dataCount = Number(getSetting('neural_data_count') || 0);
+
+  return {
+    maturity,
+    confidence,
+    trainingCount,
+    dataCount
+  };
+};
+
 // --- Analytics Engine ---
 export const getTagAnalytics = (tagId: number) => {
   if (!db) return null;

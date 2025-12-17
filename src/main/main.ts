@@ -32,6 +32,7 @@ import {
   logSystemEvent,
   getNeuralConfidence,
   getAiMaturity,
+  getAiStats,
   getChecklistItems,
   addChecklistItem,
   toggleChecklistItem,
@@ -387,6 +388,7 @@ ipcMain.handle('db:get-all-tags', () => getAllTags());
 ipcMain.handle('db:get-system-logs', (event, limit) => getSystemLogs(limit));
 ipcMain.handle('db:get-neural-confidence', () => getNeuralConfidence());
 ipcMain.handle('db:get-ai-maturity', () => getAiMaturity());
+ipcMain.handle('db:get-ai-stats', () => getAiStats());
 
 // Settings Handlers
 ipcMain.handle('db:get-all-settings', () => getAllSettings());
@@ -404,6 +406,7 @@ ipcMain.handle('db:update-daily-bio', (event, date, data) => updateDailyBio(date
 
 // Neural Handlers
 ipcMain.handle('db:predict-duration', (event, task) => neuralCore.predict(task));
+ipcMain.handle('db:get-ai-performance', (event, userId, days) => neuralCore.getPerformanceHistory(userId, days));
 ipcMain.handle('db:force-neural-training', (event, userId) => {
     neuralCore.resetCooldown();
     const tasks = getTasks(userId);

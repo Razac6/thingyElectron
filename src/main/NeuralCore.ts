@@ -184,6 +184,77 @@ export class NeuralCore {
 
     return value; // Minutes
   }
+
+  // Prediction based on specific task context (historical or current)
+  predictForTask(task: any): number {
+      const dateObj = parseDate(task.createdAt); // Or updateStatusDate if better
+      const dateStr = dateObj.toISOString().split('T')[0];
+      
+      const hour = dateObj.getHours();
+      const day = dateObj.getDay();
+      const priority = PRIORITY_MAP[task.priority] || 2;
+      
+      const bio = getDailyBio(dateStr);
+      const sleep = bio.sleepScore !== null ? Number(bio.sleepScore) : 75;
+      const meetingLoad = (bio.meetingTime || 0) / 480;
+
+      const input = tf.tensor2d([[hour, day, priority, sleep, meetingLoad]]);
+      const prediction = this.model.predict(input) as tf.Tensor;
+      const value = prediction.dataSync()[0];
+      
+      input.dispose();
+      prediction.dispose();
+
+      return value;
+  }
+
+  async getPerformanceHistory(userId: number, days: number = 7) {
+      const tasks = getTasks(userId);
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - days);
+      
+      const groupedData: { [key: string]: { actual: number, predicted: number } } = {};
+
+      // Initialize dates to ensure 0-values for empty days
+      for (let i = 0; i < days; i++) {
+          const d = new Date();
+          d.setDate(d.getDate() - i);
+          const dateStr = d.toISOString().split('T')[0];
+          groupedData[dateStr] = { actual: 0, predicted: 0 };
+      }
+
+      tasks.forEach(task => {
+          if (task.status === 'Completed' && task.updateStatusDate) {
+              const taskDate = parseDate(task.updateStatusDate);
+              
+              if (taskDate >= cutoffDate) {
+                  const dateStr = taskDate.toISOString().split('T')[0];
+                  
+                  // Actual time (ms -> min)
+                  const actualMin = (task.spendTime || 0) / (1000 * 60);
+                  
+                  // Predicted time
+                  // We use the task properties. 
+                  // Note: Predicting on *completed* task asks "How long should this have taken?"
+                  const predictedMin = this.predictForTask(task);
+
+                  if (groupedData[dateStr]) {
+                      groupedData[dateStr].actual += actualMin;
+                      groupedData[dateStr].predicted += predictedMin;
+                  }
+              }
+          }
+      });
+
+      // Convert to array and sort
+      return Object.entries(groupedData)
+          .map(([date, data]) => ({
+              date,
+              actual: Math.round(data.actual),
+              predicted: Math.round(data.predicted)
+          }))
+          .sort((a, b) => a.date.localeCompare(b.date));
+  }
   
   resetCooldown() {
       this.lastTrainingTime = 0;
