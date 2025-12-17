@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('electron', {
     updateTask: (task: any) => ipcRenderer.invoke('db:update-task', task),
     deleteTask: (taskId: number) => ipcRenderer.invoke('db:delete-task', taskId),
     updateTasksOrder: (taskIds: number[]) => ipcRenderer.invoke('db:update-tasks-order', taskIds),
+    autoScheduleTasks: (userId: number) => ipcRenderer.invoke('db:auto-schedule-tasks', userId),
 
     // Sprints
     getSprints: () => ipcRenderer.invoke('db:get-sprints'),

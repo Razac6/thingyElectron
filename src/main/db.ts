@@ -537,7 +537,7 @@ export const updateTasksOrder = (taskIds: number[]) => {
   }
 };
 
-export const getTasks = (userId: number) => {
+export const getTasks = (userId: number, includeMeetings: boolean = false) => {
   if (!db) throw new Error('DB not initialized');
   const query = `
     SELECT

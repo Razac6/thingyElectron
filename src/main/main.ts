@@ -8,7 +8,7 @@ import MenuBuilder from './menu';
 import { resolveHtmlPath } from './util';
 import {
   initDB,
-  getTasks, createTask, updateTask, deleteTask, updateTasksOrder, // Use deleteTask directly
+  getTasks, createTask, updateTask, deleteTask, updateTasksOrder,
   getSprints, createSprint, updateSprintStatus, updateSprint,
   getNotes, createNote, updateNote, deleteNote,
   loginUser, registerUser,
@@ -42,6 +42,7 @@ import {
   getDailyBio,
   updateDailyBio,
 } from './db';
+import { autoScheduleTasks } from './TaskScheduler';
 import { ProductivityAnalyst, AnalysisResult } from './ProductivityAnalysis';
 import { neuralCore } from './NeuralCore';
 
@@ -78,12 +79,14 @@ const refreshInsights = (userId: number) => {
     const recentSessions = getRecentWorkSessions(userId, 30);
     const trendData = getLast14DaysProductivity(userId);
     const tagData = getTagAnalyticsWithNames();
+    const allTasks = getTasks(userId); // Fetch all tasks for difficulty analysis
     
     // Create a map for the analysis
     const tagMap = new Map<number, string>();
     tagData.forEach((t: any) => tagMap.set(t.id, t.name));
 
     const newConsistency = ProductivityAnalyst.analyzeTagConsistency(tagData, tagMap);
+    const difficultyProfile = ProductivityAnalyst.analyzeTagDifficulty(allTasks); // Calculate difficulty
 
     // --- Detect & Log Consistency Shifts ---
     if (cachedInsights && cachedInsights.tagConsistency) {
@@ -131,6 +134,7 @@ const refreshInsights = (userId: number) => {
       trend,
       focusScore: ProductivityAnalyst.analyzeFocusQuality(recentSessions),
       tagConsistency: newConsistency,
+      tagDifficulty: difficultyProfile, // Include in insights
       dailyTip: finalTip,
       dailyTipCategory: finalCategory
     };
@@ -348,6 +352,7 @@ ipcMain.handle('db:update-task', (event, task) => {
 });
 ipcMain.handle('db:delete-task', (event, taskId) => deleteTask(taskId)); // Use deleteTask directly
 ipcMain.handle('db:update-tasks-order', (event, taskIds) => updateTasksOrder(taskIds));
+ipcMain.handle('db:auto-schedule-tasks', (event, userId) => autoScheduleTasks(userId));
 ipcMain.handle('db:get-sprints', () => getSprints());
 ipcMain.handle('db:create-sprint', (event, sprint) => createSprint(sprint));
 ipcMain.handle('db:update-sprint', (event, sprint) => updateSprint(sprint));

@@ -37,6 +37,7 @@ import VerticalAlignTopIcon from '@mui/icons-material/VerticalAlignTop';
 import VerticalAlignBottomIcon from '@mui/icons-material/VerticalAlignBottom';
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
 import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
+import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh'; // The only AI icon
 import { StatusEnum } from '../../../enums/status.enum';
 import { PriorityEnum } from '../../../enums/priority.enum';
 import { TaskTypeEnum } from '../../../enums/TaskTypeEnum';
@@ -79,6 +80,7 @@ function List() {
   const [isColumnSortActive, setIsColumnSortActive] = useState(false);
   const [editingStatusId, setEditingStatusId] = useState<number | null>(null);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
+  const [showAiSuccess, setShowAiSuccess] = useState(false);
 
   useEffect(() => {
     const fetchSprints = async () => {
@@ -95,8 +97,28 @@ function List() {
 
   const anyTimerRunning = tasks.some((task) => task.startTimer !== null);
 
+  const handleAutoSchedule = async () => {
+      const userStr = localStorage.getItem('userId');
+      const userId = userStr ? JSON.parse(userStr) : 1;
+      
+      try {
+          await window.electron.database.autoScheduleTasks(userId);
+          // Refresh tasks to see new order
+          const updatedTasks = await window.electron.database.getTasks(userId);
+          setTasks(updatedTasks);
+          setShowAiSuccess(true);
+          setTimeout(() => setShowAiSuccess(false), 4000);
+      } catch (error) {
+          console.error("AI Schedule failed", error);
+      }
+  };
+
   const filteredTasks = useMemo(() => {
     let processedTasks = [...tasks];
+    
+    // Filter out MEETING tasks
+    processedTasks = processedTasks.filter(task => task.type !== 'MEETING');
+
     if (filterSprint !== 'all') {
       processedTasks = filterSprint === 'backlog'
         ? processedTasks.filter(task => !task.sprintId)
@@ -108,11 +130,8 @@ function List() {
     if (!showCompletedTasks) {
       processedTasks = processedTasks.filter(task => task.status !== StatusEnum.COMPLETED);
     }
-    return processedTasks;
-  }, [tasks, showCompletedTasks, filterSprint, filterType]);
 
-  useEffect(() => {
-    // Force re-filtering when dependencies change
+    return processedTasks;
   }, [tasks, showCompletedTasks, filterSprint, filterType]);
 
   const handleMoveTask = async (taskId: number, direction: 'up' | 'down' | 'top' | 'bottom') => {
@@ -317,6 +336,7 @@ function List() {
 
   return (
     <Box sx={{ height: 'calc(100vh - 128px)', width: '100%' }}>
+      {/* ... Filters Box ... */}
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2, mb: 1 }}>
         <FormControl size="small" sx={{ minWidth: 150 }}>
           <InputLabel>Filter by Sprint</InputLabel>
@@ -340,6 +360,13 @@ function List() {
           </Select>
         </FormControl>
       </Box>
+      
+      {showAiSuccess && (
+          <Alert severity="success" sx={{ mb: 1 }}>
+              AI zoptymalizowało Twoją kolejkę zadań (Priorytety + Presja Sprintu + Twoja Prędkość).
+          </Alert>
+      )}
+
       <DataGrid
         rows={filteredTasks}
         columns={columns}
@@ -347,11 +374,14 @@ function List() {
         onSortModelChange={handleSortModelChange}
         sx={{ '& .MuiDataGrid-row:hover': { cursor: 'pointer' } }}
       />
+      
+      {/* ... Menu ... */}
       <Menu
         anchorEl={menuAnchorEl}
         open={Boolean(menuAnchorEl)}
         onClose={handleMenuClose}
       >
+        {/* ... existing menu items ... */}
         <MenuItem onClick={() => handleMoveTask(currentMenuTaskId!, 'up')} disabled={isColumnSortActive || currentTaskIndex === 0}>
           <ListItemIcon><ArrowUpwardIcon fontSize="small" /></ListItemIcon>
           <ListItemText>Move Up</ListItemText>
@@ -374,7 +404,7 @@ function List() {
           <ListItemText>Delete</ListItemText>
         </MenuItem>
       </Menu>
-      
+
       <SpeedDial
         ariaLabel="Task Actions"
         sx={{ position: 'absolute', bottom: 16, right: 16 }}
@@ -388,6 +418,12 @@ function List() {
           icon={<AddIcon />}
           tooltipTitle="Add New Task"
           onClick={() => setOpenDialog(true)}
+        />
+        <SpeedDialAction
+          key="ai-schedule"
+          icon={<AutoFixHighIcon color="secondary" />}
+          tooltipTitle="AI Auto-Planner"
+          onClick={handleAutoSchedule}
         />
         <SpeedDialAction
           key="toggle-completed"

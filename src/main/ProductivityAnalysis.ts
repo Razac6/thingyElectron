@@ -24,6 +24,7 @@ export interface AnalysisResult {
     consistent: string[];
     volatile: string[];
   };
+  tagDifficulty: Record<string, number>; // New: Tag Name -> Difficulty Multiplier (e.g. 1.5 = takes 50% longer than estimated)
   dailyTip?: string;
   dailyTipCategory?: 'high' | 'low' | 'neutral' | 'focus';
 }
@@ -323,5 +324,151 @@ export class ProductivityAnalyst {
       consistent: consistent.slice(0, 3), // Top 3
       volatile: volatile.slice(0, 3) 
     };
+  }
+
+  /**
+   * Algorithm 7: Tag Difficulty Profiling (Personalized Difficulty)
+   * Calculates a "Multiplier" for each tag based on: Actual Time / Estimated Time.
+   * > 1.0: User tends to underestimate tasks with this tag (Harder than thought).
+   * < 1.0: User tends to overestimate tasks with this tag (Easier than thought).
+   */
+  static analyzeTagDifficulty(tasks: any[]): Record<string, number> {
+      const tagStats: Record<string, { totalSpend: number, totalEst: number }> = {};
+
+      tasks.forEach(task => {
+          // Only consider completed tasks with valid estimates and time spent
+          if (task.status === 'Completed' && task.spendTime > 0 && task.estimate > 0) {
+              // Parse tags (assuming comma separated string or array in the future, currently comma string from DB)
+              // The passed 'tasks' object from DB usually has 'tags' as a comma-separated string if coming from getTasks view,
+              // or we might need to rely on what is passed. 
+              // Let's assume it's an array of strings or comma-string.
+              let tags: string[] = [];
+              if (Array.isArray(task.tags)) {
+                  tags = task.tags;
+              } else if (typeof task.tags === 'string' && task.tags.length > 0) {
+                  tags = task.tags.split(',');
+              }
+
+              const estimateMs = task.estimate * 60 * 60 * 1000;
+
+              tags.forEach(tag => {
+                  const t = tag.trim();
+                  if (!tagStats[t]) tagStats[t] = { totalSpend: 0, totalEst: 0 };
+                  tagStats[t].totalSpend += task.spendTime;
+                  tagStats[t].totalEst += estimateMs;
+              });
+          }
+      });
+
+      const difficultyMap: Record<string, number> = {};
+      
+      // Calculate Global Average for fallback
+      let globalSpend = 0;
+      let globalEst = 0;
+
+      Object.entries(tagStats).forEach(([tag, stats]) => {
+          // Only calculate if we have significant data (e.g. > 1 hour of total work)
+          if (stats.totalEst > 0) {
+              difficultyMap[tag] = Number((stats.totalSpend / stats.totalEst).toFixed(2));
+              globalSpend += stats.totalSpend;
+              globalEst += stats.totalEst;
+          }
+      });
+
+      // Add a 'default' key for tasks without tags or new tags
+      difficultyMap['default'] = globalEst > 0 ? Number((globalSpend / globalEst).toFixed(2)) : 1.0;
+
+      return difficultyMap;
+  }
+
+  /**
+   * Algorithm 6: AI Scheduler Suggestion
+   * Suggests best time of day for a task based on complexity and user's peak hours.
+   */
+  static suggestBestTimeForTask(task: any, peakHours: number[]): { icon: string, text: string, color: string } {
+      const isHard = task.priority === 'High' || (task.estimate && task.estimate >= 2);
+      const isEasy = task.priority === 'Low' || (task.estimate && task.estimate < 1);
+
+      if (isHard) {
+          if (peakHours.length > 0) {
+              const start = peakHours[0];
+              const end = peakHours[peakHours.length - 1] + 1;
+              return { icon: '⚡', text: `Golden Hour (${start}:00-${end}:00)`, color: 'warning' };
+          }
+          return { icon: '☀️', text: 'Morning Boost', color: 'warning' };
+      }
+
+      if (isEasy) {
+          return { icon: '☕', text: 'Low Energy Time', color: 'success' };
+      }
+
+      return { icon: '📅', text: 'Anytime', color: 'default' };
+  }
+
+  /**
+   * Algorithm 8: AI Task Scoring
+   * Calculates a score for auto-scheduling. Higher score = higher position in list.
+   * Strategy: Weighted Shortest Job First (WSJF) variant.
+   */
+  static calculateTaskScore(task: any, tagDifficulty: Record<string, number>, sprintEndDate?: string, neuralEstimateHours?: number): number {
+      let score = 0;
+
+      // 1. Priority Base (The anchor)
+      // We use large gaps to ensure Priority is the dominant factor
+      switch (task.priority) {
+          case 'High': score += 1000; break;
+          case 'Medium': score += 500; break;
+          default: score += 100; break; // Low
+      }
+
+      // 2. Difficulty/Effort Penalty (Prefer easier tasks within the same priority tier)
+      let projectedEffort = 0;
+
+      if (neuralEstimateHours !== undefined) {
+          // Use AI Prediction directly
+          projectedEffort = neuralEstimateHours;
+      } else {
+          // Fallback to Tag Multiplier Logic
+          let multiplier = tagDifficulty['default'] || 1.0;
+          if (task.tags && typeof task.tags === 'string') {
+              const tags = task.tags.split(',');
+              let sum = 0;
+              let count = 0;
+              tags.forEach((t: string) => {
+                  const tag = t.trim();
+                  if (tagDifficulty[tag]) {
+                      sum += tagDifficulty[tag];
+                      count++;
+                  }
+              });
+              if (count > 0) multiplier = sum / count;
+          }
+          const estimate = task.estimate || 1; 
+          projectedEffort = estimate * multiplier;
+      }
+      
+      // Subtract points for effort (e.g. 5h task = -100 pts). 
+      // This ensures that among High priority tasks, the quicker ones are done first.
+      score -= (projectedEffort * 20);
+
+      // 3. Sprint Pressure (Deadline factor)
+      if (sprintEndDate) {
+          const now = new Date();
+          const end = new Date(sprintEndDate);
+          const diffTime = end.getTime() - now.getTime();
+          const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+          if (daysRemaining >= 0) {
+              // Inverse proportion: fewer days = more points.
+              // +1 to avoid division by zero.
+              // Examples:
+              // 0 days left (today) -> 1000 pts (Massive boost, treats as Critical)
+              // 1 day left -> 500 pts
+              // 5 days left -> 166 pts
+              score += (10 / (daysRemaining + 1)) * 100;
+          }
+      }
+
+      return score;
   }
 }
