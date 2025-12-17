@@ -3,4 +3,5 @@ export enum TaskTypeEnum {
   BUG = 'BUG',
   FEATURE = 'FEATURE',
   DOC = 'DOC',
+  MEETING = 'MEETING',
 }

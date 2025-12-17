@@ -38,13 +38,13 @@ export class NeuralCore {
   }
 
   private initModel() {
-    // Input: [Hour, Day, Priority, SleepScore] (4 features)
-    this.model.add(tf.layers.dense({ units: 16, activation: 'relu', inputShape: [4] }));
+    // Input: [Hour, Day, Priority, SleepScore, MeetingLoad] (5 features)
+    this.model.add(tf.layers.dense({ units: 16, activation: 'relu', inputShape: [5] }));
     this.model.add(tf.layers.dense({ units: 8, activation: 'relu' }));
     this.model.add(tf.layers.dense({ units: 1 })); // Output: Duration (minutes)
 
     this.model.compile({ optimizer: 'adam', loss: 'meanSquaredError' });
-    logSystemEvent('NeuralCore initialized. Model architecture ready (Inputs: Hour, Day, Priority, Sleep).', 'SYSTEM');
+    logSystemEvent('NeuralCore initialized. Model architecture ready (Inputs: Hour, Day, Priority, Sleep, Meetings).', 'SYSTEM');
   }
 
   private async saveWeights() {
@@ -92,8 +92,9 @@ export class NeuralCore {
         // Fetch bio context for that day
         const bio = getDailyBio(dateStr);
         const sleep = bio.sleepScore !== null ? Number(bio.sleepScore) : 75; // Default 75 if missing
+        const meetingLoad = (bio.meetingTime || 0) / 480; // Normalize 0-8h to 0-1
 
-        inputs.push([hour, day, priority, sleep]);
+        inputs.push([hour, day, priority, sleep, meetingLoad]);
         outputs.push(task.spendTime / (1000 * 60)); // Minutes
       }
     });
@@ -172,8 +173,9 @@ export class NeuralCore {
     
     const bio = getDailyBio(dateStr);
     const sleep = bio.sleepScore !== null ? Number(bio.sleepScore) : 75;
+    const meetingLoad = (bio.meetingTime || 0) / 480;
 
-    const input = tf.tensor2d([[hour, day, priority, sleep]]);
+    const input = tf.tensor2d([[hour, day, priority, sleep, meetingLoad]]);
     const prediction = this.model.predict(input) as tf.Tensor;
     const value = prediction.dataSync()[0];
     
@@ -233,18 +235,19 @@ export class NeuralCore {
         return { text: this.getRandomResponse(0, 'focus', activeTask), category: 'focus' };
     }
 
-    // Baseline: Medium Priority Task, 75 Sleep, 12:00 PM (Ideal conditions proxy)
-    const baselineInput = tf.tensor2d([[12, 3, 2, 75]]); 
+    // Baseline: Medium Priority Task, 75 Sleep, 12:00 PM, 30m Meetings (Ideal conditions proxy)
+    const baselineInput = tf.tensor2d([[12, 3, 2, 75, 30/480]]); 
     const baselinePred = (this.model.predict(baselineInput) as tf.Tensor).dataSync()[0];
     baselineInput.dispose();
 
-    // Current Reality: Current Time, Real Sleep Score
+    // Current Reality: Current Time, Real Sleep Score, Real Meeting Load
     const date = new Date();
     const dateStr = date.toISOString().split('T')[0];
     const bio = getDailyBio(dateStr);
     const sleep = bio.sleepScore !== null ? bio.sleepScore : 75;
+    const meetingLoad = (bio.meetingTime || 0) / 480;
     
-    const currentInput = tf.tensor2d([[date.getHours(), date.getDay(), 2, sleep]]);
+    const currentInput = tf.tensor2d([[date.getHours(), date.getDay(), 2, sleep, meetingLoad]]);
     const currentPred = (this.model.predict(currentInput) as tf.Tensor).dataSync()[0];
     currentInput.dispose();
 

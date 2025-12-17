@@ -73,6 +73,9 @@ export const initDB = async () => {
     if (!bioCols.some(row => row[1] === 'sleepScore')) {
         db.run('ALTER TABLE daily_energy_logs ADD COLUMN sleepScore INTEGER');
     }
+    if (!bioCols.some(row => row[1] === 'meetingTime')) {
+        db.run('ALTER TABLE daily_energy_logs ADD COLUMN meetingTime INTEGER DEFAULT 0');
+    }
   } catch (e) { /* ignore */ }
 
   // Seed Default Settings
@@ -847,24 +850,25 @@ export const setSetting = (key: string, value: string) => {
 
 // --- Daily Bio Helpers ---
 export const getDailyBio = (date: string) => {
-  if (!db) return { mode: 'normal', sleepScore: null };
+  if (!db) return { mode: 'normal', sleepScore: null, meetingTime: 30 }; // Default 30 min
   const stmt = db.prepare('SELECT * FROM daily_energy_logs WHERE date = ?');
   const result = stmt.getAsObject([date]);
   stmt.free();
-  if (!result || !result.date) return { mode: 'normal', sleepScore: null };
-  return { mode: result.mode || 'normal', sleepScore: result.sleepScore };
+  if (!result || !result.date) return { mode: 'normal', sleepScore: null, meetingTime: 30 }; // Default 30 min
+  return { mode: result.mode || 'normal', sleepScore: result.sleepScore, meetingTime: result.meetingTime !== null ? result.meetingTime : 30 };
 };
 
-export const updateDailyBio = (date: string, data: { mode?: string, sleepScore?: number }) => {
+export const updateDailyBio = (date: string, data: { mode?: string, sleepScore?: number, meetingTime?: number }) => {
   if (!db) throw new Error('DB not initialized');
   
   const current = getDailyBio(date);
   const newMode = data.mode !== undefined ? data.mode : current.mode;
   const newSleep = data.sleepScore !== undefined ? data.sleepScore : current.sleepScore;
+  const newMeetingTime = data.meetingTime !== undefined ? data.meetingTime : current.meetingTime;
 
-  db.run('INSERT OR REPLACE INTO daily_energy_logs (date, mode, sleepScore) VALUES (?, ?, ?)', [date, newMode, newSleep]);
+  db.run('INSERT OR REPLACE INTO daily_energy_logs (date, mode, sleepScore, meetingTime) VALUES (?, ?, ?, ?)', [date, newMode, newSleep, newMeetingTime]);
   saveDB();
-  return { mode: newMode, sleepScore: newSleep };
+  return { mode: newMode, sleepScore: newSleep, meetingTime: newMeetingTime };
 };
 
 export const closeDB = () => {

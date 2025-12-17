@@ -105,8 +105,23 @@ const refreshInsights = (userId: number) => {
     const trend = ProductivityAnalyst.analyzeTrend(trendData);
     const fatigueProfile = ProductivityAnalyst.analyzeFatigue(recentSessions);
     const dailyBio = getDailyBio(new Date().toISOString().split('T')[0]);
-    // const algoTip = ProductivityAnalyst.generateDailyTip(trend, fatigueProfile, dailyBio.mode, dailyBio.sleepScore || 75);
+    const algoTip = ProductivityAnalyst.generateDailyTip(
+        trend, 
+        fatigueProfile, 
+        dailyBio.mode, 
+        dailyBio.sleepScore || 75, 
+        dailyBio.meetingTime || 0
+    );
     const neuralResult = neuralCore.getNeuralAdvice(activeTaskInfo?.title);
+
+    let finalTip = neuralResult.text;
+    let finalCategory = neuralResult.category;
+
+    // Prioritize Meeting Overload Tip
+    if ((dailyBio.meetingTime || 0) > 90) {
+        finalTip = algoTip;
+        finalCategory = (dailyBio.meetingTime || 0) > 180 ? 'high' : 'neutral';
+    }
 
     cachedInsights = {
       peakHours: ProductivityAnalyst.identifyPeakHours(recentSessions).peakHours,
@@ -115,8 +130,8 @@ const refreshInsights = (userId: number) => {
       trend,
       focusScore: ProductivityAnalyst.analyzeFocusQuality(recentSessions),
       tagConsistency: newConsistency,
-      dailyTip: neuralResult.text,
-      dailyTipCategory: neuralResult.category
+      dailyTip: finalTip,
+      dailyTipCategory: finalCategory
     };
     log.info('Smart Insights Refreshed:', cachedInsights);
 

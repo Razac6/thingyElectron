@@ -7,6 +7,7 @@ import {
   Fab,
   Tooltip,
   Zoom,
+  Button, // Import Button component
 } from '@mui/material';
 import React from 'react';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
@@ -25,6 +26,14 @@ function formatTime(ms: number): string {
   return `${hours}h ${minutes}m`;
 }
 
+const Item = styled(Paper)(({ theme }) => ({
+  ...theme.typography.body2,
+  padding: theme.spacing(2),
+  textAlign: 'center',
+  color: theme.palette.text.secondary,
+  height: '100%',
+}));
+
 export default function Dashboard() {
   const { tasks, isLoading, totalSpendTimeToday, insights } = useTimer();
 
@@ -38,13 +47,6 @@ export default function Dashboard() {
   const completedTasksCount = tasks.filter(
     (task) => task.status === StatusEnum.COMPLETED,
   ).length;
-  const Item = styled(Paper)(({ theme }) => ({
-    ...theme.typography.body2,
-    padding: theme.spacing(2),
-    textAlign: 'center',
-    color: theme.palette.text.secondary,
-    height: '100%',
-  }));
 
   return (
     <Box sx={{ flexGrow: 1 }}>

@@ -11,6 +11,7 @@ import LocalFireDepartmentIcon from '@mui/icons-material/LocalFireDepartment';
 import SpaIcon from '@mui/icons-material/Spa';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import BedIcon from '@mui/icons-material/Bed';
+import GroupsIcon from '@mui/icons-material/Groups';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import { useTimer } from '../context/TimerContext';
 import { useSettings } from '../context/SettingsContext';
@@ -19,14 +20,15 @@ import { getDailyBio, updateDailyBio } from '../services/DatabaseService';
 const SmartInsightWidget = () => {
   const { insights } = useTimer();
   const { settings } = useSettings();
-  const [dailyBio, setDailyBioState] = useState<{ mode: string, sleepScore: number | null }>({ mode: 'normal', sleepScore: null });
+  const [dailyBio, setDailyBioState] = useState<{ mode: string, sleepScore: number | null, meetingTime: number }>({ mode: 'normal', sleepScore: null, meetingTime: 0 });
   const [anchorEl, setAnchorEl] = useState<HTMLButtonElement | null>(null);
+  const [meetingAnchorEl, setMeetingAnchorEl] = useState<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     const fetchMode = async () => {
       const today = new Date().toISOString().split('T')[0];
       const data = await getDailyBio(today);
-      setDailyBioState(data);
+      setDailyBioState({ ...data, meetingTime: data.meetingTime || 0 });
     };
     fetchMode();
   }, []);
@@ -34,14 +36,21 @@ const SmartInsightWidget = () => {
   const handleModeChange = async (mode: string) => {
     const today = new Date().toISOString().split('T')[0];
     const updated = await updateDailyBio(today, { mode });
-    setDailyBioState(updated);
+    setDailyBioState({ ...dailyBio, ...updated });
   };
 
   const handleSleepChange = async (event: Event, newValue: number | number[]) => {
     const val = newValue as number;
     const today = new Date().toISOString().split('T')[0];
     const updated = await updateDailyBio(today, { sleepScore: val });
-    setDailyBioState(updated);
+    setDailyBioState({ ...dailyBio, ...updated });
+  };
+
+  const handleMeetingChange = async (event: Event, newValue: number | number[]) => {
+    const val = newValue as number;
+    const today = new Date().toISOString().split('T')[0];
+    const updated = await updateDailyBio(today, { meetingTime: val });
+    setDailyBioState({ ...dailyBio, ...updated });
   };
 
   const handleOpenSleep = (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -52,7 +61,16 @@ const SmartInsightWidget = () => {
     setAnchorEl(null);
   };
 
+  const handleOpenMeeting = (event: React.MouseEvent<HTMLButtonElement>) => {
+    setMeetingAnchorEl(event.currentTarget);
+  };
+
+  const handleCloseMeeting = () => {
+    setMeetingAnchorEl(null);
+  };
+
   const openSleep = Boolean(anchorEl);
+  const openMeeting = Boolean(meetingAnchorEl);
 
   if (!insights) return null;
 
@@ -183,6 +201,37 @@ const SmartInsightWidget = () => {
                         </Popover>
                       </>
                   )}
+
+                  {/* Meeting Time Input */}
+                  <>
+                    <Tooltip title={`Meetings: ${dailyBio.meetingTime ? (dailyBio.meetingTime / 60).toFixed(1) : 0}h today`} placement="left">
+                        <IconButton size="small" onClick={handleOpenMeeting} color={dailyBio.meetingTime > 0 ? 'primary' : 'default'}>
+                            <GroupsIcon fontSize="small" />
+                        </IconButton>
+                    </Tooltip>
+                    <Popover
+                        open={openMeeting}
+                        anchorEl={meetingAnchorEl}
+                        onClose={handleCloseMeeting}
+                        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+                        transformOrigin={{ vertical: 'top', horizontal: 'center' }}
+                    >
+                        <Box sx={{ p: 2, width: 200 }}>
+                            <Typography variant="caption" gutterBottom>
+                                Meetings: {(dailyBio.meetingTime ? dailyBio.meetingTime / 60 : 0).toFixed(1)}h
+                            </Typography>
+                            <Slider
+                                value={dailyBio.meetingTime || 0}
+                                onChange={handleMeetingChange}
+                                step={15}
+                                min={0}
+                                max={480} // 8 hours max
+                                valueLabelDisplay="auto"
+                                valueLabelFormat={(x) => `${(x / 60).toFixed(1)}h`}
+                            />
+                        </Box>
+                    </Popover>
+                  </>
 
                   {/* AI Advisor Tip */}
                   {insights && insights.dailyTip && (
