@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Typography, Paper, LinearProgress, Grid, CircularProgress, Tooltip } from '@mui/material';
+import { Box, Typography, Paper, LinearProgress, Grid, CircularProgress, Tooltip, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Button } from '@mui/material';
 import PsychologyIcon from '@mui/icons-material/Psychology';
 import ScienceIcon from '@mui/icons-material/Science';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import SummarizeIcon from '@mui/icons-material/Summarize';
 
 interface AiStats {
   maturity: number;
@@ -14,6 +15,9 @@ interface AiStats {
 const AiStatusWidget = () => {
   const [stats, setStats] = useState<AiStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportText, setReportText] = useState('');
+  const [reportLoading, setReportLoading] = useState(false);
 
   const fetchStats = async () => {
     try {
@@ -24,6 +28,22 @@ const AiStatusWidget = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleGenerateReport = async () => {
+      setReportText(''); // Clear old report immediately
+      setReportOpen(true);
+      setReportLoading(true);
+      try {
+          const userStr = localStorage.getItem('userId');
+          const userId = userStr ? JSON.parse(userStr) : 1;
+          const text = await window.electron.database.generateDailyReport(userId);
+          setReportText(text);
+      } catch (e) {
+          setReportText("Błąd generowania raportu.");
+      } finally {
+          setReportLoading(false);
+      }
   };
 
   useEffect(() => {
@@ -56,10 +76,17 @@ const AiStatusWidget = () => {
           <PsychologyIcon sx={{ fontSize: 150 }} />
       </Box>
 
-      <Box display="flex" alignItems="center" gap={1} mb={2}>
-        <PsychologyIcon color={isMature ? "secondary" : "action"} />
-        <Typography variant="h6">Neural Core Status</Typography>
-        {isMature && <CheckCircleIcon color="success" fontSize="small" />}
+      <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
+        <Box display="flex" alignItems="center" gap={1}>
+            <PsychologyIcon color={isMature ? "secondary" : "action"} />
+            <Typography variant="h6">Neural Core Status</Typography>
+            {isMature && <CheckCircleIcon color="success" fontSize="small" />}
+        </Box>
+        <Tooltip title="Generuj Raport AI">
+            <IconButton onClick={handleGenerateReport} color="primary" size="small">
+                <SummarizeIcon />
+            </IconButton>
+        </Tooltip>
       </Box>
 
       <Grid container spacing={2}>
@@ -141,6 +168,24 @@ const AiStatusWidget = () => {
               </Typography>
           </Box>
       )}
+
+      <Dialog open={reportOpen} onClose={() => setReportOpen(false)} maxWidth="sm" fullWidth>
+          <DialogTitle>Raport AI</DialogTitle>
+          <DialogContent dividers>
+              {reportLoading ? (
+                  <Box display="flex" justifyContent="center" p={3}>
+                      <CircularProgress />
+                  </Box>
+              ) : (
+                  <Typography style={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>
+                      {reportText}
+                  </Typography>
+              )}
+          </DialogContent>
+          <DialogActions>
+              <Button onClick={() => setReportOpen(false)}>Zamknij</Button>
+          </DialogActions>
+      </Dialog>
     </Paper>
   );
 };

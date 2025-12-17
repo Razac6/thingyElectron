@@ -76,7 +76,7 @@ const AiProductivityChart = () => {
       );
   }
 
-  const isLearning = maturity < 100;
+  const isLearning = maturity < 50; // Threshold is now 50%
 
   const tooltipText = (
     <>
@@ -110,7 +110,7 @@ const AiProductivityChart = () => {
             <Typography variant="caption" color="text.secondary">Actual vs Predicted Effort</Typography>
         </Box>
 
-        <Box sx={{ height: 300, filter: isLearning ? 'blur(2px) grayscale(0.5)' : 'none', transition: '0.3s' }}>
+        <Box sx={{ height: 300, position: 'relative' }}> {/* Usunięto filtry */}
             {chartData && <Line data={chartData} options={{ 
                 maintainAspectRatio: false,
                 scales: {
@@ -121,31 +121,28 @@ const AiProductivityChart = () => {
                     intersect: false,
                 },
             }} />}
-        </Box>
-
-        {isLearning && (
-            <Box 
-                sx={{
-                    position: 'absolute',
-                    top: 0, left: 0, right: 0, bottom: 0,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    bgcolor: 'rgba(255, 255, 255, 0.6)',
-                    zIndex: 10
-                }}
-            >
-                <Box bgcolor="white" p={3} borderRadius={2} boxShadow={3} textAlign="center" maxWidth={300}>
-                    <ScienceIcon color="warning" sx={{ fontSize: 40, mb: 1 }} />
-                    <Typography variant="subtitle1" fontWeight="bold">Model Learning...</Typography>
-                    <Typography variant="body2" color="text.secondary">
-                        The Neural Core needs more data ({maturity}%) to generate accurate productivity baselines. 
-                        Keep completing tasks to unlock this chart.
+            {isLearning && ( // Komunikat teraz w rogu
+                <Box 
+                    sx={{
+                        position: 'absolute',
+                        top: 8, right: 8,
+                        bgcolor: 'rgba(255, 152, 0, 0.8)',
+                        color: 'white',
+                        p: 0.5,
+                        borderRadius: 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                        zIndex: 10
+                    }}
+                >
+                    <ScienceIcon fontSize="small" />
+                    <Typography variant="caption" fontWeight="bold">
+                        Model Learning... ({maturity}%)
                     </Typography>
                 </Box>
-            </Box>
-        )}
+            )}
+        </Box>
     </Paper>
   );
 };

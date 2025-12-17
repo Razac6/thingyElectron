@@ -18,6 +18,16 @@ export const createSprint = async (sprint: { name: string, startDate: string, en
   }
 };
 
+export const updateSprint = async (sprint: any) => {
+  try {
+    const updated = await window.electron.database.updateSprint(sprint);
+    return updated;
+  } catch (error) {
+    console.error('Error updating sprint:', error);
+    throw error;
+  }
+};
+
 export const updateSprintStatus = async (sprintId: number, status: string) => {
   try {
     const updatedSprint = await window.electron.database.updateSprintStatus(sprintId, status);

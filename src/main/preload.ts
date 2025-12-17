@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('electron', {
     // Sprints
     getSprints: () => ipcRenderer.invoke('db:get-sprints'),
     createSprint: (sprint: any) => ipcRenderer.invoke('db:create-sprint', sprint),
+    updateSprint: (sprint: any) => ipcRenderer.invoke('db:update-sprint', sprint),
     updateSprintStatus: (sprintId: number, status: string) => ipcRenderer.invoke('db:update-sprint-status', sprintId, status),
 
     // Notes
@@ -56,6 +57,7 @@ contextBridge.exposeInMainWorld('electron', {
     deleteChecklistItem: (itemId: number) => ipcRenderer.invoke('db:delete-checklist-item', itemId),
     predictDuration: (task: any) => ipcRenderer.invoke('db:predict-duration', task),
     getAiPerformance: (userId: number, days?: number) => ipcRenderer.invoke('db:get-ai-performance', userId, days),
+    generateDailyReport: (userId: number) => ipcRenderer.invoke('db:generate-daily-report', userId),
     forceNeuralTraining: (userId: number) => ipcRenderer.invoke('db:force-neural-training', userId),
     getDailyChallenge: (userId: number) => ipcRenderer.invoke('db:get-daily-challenge', userId),
     getProductivityInsights: (userId: number) => ipcRenderer.invoke('db:get-productivity-insights', userId),

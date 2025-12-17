@@ -607,10 +607,15 @@ export const updateTask = (task: any) => {
   oldStatusStmt.free();
   const oldStatus = oldStatusResult ? oldStatusResult[0] : null;
 
+  let updateDate = task.updateStatusDate;
+  if (oldStatus !== task.status) {
+      updateDate = new Date().toISOString();
+  }
+
   if (task.tags && Array.isArray(task.tags)) {
     setTaskTags(task.id, task.tags);
   }
-  db.run(`UPDATE tasks SET title = ?, description = ?, status = ?, updateStatusDate = ?, estimate = ?, priority = ?, link = ?, spendTime = ?, startTimer = ?, sprintId = ?, type = ? WHERE id = ?`, [task.title, task.description, task.status, task.updateStatusDate, task.estimate, task.priority, task.link, task.spendTime, task.startTimer, task.sprintId, task.type || 'TASK', task.id]);
+  db.run(`UPDATE tasks SET title = ?, description = ?, status = ?, updateStatusDate = ?, estimate = ?, priority = ?, link = ?, spendTime = ?, startTimer = ?, sprintId = ?, type = ? WHERE id = ?`, [task.title, task.description, task.status, updateDate, task.estimate, task.priority, task.link, task.spendTime, task.startTimer, task.sprintId, task.type || 'TASK', task.id]);
 
   if (oldStatus !== 'Completed' && task.status === 'Completed') {
     const tagIdsStmt = db.prepare('SELECT tagId FROM task_tags WHERE taskId = ?');
@@ -720,6 +725,15 @@ export const updateSprintStatus = (sprintId: number, status: string) => {
   saveDB();
   console.log('[DB] Sprint status updated and DB saved.');
   return { id: sprintId, status };
+};
+
+export const updateSprint = (sprint: any) => {
+  if (!db) throw new Error('DB not initialized');
+  db.run('UPDATE sprints SET name = ?, startDate = ?, endDate = ?, status = ? WHERE id = ?', 
+    [sprint.name, sprint.startDate, sprint.endDate, sprint.status, sprint.id]);
+  saveDB();
+  console.log('[DB] Sprint updated and DB saved.');
+  return sprint;
 };
 
 export const getNotes = (userId: number) => {

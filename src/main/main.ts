@@ -9,7 +9,7 @@ import { resolveHtmlPath } from './util';
 import {
   initDB,
   getTasks, createTask, updateTask, deleteTask, updateTasksOrder, // Use deleteTask directly
-  getSprints, createSprint, updateSprintStatus,
+  getSprints, createSprint, updateSprintStatus, updateSprint,
   getNotes, createNote, updateNote, deleteNote,
   loginUser, registerUser,
   getProfile, updateProfile, getEarnedAchievements, grantAchievement,
@@ -350,6 +350,7 @@ ipcMain.handle('db:delete-task', (event, taskId) => deleteTask(taskId)); // Use 
 ipcMain.handle('db:update-tasks-order', (event, taskIds) => updateTasksOrder(taskIds));
 ipcMain.handle('db:get-sprints', () => getSprints());
 ipcMain.handle('db:create-sprint', (event, sprint) => createSprint(sprint));
+ipcMain.handle('db:update-sprint', (event, sprint) => updateSprint(sprint));
 ipcMain.handle('db:update-sprint-status', (event, sprintId, status) => updateSprintStatus(sprintId, status));
 ipcMain.handle('db:get-notes', (event, userId) => getNotes(userId));
 ipcMain.handle('db:create-note', (event, note, userId) => createNote(note, userId));
@@ -407,6 +408,7 @@ ipcMain.handle('db:update-daily-bio', (event, date, data) => updateDailyBio(date
 // Neural Handlers
 ipcMain.handle('db:predict-duration', (event, task) => neuralCore.predict(task));
 ipcMain.handle('db:get-ai-performance', (event, userId, days) => neuralCore.getPerformanceHistory(userId, days));
+ipcMain.handle('db:generate-daily-report', (event, userId) => neuralCore.generateDailyReport(userId));
 ipcMain.handle('db:force-neural-training', (event, userId) => {
     neuralCore.resetCooldown();
     const tasks = getTasks(userId);

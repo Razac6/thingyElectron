@@ -24,7 +24,9 @@ import {
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import ArchiveIcon from '@mui/icons-material/Archive';
-import { getSprints, createSprint, updateSprintStatus } from '../../services/SprintService';
+import EditIcon from '@mui/icons-material/Edit'; // Import EditIcon
+import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline'; // Import RemoveCircleOutlineIcon
+import { getSprints, createSprint, updateSprintStatus, updateSprint } from '../../services/SprintService'; // Import updateSprint
 import { useTimer } from '../../context/TimerContext';
 import { Task } from '../../../interfaces/task.interface';
 import { StatusEnum } from '../../../enums/status.enum';
@@ -32,6 +34,18 @@ import { analyzeSprintOptimism } from '../../services/DDAService';
 
 const formatDateForInput = (date: Date): string => {
   return date.toISOString().split('T')[0];
+};
+
+const getBusinessDatesCount = (startDate: string, endDate: string) => {
+  let count = 0;
+  const curDate = new Date(startDate);
+  const end = new Date(endDate);
+  while (curDate <= end) {
+    const dayOfWeek = curDate.getDay();
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) count++;
+    curDate.setDate(curDate.getDate() + 1);
+  }
+  return count;
 };
 
 interface Sprint {
@@ -45,6 +59,7 @@ interface Sprint {
 function Sprints() {
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [selectedSprint, setSelectedSprint] = useState<Sprint | null>(null);
+  const [editingSprint, setEditingSprint] = useState<Sprint | null>(null); // State for editing
   const [newSprintName, setNewSprintName] = useState('');
   const [newSprintStart, setNewSprintStart] = useState<string>(formatDateForInput(new Date()));
   const [newSprintEnd, setNewSprintEnd] = useState<string>('');
@@ -57,9 +72,18 @@ function Sprints() {
   const fetchSprintsAndCapacity = async () => {
     const sprintsData = await getSprints();
     setSprints(sprintsData);
-    if (sprintsData.length > 0 && !selectedSprint) {
-      setSelectedSprint(sprintsData[0]);
+    
+    // Refresh selected sprint data if it was updated
+    if (selectedSprint) {
+        const updatedSelected = sprintsData.find((s: Sprint) => s.id === selectedSprint.id);
+        if (updatedSelected) setSelectedSprint(updatedSelected);
+    } else if (sprintsData.length > 0 && !selectedSprint) {
+        // Don't auto-select on initial load if we want to respect user state, 
+        // but for now, selecting first is fine. 
+        // However, we handle auto-select on CREATE explicitly now.
+        setSelectedSprint(sprintsData[0]);
     }
+    
     const avgCapacity = await window.electron.database.getAverageSprintCapacity();
     setSuggestedCapacity(avgCapacity);
   };
@@ -68,17 +92,59 @@ function Sprints() {
     fetchSprintsAndCapacity();
   }, []);
 
-  const handleCreateSprint = async () => {
+  const handleSaveSprint = async () => {
     if (!newSprintName || !newSprintStart || !newSprintEnd) return;
-    const newSprint = { name: newSprintName, startDate: new Date(newSprintStart).toISOString(), endDate: new Date(newSprintEnd).toISOString() };
-    const created = await createSprint(newSprint);
-    setSprints(prev => [created, ...prev]);
+
+    if (editingSprint) {
+        // Update existing sprint
+        const updated = {
+            ...editingSprint,
+            name: newSprintName,
+            startDate: new Date(newSprintStart).toISOString(),
+            endDate: new Date(newSprintEnd).toISOString()
+        };
+        await updateSprint(updated);
+        setEditingSprint(null);
+    } else {
+        // Create new sprint
+        const newSprint = { name: newSprintName, startDate: new Date(newSprintStart).toISOString(), endDate: new Date(newSprintEnd).toISOString() };
+        const createdSprint = await createSprint(newSprint);
+        
+        // Auto-select the new sprint immediately
+        setSelectedSprint(createdSprint);
+    }
+    
+    // Reset form
     setNewSprintName('');
+    setNewSprintStart(formatDateForInput(new Date()));
+    setNewSprintEnd('');
+    
+    fetchSprintsAndCapacity();
+  };
+
+  const handleEditSprint = (sprint: Sprint, e: React.MouseEvent) => {
+      e.stopPropagation();
+      setEditingSprint(sprint);
+      setNewSprintName(sprint.name);
+      setNewSprintStart(formatDateForInput(new Date(sprint.startDate)));
+      setNewSprintEnd(formatDateForInput(new Date(sprint.endDate)));
+  };
+
+  const handleCancelEdit = () => {
+      setEditingSprint(null);
+      setNewSprintName('');
+      setNewSprintStart(formatDateForInput(new Date()));
+      setNewSprintEnd('');
   };
 
   const handleUpdateSprintStatus = async (sprintId: number, status: 'ACTIVE' | 'COMPLETED') => {
     await updateSprintStatus(sprintId, status);
     fetchSprintsAndCapacity();
+  };
+
+  const handleRemoveTaskFromSprint = async (task: Task) => {
+      const updatedTask = { ...task, sprintId: null }; 
+      await updateTask(updatedTask as any);
   };
 
   const tasksInSelectedSprint = useMemo(() => {
@@ -102,7 +168,18 @@ function Sprints() {
     return tasksInSelectedSprint.reduce((acc, task) => acc + (task.estimate || 0), 0);
   }, [tasksInSelectedSprint]);
 
-  const capacityProgress = suggestedCapacity > 0 ? Math.min((currentSprintLoad / suggestedCapacity) * 100, 100) : 0;
+  // Calculate displayed capacity: History OR Theoretical (Business Days * 6h)
+  const displayedCapacity = useMemo(() => {
+      if (suggestedCapacity > 0) return suggestedCapacity;
+      if (selectedSprint) {
+          const days = getBusinessDatesCount(selectedSprint.startDate, selectedSprint.endDate);
+          return days * 6; // Assume 6h per workday
+      }
+      return 0;
+  }, [suggestedCapacity, selectedSprint]);
+
+  const capacityProgress = displayedCapacity > 0 ? Math.min((currentSprintLoad / displayedCapacity) * 100, 100) : 0;
+  const isTheoretical = suggestedCapacity === 0;
 
   const backlogTasks = useMemo(() => {
     return tasks.filter(task => !task.sprintId && task.title.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -120,16 +197,25 @@ function Sprints() {
     <Grid container spacing={2}>
       <Grid item xs={12} md={4}>
         <Paper sx={{ padding: 2, mb: 2 }}>
-          <Typography variant="h6" gutterBottom>Create New Sprint</Typography>
-          {suggestedCapacity > 0 && (
+          <Typography variant="h6" gutterBottom>{editingSprint ? 'Edit Sprint' : 'Create New Sprint'}</Typography>
+          {suggestedCapacity > 0 && !editingSprint && (
             <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-              Suggested capacity based on your history: ~{Math.round(suggestedCapacity)} hours
+              Average Historical Velocity: ~{Math.round(suggestedCapacity)} hours
             </Typography>
           )}
           <TextField label="Sprint Name" fullWidth value={newSprintName} onChange={(e) => setNewSprintName(e.target.value)} sx={{ mb: 2 }} />
           <TextField label="Start Date" type="date" fullWidth value={newSprintStart} onChange={(e) => setNewSprintStart(e.target.value)} InputLabelProps={{ shrink: true }} sx={{ mb: 2 }} />
           <TextField label="End Date" type="date" fullWidth value={newSprintEnd} onChange={(e) => setNewSprintEnd(e.target.value)} InputLabelProps={{ shrink: true }} sx={{ mb: 2 }} />
-          <Button variant="contained" onClick={handleCreateSprint} fullWidth>Create Sprint</Button>
+          <Box display="flex" gap={1}>
+            <Button variant="contained" onClick={handleSaveSprint} fullWidth>
+                {editingSprint ? 'Update Sprint' : 'Create Sprint'}
+            </Button>
+            {editingSprint && (
+                <Button variant="outlined" onClick={handleCancelEdit} fullWidth color="secondary">
+                    Cancel
+                </Button>
+            )}
+          </Box>
         </Paper>
         <Paper sx={{ padding: 2 }}>
           <Typography variant="h6" gutterBottom>All Sprints</Typography>
@@ -137,6 +223,9 @@ function Sprints() {
             {sprints.map((sprint) => (
               <ListItemButton key={sprint.id} selected={selectedSprint?.id === sprint.id} onClick={() => setSelectedSprint(sprint)}>
                 <ListItemText primary={sprint.name} secondary={<Chip label={sprint.status} size="small" color={sprint.status === 'ACTIVE' ? 'primary' : sprint.status === 'COMPLETED' ? 'success' : 'default'} />} />
+                <IconButton size="small" onClick={(e) => handleEditSprint(sprint, e)}>
+                    <EditIcon fontSize="small" />
+                </IconButton>
               </ListItemButton>
             ))}
           </List>
@@ -166,11 +255,13 @@ function Sprints() {
               </Box>
             </Box>
 
-            {suggestedCapacity > 0 && selectedSprint.status !== 'COMPLETED' && (
+            {displayedCapacity > 0 && selectedSprint.status !== 'COMPLETED' && (
               <Box sx={{ my: 2 }}>
-                <Tooltip title={`Current Load: ${currentSprintLoad}h / Suggested: ${Math.round(suggestedCapacity)}h`}>
+                <Tooltip title={`Current Load: ${currentSprintLoad}h / ${isTheoretical ? 'Estimated' : 'Historical'}: ${Math.round(displayedCapacity)}h`}>
                   <Box>
-                    <Typography variant="body2">Sprint Capacity</Typography>
+                    <Typography variant="body2">
+                        Sprint Capacity ({isTheoretical ? 'Estimated based on duration' : 'Based on history'})
+                    </Typography>
                     <LinearProgress variant="determinate" value={capacityProgress} color={capacityProgress > 100 ? 'error' : 'primary'} sx={{ height: 10, borderRadius: 5 }} />
                   </Box>
                 </Tooltip>
@@ -188,7 +279,16 @@ function Sprints() {
             <List>
               {tasksInSelectedSprint.length > 0 ? (
                 tasksInSelectedSprint.map(task => (
-                  <ListItem key={task.id}><ListItemText primary={task.title} secondary={`Status: ${task.status}`} /></ListItem>
+                  <ListItem 
+                    key={task.id}
+                    secondaryAction={
+                        <IconButton edge="end" aria-label="remove" onClick={() => handleRemoveTaskFromSprint(task)}>
+                            <RemoveCircleOutlineIcon />
+                        </IconButton>
+                    }
+                  >
+                    <ListItemText primary={task.title} secondary={`Status: ${task.status}`} />
+                  </ListItem>
                 ))
               ) : (
                 <Typography>No tasks assigned to this sprint yet.</Typography>

@@ -1,5 +1,13 @@
 import * as tf from '@tensorflow/tfjs';
-import { logSystemEvent, getDailyBio, setSetting, getSetting } from './db';
+import {
+  logSystemEvent,
+  getDailyBio,
+  getAiMaturity,
+  getAllSettings,
+  getTasks,
+  getRecentWorkSessions
+} from './db';
+import { ProductivityAnalyst } from './ProductivityAnalysis';
 import fs from 'fs';
 import path from 'path';
 import { app } from 'electron';
@@ -298,26 +306,126 @@ export class NeuralCore {
       return options[Math.floor(Math.random() * options.length)].replace('{task}', activeTask || 'zadaniem');
   }
 
+  async generateDailyReport(userId: number): Promise<string> {
+      const tasks = getTasks(userId);
+      const today = new Date();
+      const dateStr = today.toISOString().split('T')[0];
+      
+      // Filter today's completed tasks
+      const todayTasks = tasks.filter(t => 
+          t.status === 'Completed' && 
+          t.updateStatusDate && 
+          t.updateStatusDate.startsWith(dateStr)
+      );
+
+      const totalDurationMs = todayTasks.reduce((acc, t) => acc + (t.spendTime || 0), 0);
+      const totalDurationMin = Math.round(totalDurationMs / (1000 * 60));
+      const hours = Math.floor(totalDurationMin / 60);
+      const mins = totalDurationMin % 60;
+
+      // Get Context
+      const bio = getDailyBio(dateStr);
+      const meetingTime = bio.meetingTime || 0;
+      const sleep = bio.sleepScore;
+
+      // Get Algo Stats
+      const recentSessions = getRecentWorkSessions(userId, 1); // Last 24h
+      const focusScore = ProductivityAnalyst.analyzeFocusQuality(recentSessions);
+      const fatigue = ProductivityAnalyst.analyzeFatigue(recentSessions);
+
+      // AI Comparison
+      let aiComment = "";
+      if (todayTasks.length > 0) {
+          let totalPredictedMin = 0;
+          todayTasks.forEach(t => {
+              totalPredictedMin += this.predictForTask(t);
+          });
+          
+          const diff = totalDurationMin - totalPredictedMin;
+          const diffPercent = totalPredictedMin > 0 ? Math.round((diff / totalPredictedMin) * 100) : 0;
+
+          if (Math.abs(diffPercent) < 15) {
+              aiComment = "Moje predykcje były bardzo trafne. Pracowałeś/aś zgodnie z oczekiwanym tempem.";
+          } else if (diffPercent < 0) {
+              aiComment = `Zaskoczyłeś/aś mnie! Pracowałeś/aś o ${Math.abs(diffPercent)}% szybciej niż przewidywałem w tych warunkach. Stan Flow?`;
+          } else {
+              aiComment = `Wykryłem spowolnienie (${diffPercent}% powyżej estymaty). Możliwe ukryte blokady lub zmęczenie.`;
+          }
+      } else {
+          aiComment = "Brak ukończonych zadań do analizy porównawczej.";
+      }
+
+      // Build Report
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString('pl-PL');
+      
+      const report = [
+          `RAPORT AI (${dateStr} ${timeStr})`,
+          `--------------------------------`,
+          `LOGISTYKA:`,
+          `- Ukończone zadania: ${todayTasks.length}`,
+          `- Czas pracy: ${hours}h ${mins}m`,
+          `- Spotkania: ${(meetingTime / 60).toFixed(1)}h`,
+          `- Sen: ${sleep ? sleep + '%' : 'Brak danych'}`,
+          ``,
+          `ANALIZA ALGORYTMICZNA:`,
+          `- Jakość Skupienia (Deep Work): ${focusScore}%`,
+          `- Poziom Zmęczenia: ${fatigue.isFatigued ? 'WYSOKI (Odpocznij!)' : 'W normie'}`,
+          `- Średnia sesja: ${Math.round(fatigue.averageSession)} min`,
+          ``,
+          `WNIOSKI NEURAL CORE (AI):`,
+          `${aiComment}`,
+          ``,
+          `PODSUMOWANIE:`,
+          `${ProductivityAnalyst.generateDailyTip({ slope: 0, direction: 'stable', description: '' }, fatigue, bio.mode, sleep || 75, meetingTime)}`
+      ];
+
+      return report.join('\n');
+  }
+
   getNeuralAdvice(activeTask?: string): { text: string, category: 'high' | 'low' | 'neutral' | 'focus' } {
     if (!this.model || this.isTraining) return { text: "Thingy: Kalibruję się... proszę czekać.", category: 'neutral' };
 
-    // If working, give focus advice
+    // 1. Focus Override
     if (activeTask) {
         return { text: this.getRandomResponse(0, 'focus', activeTask), category: 'focus' };
     }
 
+    // Context Data
+    const date = new Date();
+    const dateStr = date.toISOString().split('T')[0];
+    const bio = getDailyBio(dateStr);
+    const sleep = bio.sleepScore !== null ? Number(bio.sleepScore) : 75;
+    const meetingTime = bio.meetingTime || 0;
+    const meetingLoad = meetingTime / 480;
+    const maturity = getAiMaturity();
+
+    // 2. Hard Rules (Bio-Instinct) - These override AI predictions
+    if (meetingTime > 180) {
+        return { text: this.getRandomResponse(50, 'high'), category: 'high' }; // Force High Load response
+    }
+    if (bio.sleepScore !== null && sleep < 45) {
+        return { text: this.getRandomResponse(50, 'high'), category: 'high' }; // Force High Load response
+    }
+
+    // 3. Early Game Stabilization (Suppress random noise from untrained model)
+    if (maturity < 25) {
+        // While learning, only react to extreme time conditions (e.g., late night)
+        const hour = date.getHours();
+        if (hour >= 22 || hour < 5) {
+             return { text: "Thingy: Pora na regenerację systemów. Odpocznij.", category: 'low' };
+        }
+        // Otherwise, stay neutral/stable
+        return { text: `Thingy: Analizuję Twoje wzorce (Dojrzałość: ${maturity}%).`, category: 'neutral' };
+    }
+
+    // 4. Neural Prediction (Only for mature models > 25%)
     // Baseline: Medium Priority Task, 75 Sleep, 12:00 PM, 30m Meetings (Ideal conditions proxy)
     const baselineInput = tf.tensor2d([[12, 3, 2, 75, 30/480]]); 
     const baselinePred = (this.model.predict(baselineInput) as tf.Tensor).dataSync()[0];
     baselineInput.dispose();
 
-    // Current Reality: Current Time, Real Sleep Score, Real Meeting Load
-    const date = new Date();
-    const dateStr = date.toISOString().split('T')[0];
-    const bio = getDailyBio(dateStr);
-    const sleep = bio.sleepScore !== null ? bio.sleepScore : 75;
-    const meetingLoad = (bio.meetingTime || 0) / 480;
-    
+    // Current Reality
     const currentInput = tf.tensor2d([[date.getHours(), date.getDay(), 2, sleep, meetingLoad]]);
     const currentPred = (this.model.predict(currentInput) as tf.Tensor).dataSync()[0];
     currentInput.dispose();
@@ -325,8 +433,8 @@ export class NeuralCore {
     // Compare
     const diff = ((currentPred - baselinePred) / baselinePred) * 100; // % difference
 
-    if (diff > 20) return { text: this.getRandomResponse(diff, 'high'), category: 'high' };
-    if (diff < -10) return { text: this.getRandomResponse(diff, 'low'), category: 'low' };
+    if (diff > 40) return { text: this.getRandomResponse(diff, 'high'), category: 'high' };
+    if (diff < -25) return { text: this.getRandomResponse(diff, 'low'), category: 'low' };
     return { text: this.getRandomResponse(diff, 'neutral'), category: 'neutral' };
   }
 }
