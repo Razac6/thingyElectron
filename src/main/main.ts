@@ -42,7 +42,7 @@ import {
   getDailyBio,
   updateDailyBio,
 } from './db';
-import { autoScheduleTasks } from './TaskScheduler';
+import { autoScheduleTasks, getProposedSchedule } from './TaskScheduler';
 import { ProductivityAnalyst, AnalysisResult } from './ProductivityAnalysis';
 import { neuralCore } from './NeuralCore';
 
@@ -353,6 +353,7 @@ ipcMain.handle('db:update-task', (event, task) => {
 ipcMain.handle('db:delete-task', (event, taskId) => deleteTask(taskId)); // Use deleteTask directly
 ipcMain.handle('db:update-tasks-order', (event, taskIds) => updateTasksOrder(taskIds));
 ipcMain.handle('db:auto-schedule-tasks', (event, userId) => autoScheduleTasks(userId));
+ipcMain.handle('db:get-proposed-schedule', (event, userId) => getProposedSchedule(userId));
 ipcMain.handle('db:get-sprints', () => getSprints());
 ipcMain.handle('db:create-sprint', (event, sprint) => createSprint(sprint));
 ipcMain.handle('db:update-sprint', (event, sprint) => updateSprint(sprint));

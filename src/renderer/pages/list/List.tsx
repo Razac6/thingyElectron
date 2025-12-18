@@ -25,6 +25,8 @@ import {
   Divider,
   Alert,
   Autocomplete,
+  List as MuiList,
+  ListItem,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
@@ -37,7 +39,8 @@ import VerticalAlignTopIcon from '@mui/icons-material/VerticalAlignTop';
 import VerticalAlignBottomIcon from '@mui/icons-material/VerticalAlignBottom';
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
 import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
-import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh'; // The only AI icon
+import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
+import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import { StatusEnum } from '../../../enums/status.enum';
 import { PriorityEnum } from '../../../enums/priority.enum';
 import { TaskTypeEnum } from '../../../enums/TaskTypeEnum';
@@ -59,7 +62,7 @@ const getPriorityColor = (priority: PriorityEnum) => {
 
 function List() {
   const navigate = useNavigate();
-  const { tasks, setTasks, startTimer, stopTimer, updateTask, createTask, deleteTask } = useTimer();
+  const { tasks, setTasks, startTimer, stopTimer, updateTask, createTask, deleteTask, insights } = useTimer();
   const { addXp, checkForAchievements, triggerRewardAnimation } = useGamification();
   const [sprints, setSprints] = useState<any[]>([]);
   const [openDialog, setOpenDialog] = useState(false);
@@ -80,7 +83,13 @@ function List() {
   const [isColumnSortActive, setIsColumnSortActive] = useState(false);
   const [editingStatusId, setEditingStatusId] = useState<number | null>(null);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
+  
+  // AI & Drag States
+  const [isProposalOpen, setIsProposalOpen] = useState(false);
+  const [proposedTasks, setProposedTasks] = useState<any[]>([]);
   const [showAiSuccess, setShowAiSuccess] = useState(false);
+  const [draggedTaskId, setDraggedTaskId] = useState<number | null>(null);
+  const [dragTargetTaskId, setDragTargetTaskId] = useState<number | null>(null);
 
   useEffect(() => {
     const fetchSprints = async () => {
@@ -102,21 +111,93 @@ function List() {
       const userId = userStr ? JSON.parse(userStr) : 1;
       
       try {
-          await window.electron.database.autoScheduleTasks(userId);
-          // Refresh tasks to see new order
+          const proposal = await window.electron.database.getProposedSchedule(userId);
+          setProposedTasks(proposal);
+          setIsProposalOpen(true);
+      } catch (error) {
+          console.error("AI Schedule Preview failed", error);
+      }
+  };
+
+  const handleAcceptProposal = async () => {
+      try {
+          const userStr = localStorage.getItem('userId');
+          const userId = userStr ? JSON.parse(userStr) : 1;
+
+          if (proposedTasks.length === 0) {
+              setIsProposalOpen(false);
+              return;
+          }
+
+          const ids = proposedTasks.map(t => t.id);
+          await window.electron.database.updateTasksOrder(ids);
+          
           const updatedTasks = await window.electron.database.getTasks(userId);
           setTasks(updatedTasks);
+          
+          setIsProposalOpen(false);
           setShowAiSuccess(true);
           setTimeout(() => setShowAiSuccess(false), 4000);
       } catch (error) {
-          console.error("AI Schedule failed", error);
+          console.error("AI Schedule Apply failed", error);
       }
+  };
+
+  // Drag & Drop Handlers
+  const handleDragStart = (event: React.DragEvent, taskId: number) => {
+      setDraggedTaskId(taskId);
+      event.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragEnter = (event: React.DragEvent, targetTaskId: number) => {
+      // Update target visual only if different to prevent flicker
+      if (draggedTaskId !== targetTaskId && dragTargetTaskId !== targetTaskId) {
+          setDragTargetTaskId(targetTaskId);
+      }
+  };
+
+  const handleDragOver = (event: React.DragEvent) => {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = async (event: React.DragEvent, targetTaskId: number) => {
+      event.preventDefault();
+      event.stopPropagation();
+      
+      setDragTargetTaskId(null); // Clear visual cue
+
+      if (draggedTaskId === null || draggedTaskId === targetTaskId) return;
+
+      const allTasks = [...tasks];
+      const oldIndex = allTasks.findIndex(t => t.id === draggedTaskId);
+      const newIndex = allTasks.findIndex(t => t.id === targetTaskId);
+
+      if (oldIndex === -1 || newIndex === -1) return;
+
+      const [movedTask] = allTasks.splice(oldIndex, 1);
+      allTasks.splice(newIndex, 0, movedTask);
+
+      setTasks(allTasks);
+      await window.electron.database.updateTasksOrder(allTasks.map(t => t.id));
+      setDraggedTaskId(null);
+  };
+
+  const handleDragEnd = () => {
+      setDraggedTaskId(null);
+      setDragTargetTaskId(null);
+  };
+
+  const getRowClassName = (params: any) => {
+      let classes = '';
+      if (params.row.id === dragTargetTaskId) {
+          classes += 'drop-target-row ';
+      }
+      return classes;
   };
 
   const filteredTasks = useMemo(() => {
     let processedTasks = [...tasks];
-    
-    // Filter out MEETING tasks
     processedTasks = processedTasks.filter(task => task.type !== 'MEETING');
 
     if (filterSprint !== 'all') {
@@ -216,6 +297,25 @@ function List() {
   };
 
   const columns: GridColDef[] = [
+    {
+        field: 'drag',
+        headerName: '',
+        width: 50,
+        sortable: false,
+        renderCell: (params: GridRenderCellParams<any, Task>) => (
+            <div
+                draggable
+                onDragStart={(e) => handleDragStart(e, params.row.id)}
+                onDragEnter={(e) => handleDragEnter(e, params.row.id)}
+                onDragOver={handleDragOver}
+                onDragEnd={handleDragEnd}
+                onDrop={(e) => handleDrop(e, params.row.id)}
+                style={{ cursor: 'grab', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', width: '100%' }}
+            >
+                <DragIndicatorIcon color={params.row.id === dragTargetTaskId ? "primary" : "action"} />
+            </div>
+        )
+    },
     {
       field: 'title',
       headerName: 'Title',
@@ -336,7 +436,6 @@ function List() {
 
   return (
     <Box sx={{ height: 'calc(100vh - 128px)', width: '100%' }}>
-      {/* ... Filters Box ... */}
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2, mb: 1 }}>
         <FormControl size="small" sx={{ minWidth: 150 }}>
           <InputLabel>Filter by Sprint</InputLabel>
@@ -363,25 +462,30 @@ function List() {
       
       {showAiSuccess && (
           <Alert severity="success" sx={{ mb: 1 }}>
-              AI zoptymalizowało Twoją kolejkę zadań (Priorytety + Presja Sprintu + Twoja Prędkość).
+              Kolejka zadań zaktualizowana.
           </Alert>
       )}
 
       <DataGrid
         rows={filteredTasks}
         columns={columns}
+        getRowClassName={getRowClassName}
         onRowClick={(params) => navigate(`/task/${params.id}`)}
         onSortModelChange={handleSortModelChange}
-        sx={{ '& .MuiDataGrid-row:hover': { cursor: 'pointer' } }}
+        sx={{ 
+            '& .MuiDataGrid-row:hover': { cursor: 'pointer' },
+            '& .drop-target-row': {
+                borderTop: '3px solid #2196f3',
+                backgroundColor: 'rgba(33, 150, 243, 0.05) !important'
+            }
+        }}
       />
       
-      {/* ... Menu ... */}
       <Menu
         anchorEl={menuAnchorEl}
         open={Boolean(menuAnchorEl)}
         onClose={handleMenuClose}
       >
-        {/* ... existing menu items ... */}
         <MenuItem onClick={() => handleMoveTask(currentMenuTaskId!, 'up')} disabled={isColumnSortActive || currentTaskIndex === 0}>
           <ListItemIcon><ArrowUpwardIcon fontSize="small" /></ListItemIcon>
           <ListItemText>Move Up</ListItemText>
@@ -510,6 +614,51 @@ function List() {
           <Button onClick={() => setOpenDialog(false)}>Cancel</Button>
           <Button onClick={handleAddTask} variant="contained" color="primary">Add Task</Button>
         </DialogActions>
+      </Dialog>
+
+      {/* AI Proposal Dialog */}
+      <Dialog open={isProposalOpen} onClose={() => setIsProposalOpen(false)} fullWidth maxWidth="md">
+          <DialogTitle>Propozycja Planu AI</DialogTitle>
+          <DialogContent dividers>
+              <Typography variant="body2" gutterBottom color="text.secondary">
+                  Oto optymalna kolejność zadań, wyliczona na podstawie priorytetów, deadline'ów sprintu oraz Twojej aktualnej dyspozycji (Neural Core).
+              </Typography>
+              <MuiList sx={{ maxHeight: 400, overflow: 'auto' }}>
+                  {proposedTasks.map((task, index) => (
+                      <ListItem key={task.id} divider sx={{ alignItems: 'flex-start' }}>
+                          <ListItemText 
+                              primary={
+                                  <Box display="flex" alignItems="center" gap={1}>
+                                      <Typography variant="subtitle1" component="span" fontWeight="bold">{index + 1}.</Typography>
+                                      <Typography variant="subtitle1" component="span">{task.title}</Typography>
+                                  </Box>
+                              } 
+                              secondary={
+                                  <React.Fragment>
+                                      <Box display="flex" alignItems="center" gap={1} mt={0.5}>
+                                          <Chip label={task.status} size="small" 
+                                                color={task.status === StatusEnum.COMPLETED ? 'success' : task.status === StatusEnum.IN_PROGRESS ? 'primary' : task.status === StatusEnum.IN_REVIEW ? 'secondary' : 'default'} />
+                                          <Box sx={{ height: 15, width: 15, borderRadius: '50%', bgcolor: getPriorityColor(task.priority), display: 'inline-block' }} />
+                                          <Typography component="span" variant="caption" color="text.secondary">
+                                              {task.aiReason}
+                                          </Typography>
+                                          {task.neuralEstimate > 0 && 
+                                              <Chip label={`AI: ${task.neuralEstimate.toFixed(1)}h`} size="small" variant="outlined" />
+                                          }
+                                      </Box>
+                                  </React.Fragment>
+                              }
+                          />
+                      </ListItem>
+                  ))}
+              </MuiList>
+          </DialogContent>
+          <DialogActions>
+              <Button onClick={() => setIsProposalOpen(false)}>Anuluj</Button>
+              <Button onClick={handleAcceptProposal} variant="contained" color="secondary" startIcon={<AutoFixHighIcon />}>
+                  Zastosuj Plan
+              </Button>
+          </DialogActions>
       </Dialog>
     </Box>
   );
