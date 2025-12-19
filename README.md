@@ -47,6 +47,12 @@ A set of deterministic algorithms analyzing your biometric and logistical data:
 *   **Capacity Planning:** The system suggests a realistic capacity (in hours) for new sprints based on your historical velocity.
 *   **Drag & Drop:** Intuitive manual reordering with visual drop targets.
 
+### 🔨 Habit Forge (Habit Tracker)
+*   **Weekly View:** A modern, bubble-based interface to track your habits for the current week.
+*   **Visual Streaks:** Automatic streak calculation with "active" status preservation (doesn't reset immediately in the morning).
+*   **Interactive Widget:** Toggle your favorite habit directly from the Dashboard.
+*   **Detailed Analytics:** Expand habit cards to see a line chart of your "Habit Strength" (7-day moving average).
+
 ### 🎮 Gamification
 *   **XP System & Levels:** Earn experience points for completing tasks and challenges.
 *   **Achievements:** Badges for specific behaviors (e.g., "Frog Eater" for tackling hard tasks first).

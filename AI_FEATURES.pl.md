@@ -11,7 +11,15 @@ W sercu aplikacji działa lokalny model sieci neuronowej (TensorFlow.js).
 *   **Predykcja:** Model potrafi przewidzieć, ile czasu zajmie Ci zadanie w danych warunkach.
 *   **AI Advisor:** Model generuje porady ("Neural Alert" / "Neural Insight"), które pojawiają się w widgecie Smart Insights (ikona robota).
 
-## 2. Bio-Feedback (Tryby Dzienne)
+## 2. Analiza Korelacji Nawyków (Habit-Productivity Link)
+
+NeuralCore analizuje teraz wpływ Twoich nawyków na jakość pracy.
+
+*   **Habit Score:** System oblicza dzienny wskaźnik realizacji nawyków (0-100%).
+*   **Korelacja ze Skupieniem:** AI porównuje dni z wysoką realizacją nawyków z Twoim wynikiem **Deep Work**. Jeśli system wykryje, że np. poranne bieganie zwiększa Twoje skupienie o 20%, otrzymasz o tym powiadomienie w Smart Insights.
+*   **Wpływ na Predykcje:** Realizacja nawyków jest teraz jednym z 6 parametrów wejściowych sieci neuronowej, co pozwala na jeszcze dokładniejsze przewidywanie czasu pracy.
+
+## 3. Bio-Feedback (Tryby Dzienne)
 
 Aplikacja rozumie, że nie jesteś robotem i masz gorsze dni.
 

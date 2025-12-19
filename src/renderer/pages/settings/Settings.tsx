@@ -113,6 +113,21 @@ function Settings() {
                 <FormControlLabel
                     control={
                         <Switch 
+                            checked={settings.habit_notifications_enabled !== 'false'} 
+                            onChange={(e) => updateSetting('habit_notifications_enabled', String(e.target.checked))} 
+                        />
+                    }
+                    label="Enable Habit Reminders"
+                />
+                <Typography variant="caption" display="block" color="text.secondary" sx={{ ml: 4 }}>
+                    Get notified if you haven't completed your daily habits (3 hours after reminder time).
+                </Typography>
+            </Grid>
+
+            <Grid item xs={12}>
+                <FormControlLabel
+                    control={
+                        <Switch 
                             checked={settings.enableSleepTracking === 'true'} 
                             onChange={handleSleepTrackingChange} 
                         />

@@ -4,8 +4,12 @@ import {
   getDailyBio,
   getAiMaturity,
   getAllSettings,
+  getSetting,
+  setSetting,
   getTasks,
-  getRecentWorkSessions
+  getRecentWorkSessions,
+  getHabits,
+  getHabitLogs
 } from './db';
 import { ProductivityAnalyst } from './ProductivityAnalysis';
 import fs from 'fs';
@@ -46,13 +50,13 @@ export class NeuralCore {
   }
 
   private initModel() {
-    // Input: [Hour, Day, Priority, SleepScore, MeetingLoad] (5 features)
-    this.model.add(tf.layers.dense({ units: 16, activation: 'relu', inputShape: [5] }));
-    this.model.add(tf.layers.dense({ units: 8, activation: 'relu' }));
+    // Input: [Hour, Day, Priority, SleepScore, MeetingLoad, HabitScore] (6 features)
+    this.model.add(tf.layers.dense({ units: 24, activation: 'relu', inputShape: [6] }));
+    this.model.add(tf.layers.dense({ units: 12, activation: 'relu' }));
     this.model.add(tf.layers.dense({ units: 1 })); // Output: Duration (minutes)
 
     this.model.compile({ optimizer: 'adam', loss: 'meanSquaredError' });
-    logSystemEvent('NeuralCore initialized. Model architecture ready (Inputs: Hour, Day, Priority, Sleep, Meetings).', 'SYSTEM');
+    logSystemEvent('NeuralCore initialized. Model updated (6 Features: Hour, Day, Priority, Sleep, Meetings, Habits).', 'SYSTEM');
   }
 
   private async saveWeights() {
@@ -84,9 +88,13 @@ export class NeuralCore {
   /**
    * Prepares data from Tasks
    */
-  private preprocessData(tasks: any[]) {
+  private preprocessData(tasks: any[], userId: number) {
     const inputs: number[][] = [];
     const outputs: number[] = [];
+
+    // Pre-fetch all habits and logs for this user to calculate daily habit scores
+    const habits = getHabits(userId);
+    const logs = getHabitLogs(userId);
 
     tasks.forEach(task => {
       if (task.status === 'Completed' && task.spendTime > 0) {
@@ -102,7 +110,14 @@ export class NeuralCore {
         const sleep = bio.sleepScore !== null ? Number(bio.sleepScore) : 75; // Default 75 if missing
         const meetingLoad = (bio.meetingTime || 0) / 480; // Normalize 0-8h to 0-1
 
-        inputs.push([hour, day, priority, sleep, meetingLoad]);
+        // Calculate Habit Completion Score for that day (0.0 to 1.0)
+        let habitScore = 0.5; // Default if no habits
+        if (habits.length > 0) {
+            const completedOnDay = logs.filter((l: any) => l.date === dateStr && l.value >= 1).length;
+            habitScore = completedOnDay / habits.length;
+        }
+
+        inputs.push([hour, day, priority, sleep, meetingLoad, habitScore]);
         outputs.push(task.spendTime / (1000 * 60)); // Minutes
       }
     });
@@ -127,10 +142,13 @@ export class NeuralCore {
         return;
     }
 
+    // We need userId for habit data. Assume 1 for now if tasks is empty or infer from first task
+    const userId = tasks.length > 0 ? tasks[0].userId : 1;
+
     this.isTraining = true;
     this.lastTrainingTime = now;
 
-    const { inputs, outputs } = this.preprocessData(tasks);
+    const { inputs, outputs } = this.preprocessData(tasks, userId);
     const count = inputs.shape[0];
 
     if (count < 5) {
@@ -139,7 +157,7 @@ export class NeuralCore {
       return;
     }
 
-    logSystemEvent(`[NEURAL] Starting training on ${count} tasks with Bio-Context...`, 'LEARNING');
+    logSystemEvent(`[NEURAL] Starting training on ${count} tasks with Bio-Context & Habits...`, 'LEARNING');
 
     try {
         await this.model.fit(inputs, outputs, {
@@ -153,7 +171,7 @@ export class NeuralCore {
               }
             },
             onTrainEnd: () => {
-                logSystemEvent(`[NEURAL] Training Complete. Model updated with Sleep Data.`, 'LEARNING');
+                logSystemEvent(`[NEURAL] Training Complete. Model updated with Bio-Context & Habit Data.`, 'LEARNING');
                 this.saveWeights();
                 const trainings = Number(getSetting('neural_training_count') || 0) + 1;
                 setSetting('neural_training_count', String(trainings));
@@ -174,6 +192,7 @@ export class NeuralCore {
     // Prediction for new/existing task
     const dateObj = new Date();
     const dateStr = dateObj.toISOString().split('T')[0];
+    const userId = task.userId || 1;
     
     const hour = dateObj.getHours();
     const day = dateObj.getDay();
@@ -183,7 +202,16 @@ export class NeuralCore {
     const sleep = bio.sleepScore !== null ? Number(bio.sleepScore) : 75;
     const meetingLoad = (bio.meetingTime || 0) / 480;
 
-    const input = tf.tensor2d([[hour, day, priority, sleep, meetingLoad]]);
+    // Current Habit Score
+    const habits = getHabits(userId);
+    const logs = getHabitLogs(userId);
+    let habitScore = 0.5;
+    if (habits.length > 0) {
+        const completedToday = logs.filter((l: any) => l.date === dateStr && l.value >= 1).length;
+        habitScore = completedToday / habits.length;
+    }
+
+    const input = tf.tensor2d([[hour, day, priority, sleep, meetingLoad, habitScore]]);
     const prediction = this.model.predict(input) as tf.Tensor;
     const value = prediction.dataSync()[0];
     
@@ -197,6 +225,7 @@ export class NeuralCore {
   predictForTask(task: any): number {
       const dateObj = parseDate(task.createdAt); // Or updateStatusDate if better
       const dateStr = dateObj.toISOString().split('T')[0];
+      const userId = task.userId || 1;
       
       const hour = dateObj.getHours();
       const day = dateObj.getDay();
@@ -206,7 +235,16 @@ export class NeuralCore {
       const sleep = bio.sleepScore !== null ? Number(bio.sleepScore) : 75;
       const meetingLoad = (bio.meetingTime || 0) / 480;
 
-      const input = tf.tensor2d([[hour, day, priority, sleep, meetingLoad]]);
+      // Habit Score for that day
+      const habits = getHabits(userId);
+      const logs = getHabitLogs(userId);
+      let habitScore = 0.5;
+      if (habits.length > 0) {
+          const completedOnDay = logs.filter((l: any) => l.date === dateStr && l.value >= 1).length;
+          habitScore = completedOnDay / habits.length;
+      }
+
+      const input = tf.tensor2d([[hour, day, priority, sleep, meetingLoad, habitScore]]);
       const prediction = this.model.predict(input) as tf.Tensor;
       const value = prediction.dataSync()[0];
       
@@ -400,15 +438,40 @@ export class NeuralCore {
     const meetingLoad = meetingTime / 480;
     const maturity = getAiMaturity();
 
-    // 2. Hard Rules (Bio-Instinct) - These override AI predictions
+    // Hard Rules (Bio-Instinct) ... (lines 445-451)
     if (meetingTime > 180) {
-        return { text: this.getRandomResponse(50, 'high'), category: 'high' }; // Force High Load response
+        return { text: this.getRandomResponse(50, 'high'), category: 'high' }; 
     }
     if (bio.sleepScore !== null && sleep < 45) {
-        return { text: this.getRandomResponse(50, 'high'), category: 'high' }; // Force High Load response
+        return { text: this.getRandomResponse(50, 'high'), category: 'high' }; 
     }
 
-    // 3. Early Game Stabilization (Suppress random noise from untrained model)
+    // 2.5 Habit Correlation Check (AI Insight)
+    try {
+        const userId = 1; // Assume single user
+        const habits = getHabits(userId);
+        const logs = getHabitLogs(userId);
+        const sessions = getRecentWorkSessions(userId, 14);
+        
+        // Group logs by date to get daily habit scores
+        const dailyScores: Record<string, number> = {};
+        logs.forEach((l: any) => {
+            if (!dailyScores[l.date]) dailyScores[l.date] = 0;
+            if (l.value >= 1) dailyScores[l.date]++;
+        });
+        
+        const scoresArray = Object.entries(dailyScores).map(([date, count]) => ({
+            date,
+            score: habits.length > 0 ? count / habits.length : 0
+        }));
+
+        const correlation = ProductivityAnalyst.analyzeHabitCorrelation(scoresArray, sessions);
+        if (correlation && Math.random() > 0.7) { // 30% chance to show correlation tip
+            return { text: `Thingy: ${correlation.message}`, category: 'focus' };
+        }
+    } catch (e) { /* ignore correlation errors */ }
+
+    // 3. Early Game Stabilization ...
     if (maturity < 25) {
         // While learning, only react to extreme time conditions (e.g., late night)
         const hour = date.getHours();
@@ -421,12 +484,12 @@ export class NeuralCore {
 
     // 4. Neural Prediction (Only for mature models > 25%)
     // Baseline: Medium Priority Task, 75 Sleep, 12:00 PM, 30m Meetings (Ideal conditions proxy)
-    const baselineInput = tf.tensor2d([[12, 3, 2, 75, 30/480]]); 
+    const baselineInput = tf.tensor2d([[12, 3, 2, 75, 30/480, 0.5]]); 
     const baselinePred = (this.model.predict(baselineInput) as tf.Tensor).dataSync()[0];
     baselineInput.dispose();
 
     // Current Reality
-    const currentInput = tf.tensor2d([[date.getHours(), date.getDay(), 2, sleep, meetingLoad]]);
+    const currentInput = tf.tensor2d([[date.getHours(), date.getDay(), 2, sleep, meetingLoad, 0.5]]); // Using 0.5 as neutral habit proxy for comparison
     const currentPred = (this.model.predict(currentInput) as tf.Tensor).dataSync()[0];
     currentInput.dispose();
 

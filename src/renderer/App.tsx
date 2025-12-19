@@ -3,6 +3,7 @@ import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import Dashboard from './dashboard/dashboard';
 import List from './pages/list/List';
+import Habits from './pages/habits/Habits';
 import Notes from './pages/notes/Notes';
 import Statistics from './pages/statistics/Statistics';
 import Profile from './pages/profile/Profile';
@@ -27,6 +28,7 @@ export default function App() {
               <Layout>
                 <Routes>
                   <Route path="/list" element={<List />} />
+                  <Route path="/habits" element={<Habits />} />
                   <Route path="/notes" element={<Notes />} />
                   <Route path="/statistics" element={<Statistics />} />
                                   <Route path="/profile" element={<Profile />} />

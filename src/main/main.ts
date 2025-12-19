@@ -38,9 +38,18 @@ import {
   toggleChecklistItem,
   deleteChecklistItem,
   getAllSettings,
+  getSetting,
   setSetting,
   getDailyBio,
   updateDailyBio,
+  getHabits,
+  createHabit,
+  updateHabit,
+  deleteHabit,
+  logHabit,
+  getHabitLogs,
+  getTopHabit,
+  toggleHabitFavorite
 } from './db';
 import { autoScheduleTasks, getProposedSchedule } from './TaskScheduler';
 import { ProductivityAnalyst, AnalysisResult } from './ProductivityAnalysis';
@@ -233,6 +242,72 @@ const updateTrayTitle = () => {
   }
 };
 
+// --- Habit Reminders ---
+const notifiedHabits = new Set<string>(); // Key: "habitId-YYYY-MM-DD"
+
+const checkHabitReminders = () => {
+  const enabled = getSetting('habit_notifications_enabled') !== 'false'; // Default true
+  if (!enabled) return;
+
+  // We need a userId. For local single-user app, we can iterate all users or just use the last active one.
+  // Since we don't have global user context easily here without session, we'll try to get it from activeTaskInfo or just assume userId=1 for MVP if single user.
+  // Better approach: Fetch all habits for all users? No, iterate known users?
+  // Let's assume userId=1 for now as per other parts of the app (localStorage userId default).
+  // Or better: pass userId if we can.
+  // Actually, we can just fetch ALL habits if we had a getAllHabits. But we only have getHabits(userId).
+  // Let's assume single user (ID 1) or try to rely on `activeTaskInfo.userId`.
+  
+  const userId = activeTaskInfo?.userId || 1; 
+
+  const habits = getHabits(userId);
+  const logs = getHabitLogs(userId);
+  const today = new Date().toISOString().split('T')[0];
+  const now = new Date();
+  const currentHour = now.getHours();
+  const currentMinute = now.getMinutes();
+
+  habits.forEach((habit: any) => {
+      // 1. Is it due today?
+      let isDue = false;
+      if (habit.frequency.type === 'daily') isDue = true;
+      else {
+          const dayOfWeek = now.getDay();
+          if (habit.frequency.days.includes(dayOfWeek)) isDue = true;
+      }
+
+      if (!isDue) return;
+
+      // 2. Is it done?
+      const isDone = logs.some((l: any) => l.habitId === habit.id && l.date === today && l.value >= 1);
+      if (isDone) return;
+
+      // 3. Is it time? (Reminder + 3 hours)
+      if (!habit.reminderTime) return;
+      const [remHour, remMin] = habit.reminderTime.split(':').map(Number);
+      
+      // Target time in minutes from midnight
+      const targetTimeMin = (remHour * 60) + remMin;
+      // Current time in minutes
+      const currentTimeMin = (currentHour * 60) + currentMinute;
+      
+      // Threshold: 3 hours later (180 mins)
+      const thresholdMin = targetTimeMin + 180;
+
+      if (currentTimeMin >= thresholdMin) {
+          const key = `${habit.id}-${today}`;
+          if (!notifiedHabits.has(key)) {
+              new Notification({
+                  title: '🎗 Habit Reminder',
+                  body: `Don't break the chain! You haven't marked "${habit.title}" as done yet.`,
+                  icon: getAssetPath('icon.png')
+              }).show();
+              notifiedHabits.add(key);
+              logSystemEvent(`Sent reminder for habit: ${habit.title}`, 'HABIT');
+          }
+      }
+  });
+};
+
 // --- Tray Management Functions ---
 const createTray = () => {
   if (tray) return; // Tray already exists
@@ -411,6 +486,16 @@ ipcMain.handle('db:delete-checklist-item', (event, itemId) => deleteChecklistIte
 ipcMain.handle('db:get-daily-bio', (event, date) => getDailyBio(date));
 ipcMain.handle('db:update-daily-bio', (event, date, data) => updateDailyBio(date, data));
 
+// Habit Tracker Handlers
+ipcMain.handle('db:get-habits', (event, userId) => getHabits(userId));
+ipcMain.handle('db:create-habit', (event, habit, userId) => createHabit(habit, userId));
+ipcMain.handle('db:update-habit', (event, habit) => updateHabit(habit));
+ipcMain.handle('db:delete-habit', (event, habitId) => deleteHabit(habitId));
+ipcMain.handle('db:log-habit', (event, habitId, date, value) => logHabit(habitId, date, value));
+ipcMain.handle('db:get-habit-logs', (event, userId, fromDate) => getHabitLogs(userId, fromDate));
+ipcMain.handle('db:get-top-habit', (event, userId) => getTopHabit(userId));
+ipcMain.handle('db:toggle-habit-favorite', (event, habitId, userId) => toggleHabitFavorite(habitId, userId));
+
 // Neural Handlers
 ipcMain.handle('db:predict-duration', (event, task) => neuralCore.predict(task));
 ipcMain.handle('db:get-ai-performance', (event, userId, days) => neuralCore.getPerformanceHistory(userId, days));
@@ -547,6 +632,9 @@ setInterval(() => {
           }
       }
   }
+  
+  // 3. Habit Reminders
+  checkHabitReminders();
 
 }, 5 * 60 * 1000); // Check every 5 minutes (reduced from 15 for better responsiveness)
 

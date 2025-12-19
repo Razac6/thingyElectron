@@ -30,6 +30,16 @@ export const initDB = async () => {
 
   db = fs.existsSync(dbPath) ? new SQL.Database(fs.readFileSync(dbPath)) : new SQL.Database();
 
+  // Enable Foreign Keys
+  db.run('PRAGMA foreign_keys = ON;');
+
+  // Cleanup orphaned logs (Fix for phantom streaks)
+  try {
+      db.run('DELETE FROM habit_logs WHERE habitId NOT IN (SELECT id FROM habits)');
+  } catch (e) {
+      console.error('[DB] Failed to cleanup orphaned logs:', e);
+  }
+
   // --- Schema Migrations & Table Creation ---
   db.run(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT)`);
   db.run(`CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY, title TEXT, description TEXT, status TEXT, updateStatusDate TEXT, estimate INTEGER, priority TEXT, link TEXT, createdAt TEXT, spendTime INTEGER, startTimer TEXT, type TEXT DEFAULT 'TASK', userId INTEGER, sprintId INTEGER, displayOrder INTEGER, FOREIGN KEY(userId) REFERENCES users(id), FOREIGN KEY(sprintId) REFERENCES sprints(id) ON DELETE SET NULL)`);
@@ -56,6 +66,8 @@ export const initDB = async () => {
   db.run(`CREATE TABLE IF NOT EXISTS task_checklist_items (id INTEGER PRIMARY KEY, taskId INTEGER, text TEXT, isCompleted INTEGER DEFAULT 0, FOREIGN KEY(taskId) REFERENCES tasks(id) ON DELETE CASCADE)`);
   db.run(`CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)`);
   db.run(`CREATE TABLE IF NOT EXISTS daily_energy_logs (date TEXT PRIMARY KEY, mode TEXT, sleepScore INTEGER)`);
+  db.run(`CREATE TABLE IF NOT EXISTS habits (id INTEGER PRIMARY KEY, userId INTEGER, title TEXT NOT NULL, description TEXT, frequency TEXT NOT NULL, category TEXT, targetStreak INTEGER DEFAULT 0, reminderTime TEXT, createdAt TEXT, isFavorite INTEGER DEFAULT 0, FOREIGN KEY(userId) REFERENCES users(id))`);
+  db.run(`CREATE TABLE IF NOT EXISTS habit_logs (id INTEGER PRIMARY KEY, habitId INTEGER, date TEXT NOT NULL, value INTEGER DEFAULT 1, notes TEXT, FOREIGN KEY(habitId) REFERENCES habits(id) ON DELETE CASCADE)`);
 
 
   try {
@@ -68,6 +80,12 @@ export const initDB = async () => {
       db.run("ALTER TABLE tasks ADD COLUMN type TEXT DEFAULT 'TASK'");
     }
     
+    // Habit migration
+    const habitCols = db.exec("PRAGMA table_info(habits);")[0].values;
+    if (!habitCols.some(row => row[1] === 'isFavorite')) {
+        db.run('ALTER TABLE habits ADD COLUMN isFavorite INTEGER DEFAULT 0');
+    }
+
     // Bio logs migration
     const bioCols = db.exec("PRAGMA table_info(daily_energy_logs);")[0].values;
     if (!bioCols.some(row => row[1] === 'sleepScore')) {
@@ -899,6 +917,148 @@ export const updateDailyBio = (date: string, data: { mode?: string, sleepScore?:
   db.run('INSERT OR REPLACE INTO daily_energy_logs (date, mode, sleepScore, meetingTime) VALUES (?, ?, ?, ?)', [date, newMode, newSleep, newMeetingTime]);
   saveDB();
   return { mode: newMode, sleepScore: newSleep, meetingTime: newMeetingTime };
+};
+
+// --- Habit Tracker Helpers ---
+export const getHabits = (userId: number) => {
+  if (!db) return [];
+  const stmt = db.prepare('SELECT * FROM habits WHERE userId = ? ORDER BY createdAt DESC');
+  stmt.bind([userId]);
+  const habits: any[] = [];
+  while (stmt.step()) {
+    const habit = stmt.getAsObject();
+    try {
+      habit.frequency = JSON.parse(habit.frequency as string);
+    } catch (e) {
+      habit.frequency = { type: 'daily', days: [] };
+    }
+    habits.push(habit);
+  }
+  stmt.free();
+  return habits;
+};
+
+export const createHabit = (habit: any, userId: number) => {
+  if (!db) throw new Error('DB not initialized');
+  db.run(
+    'INSERT INTO habits (userId, title, description, frequency, category, targetStreak, reminderTime, createdAt, isFavorite) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [userId, habit.title, habit.description, JSON.stringify(habit.frequency), habit.category, habit.targetStreak, habit.reminderTime, new Date().toISOString(), habit.isFavorite || 0]
+  );
+  const id = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
+  saveDB();
+  logSystemEvent(`New Habit Created: ${habit.title}`, 'HABIT');
+  return { ...habit, id, userId };
+};
+
+export const updateHabit = (habit: any) => {
+  if (!db) throw new Error('DB not initialized');
+  db.run(
+    'UPDATE habits SET title = ?, description = ?, frequency = ?, category = ?, targetStreak = ?, reminderTime = ?, isFavorite = ? WHERE id = ?',
+    [habit.title, habit.description, JSON.stringify(habit.frequency), habit.category, habit.targetStreak, habit.reminderTime, habit.isFavorite, habit.id]
+  );
+  saveDB();
+  return habit;
+};
+
+export const toggleHabitFavorite = (habitId: number, userId: number) => {
+    if (!db) throw new Error('DB not initialized');
+    // Unset all favorites for this user first
+    db.run('UPDATE habits SET isFavorite = 0 WHERE userId = ?', [userId]);
+    // Set this one
+    db.run('UPDATE habits SET isFavorite = 1 WHERE id = ?', [habitId]);
+    saveDB();
+    return true;
+};
+
+export const deleteHabit = (habitId: number) => {
+  if (!db) throw new Error('DB not initialized');
+  db.run('DELETE FROM habits WHERE id = ?', [habitId]);
+  saveDB();
+  return habitId;
+};
+
+export const logHabit = (habitId: number, date: string, value: number = 1) => {
+  if (!db) throw new Error('DB not initialized');
+  // Check if already logged for this date
+  const existingStmt = db.prepare('SELECT id FROM habit_logs WHERE habitId = ? AND date = ?');
+  existingStmt.bind([habitId, date]);
+  
+  if (existingStmt.step()) {
+    // Update existing
+    db.run('UPDATE habit_logs SET value = ? WHERE habitId = ? AND date = ?', [value, habitId, date]);
+  } else {
+    // Insert new
+    db.run('INSERT INTO habit_logs (habitId, date, value) VALUES (?, ?, ?)', [habitId, date, value]);
+  }
+  existingStmt.free();
+  saveDB();
+  
+  // Calculate Streak
+  // (Simple implementation: count consecutive days backwards from today or provided date)
+  // For now, we'll just return the log. Advanced streak calculation can be done on read.
+  return { habitId, date, value };
+};
+
+export const getHabitLogs = (userId: number, fromDate?: string) => {
+  if (!db) return [];
+  // Get all logs for user's habits
+  let query = `
+    SELECT hl.* 
+    FROM habit_logs hl
+    JOIN habits h ON hl.habitId = h.id
+    WHERE h.userId = :userId
+  `;
+  if (fromDate) {
+    query += ` AND hl.date >= :fromDate`;
+  }
+  
+  const stmt = db.prepare(query);
+  const params: any = { ':userId': userId };
+  if (fromDate) params[':fromDate'] = fromDate;
+  
+  stmt.bind(params);
+  const logs: any[] = [];
+  while (stmt.step()) {
+    logs.push(stmt.getAsObject());
+  }
+  stmt.free();
+  return logs;
+};
+
+export const getTopHabit = (userId: number) => {
+  if (!db) return null;
+  
+  // 1. Try to get favorite habit first
+  const favStmt = db.prepare('SELECT * FROM habits WHERE userId = ? AND isFavorite = 1 LIMIT 1');
+  let result = favStmt.getAsObject([userId]);
+  favStmt.free();
+
+  if (result && result.id) {
+      try { result.frequency = JSON.parse(result.frequency as string); } catch(e) {}
+      return result;
+  }
+
+  // 2. Fallback to most consistent
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const dateStr = sevenDaysAgo.toISOString().split('T')[0];
+
+  const stmt = db.prepare(`
+    SELECT h.*, COUNT(hl.id) as recent_count
+    FROM habits h
+    LEFT JOIN habit_logs hl ON h.id = hl.habitId AND hl.date >= ?
+    WHERE h.userId = ?
+    GROUP BY h.id
+    ORDER BY recent_count DESC
+    LIMIT 1
+  `);
+  
+  result = stmt.getAsObject([dateStr, userId]);
+  stmt.free();
+  
+  if (!result || !result.id) return null;
+  try { result.frequency = JSON.parse(result.frequency as string); } catch(e) {}
+  return result;
 };
 
 export const closeDB = () => {

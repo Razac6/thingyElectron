@@ -58,3 +58,20 @@ System agreguje również surowe dane o czasie pracy, aby pokazać Twój rytm dn
 
 ### Gdzie to widać?
 *   Wykresy słupkowe i liniowe na **Dashboardzie** oraz w widżecie statystyk.
+
+---
+
+## 5. Korelacja Nawyków (Habit Strength & Impact)
+
+Algorytm ten bada, jak Twoja rutyna (nawyki) wpływa na obiektywne wskaźniki produktywności.
+
+### Jak to działa?
+1.  **Habit Strength (Siła Nawyków):** Obliczana jako 7-dniowa średnia krocząca realizacji danego nawyku. Pozwala to na wizualizację trendu (czy budujesz nawyk, czy tracisz pęd).
+2.  **Analiza Wpływu:** System porównuje dni z "wysokim Habit Score" (>80%) oraz "niskim Habit Score" (<40%) pod kątem:
+    *   Procentu czasu spędzonego w sesjach **Deep Work**.
+    *   Odchylenia czasu realizacji zadań od predykcji AI.
+3.  **Wnioski:** Jeśli różnica w skupieniu między tymi dniami przekracza 10%, algorytm generuje wniosek o korelacji, który jest przekazywany do Neural Core.
+
+### Gdzie to widać?
+*   Wykresy "Habit Strength" po rozwinięciu karty nawyku.
+*   Dedykowane wskazówki AI w widżecie **Smart Insights**.

@@ -1,0 +1,83 @@
+.habit-card {
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
+  background-color: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.habit-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(33, 158, 188, 0.15) !important;
+}
+
+.week-bubbles-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.day-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.day-column:hover {
+  transform: scale(1.1);
+}
+
+.day-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #adb5bd;
+  text-transform: uppercase;
+}
+
+.day-label.today {
+  color: #219ebc;
+  font-weight: 700;
+}
+
+.day-bubble {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background-color: #f8f9fa;
+  border: 2px solid #e9ecef;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease-in-out;
+}
+
+.day-bubble.done {
+  background-color: #219ebc;
+  border-color: #219ebc;
+  box-shadow: 0 2px 8px rgba(33, 158, 188, 0.3);
+}
+
+.day-bubble.today-bubble {
+  border-color: #ffb703; /* Highlight current day border */
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(255, 183, 3, 0.4); }
+  70% { box-shadow: 0 0 0 8px rgba(255, 183, 3, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 183, 3, 0); }
+}
+
+.day-bubble.pending-today {
+  animation: pulse 2s infinite;
+  border-color: #fb8500;
+  border-width: 2px;
+}
+
+/* Override default heatmap hidden now */
+.heatmap-container {
+  display: none; 
+}

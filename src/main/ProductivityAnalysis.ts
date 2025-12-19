@@ -471,4 +471,51 @@ export class ProductivityAnalyst {
 
       return score;
   }
+
+  /**
+   * Algorithm 9: Habit-Productivity Correlation
+   * Compares days with high habit completion vs low habit completion
+   * to find performance boosts.
+   */
+  static analyzeHabitCorrelation(dailyHabitScores: { date: string, score: number }[], sessions: WorkSession[]): { impact: number, message: string } | null {
+      if (dailyHabitScores.length < 5 || sessions.length < 10) return null;
+
+      const dailyFocus: Record<string, number[]> = {};
+      sessions.forEach(s => {
+          const d = s.startTime.split('T')[0];
+          if (!dailyFocus[d]) dailyFocus[d] = [];
+          dailyFocus[d].push(s.duration);
+      });
+
+      const highHabitDays: number[] = []; // Focus scores on high habit days (>0.8)
+      const lowHabitDays: number[] = [];  // Focus scores on low habit days (<0.4)
+
+      dailyHabitScores.forEach(hs => {
+          const durations = dailyFocus[hs.date];
+          if (!durations) return;
+
+          // Calculate focus score for that day
+          const total = durations.reduce((a, b) => a + b, 0);
+          const deepWork = durations.filter(d => d >= 20 * 60 * 1000 && d <= 120 * 60 * 1000).reduce((a, b) => a + b, 0);
+          const score = total > 0 ? deepWork / total : 0;
+
+          if (hs.score >= 0.8) highHabitDays.push(score);
+          else if (hs.score <= 0.4) lowHabitDays.push(score);
+      });
+
+      if (highHabitDays.length >= 2 && lowHabitDays.length >= 2) {
+          const avgHigh = highHabitDays.reduce((a, b) => a + b, 0) / highHabitDays.length;
+          const avgLow = lowHabitDays.reduce((a, b) => a + b, 0) / lowHabitDays.length;
+
+          if (avgHigh > avgLow * 1.1) { // At least 10% boost
+              const diff = Math.round((avgHigh - avgLow) * 100);
+              return {
+                  impact: diff,
+                  message: `W dni, kiedy realizujesz nawyki, Twoje skupienie (Deep Work) jest o ${diff}% wyższe. Trzymaj tak dalej!`
+              };
+          }
+      }
+
+      return null;
+  }
 }

@@ -16,6 +16,7 @@ import { useTimer } from '../context/TimerContext';
 import DailyProductivityBarChart from '../components/DailyProductivityBarChart';
 import ContributionGraph from '../components/ContributionGraph';
 import SmartInsightWidget from '../components/SmartInsightWidget';
+import FavoriteHabitWidget from '../components/FavoriteHabitWidget';
 
 function formatTime(ms: number): string {
   if (ms <= 0) return '0h 0m';
@@ -79,6 +80,7 @@ export default function Dashboard() {
               {formatTime(totalSpendTimeToday)}
             </Typography>
             <SmartInsightWidget />
+            <FavoriteHabitWidget />
           </Item>
         </Grid>
         <Grid item xs={12} md={6}>
