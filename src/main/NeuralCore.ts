@@ -17,6 +17,7 @@ import {
 } from './db';
 import { ProductivityAnalyst } from './ProductivityAnalysis';
 import { personalityEngine, AiMood } from './PersonalityEngine';
+import { llamaEngine } from './LlamaEngine';
 import fs from 'fs';
 import path from 'path';
 import { app } from 'electron';
@@ -311,12 +312,13 @@ export class NeuralCore {
 
   resetCooldown() { this.lastTrainingTime = 0; }
 
-  getNeuralAdvice(activeTask?: string): { text: string, category: 'high' | 'low' | 'neutral' | 'focus' } {
+  async getNeuralAdvice(activeTask?: string): Promise<{ text: string, category: 'high' | 'low' | 'neutral' | 'focus' }> {
     if (!this.model || this.isTraining) return { text: "Thingy: Kalibruję się... proszę czekać.", category: 'neutral' };
 
     const date = new Date();
     const dateStr = date.toISOString().split('T')[0];
     const userId = 1;
+    
     const bio = getDailyBio(dateStr);
     const sleep = bio.sleepScore !== null ? Number(bio.sleepScore) : 75;
     const habits = getHabits(userId);
@@ -341,7 +343,26 @@ export class NeuralCore {
     if (activeTask) return { text: `Thingy: Widzę, że pracujesz nad "${activeTask}". Monitoruję Twoje skupienie.`, category: 'focus' };
 
     const mood = this.determineMood(risk, sleep, habitScore);
-    const text = personalityEngine.generateMessage({ mood, userName: 'Marcin', sprintRisk: risk, habitScore, tasksRemaining });
+    
+    // --- Llama Integration ---
+    const llamaStatus = llamaEngine.getStatus();
+    let text = "";
+
+    if (llamaStatus.ready) {
+        try {
+            const sleepDesc = sleep < 50 ? "słabo spał" : (sleep > 85 ? "jest bardzo wypoczęty" : "wyspał się normalnie");
+            const sprintDesc = risk?.risk === 'Critical' ? "sprint jest bardzo zagrożony" : (risk?.risk === 'At Risk' ? "sprint jest lekko opóźniony" : "wszystko ze sprintem jest w porządku");
+            const habitDesc = habitScore > 0.8 ? "świetnie trzyma nawyki" : (habitScore < 0.3 ? "zaniedbał dziś nawyki" : "nawyki są na średnim poziomie");
+
+            const prompt = `Marcin ${sleepDesc}. Ma do zrobienia jeszcze ${tasksRemaining} zadań. ${sprintDesc}, a on ${habitDesc}. Twój nastrój to ${mood}. Powiedz mu coś krótkiego i sensownego o jego sytuacji.`;
+            
+            text = await llamaEngine.generateMessage(prompt, { mood, sleep, habitScore, risk });
+        } catch (e) {
+            text = personalityEngine.generateMessage({ mood, userName: 'Marcin', sprintRisk: risk, habitScore, tasksRemaining });
+        }
+    } else {
+        text = personalityEngine.generateMessage({ mood, userName: 'Marcin', sprintRisk: risk, habitScore, tasksRemaining });
+    }
 
     const categoryMap: Record<AiMood, 'high' | 'low' | 'neutral' | 'focus'> = {
         PANIC: 'high', SUPPORTIVE: 'high', GRIND: 'low', CELEBRATION: 'low', STABLE: 'neutral', CHILL: 'neutral'

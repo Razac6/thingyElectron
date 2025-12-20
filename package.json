@@ -1,7 +1,7 @@
 {
   "description": "Todo app",
   "license": "MIT",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "author": {
     "name": "thingy",
     "email": "binekmarcin@gmail.com",
@@ -74,6 +74,8 @@
     "@emotion/react": "^11.11.0",
     "@emotion/styled": "^11.11.0",
     "@fontsource/roboto": "^4.5.8",
+    "@google/generative-ai": "^0.24.1",
+    "@huggingface/transformers": "^3.8.1",
     "@mui/icons-material": "^5.11.16",
     "@mui/material": "^5.13.0",
     "@mui/x-data-grid": "^5.17.26",

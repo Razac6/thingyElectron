@@ -1,276 +1,262 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import './Chat.css';
-import '@fontsource/roboto/300.css';
-import '@fontsource/roboto/400.css';
-import '@fontsource/roboto/500.css';
-import '@fontsource/roboto/700.css';
 import Box from '@mui/material/Box';
-import SyntaxHighlighter from 'react-syntax-highlighter';
-import { a11yDark } from 'react-syntax-highlighter/dist/esm/styles/hljs';
-
 import {
   Alert,
-  FormControl,
-  Grid,
   IconButton,
-  InputLabel,
   List,
-  ListItem,
-  ListItemText,
-  MenuItem,
-  Select,
   Skeleton,
-  SpeedDial,
-  SpeedDialAction,
-  SpeedDialIcon,
-  TextField,
+  Typography,
+  Avatar,
+  Button,
+  LinearProgress,
+  CircularProgress,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import DeleteIcon from '@mui/icons-material/Delete';
-import Stack from '@mui/material/Stack';
-import { Link, useNavigate } from 'react-router-dom';
+import SendIcon from '@mui/icons-material/Send';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
+import PersonIcon from '@mui/icons-material/Person';
+import { useNavigate } from 'react-router-dom';
+import { useTimer } from '../../context/TimerContext';
 
-let messagesStore: { role: string; content: string }[] = [];
-let assistantName = 'assistant';
-const defaultProps =
-  'Jesteś pomocnikiem programisty. Wszystkie kody programistyczne wysyłaj w markdown to ważne. Znajdź dla siebie losowe imię z bohaterów gwiezdnych wojen. Po tej wiadomości tylko się przywitaj. Cos w stylu cześć nazywam się... (wstaw wylosowane imię w nawiasy []) w czym mogę ci pomóc?';
+interface Message {
+    role: 'user' | 'assistant';
+    content: string;
+}
 
-export default function Chat(props: { message: string }) {
-  // Zapisz użytkownika
-  // window.electron.store.set('foo', 'bar');
-  // or
-
-  // console.log(window.electron.store.get('foo'));
-
+export default function Chat() {
   const navigate = useNavigate();
-  const { message = defaultProps } = props;
+  const { tasks, insights } = useTimer();
+  const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
-  const [inputTokensValue, setInputTokensValue] = useState(100);
-  const [inputTempValue, setInputTempValue] = useState(0.2);
-  const [responseMessage, setResponseMessage] = useState('');
-  const [showProgressBar, setShowProgressBar] = useState(false);
-  const [showAlert, setShowAlert] = useState(false);
-  const actions = [
-    { icon: <DeleteIcon />, name: 'Delete' },
-    { icon: <ArrowBackIcon />, name: 'Back' },
-  ];
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  const handleSubmit = async (event: any) => {
-    event.preventDefault();
-    setShowAlert(false);
-    const userContent = { role: 'user', content: `${inputValue}` };
-    try {
-      setShowProgressBar((prevShowProgressBar) => !prevShowProgressBar);
-      
-      // Mock response for offline mode
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      messagesStore.push(userContent);
-      const assistantMessage = { role: 'assistant', content: "I am currently offline. Please connect to the internet or configure a local LLM." };
-      messagesStore.push(assistantMessage);
-      setResponseMessage(assistantMessage.content);
-      setInputValue('');
-      setShowProgressBar((prevShowProgressBar) => !prevShowProgressBar);
-    } catch (error) {
-      setShowProgressBar((prevShowProgressBar) => !prevShowProgressBar);
-      console.error(error);
-      setShowAlert(true);
-    }
-  };
-
-  const handleInputChange = (event: any) => {
-    setInputValue(event.target.value);
-  };
-
-  const handleInputTokensChange = (event: any) => {
-    setInputTokensValue(Number(event.target.value));
-  };
-
-  const handleInputTempChange = (event: any) => {
-    setInputTempValue(Number(event.target.value));
-  };
-
-  const handleKeyPress = (event) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      handleSubmit(event);
-    }
-  };
-
-  const handleClick = (actionName: string) => {
-    switch (actionName) {
-      case 'Delete':
-        messagesStore = [];
-        setResponseMessage('');
-        setInputTokensValue(100);
-        initGtp();
-        break;
-      case 'Back':
-        messagesStore = [];
-        setResponseMessage('');
-        setInputTokensValue(100);
-        navigate('/');
-        break;
-      default:
-        break;
-    }
-  };
-
-  async function initGtp() {
-    try {
-      setShowProgressBar((prevShowProgressBar) => !prevShowProgressBar);
-      
-      // Mock response for offline mode
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      const assistantMessage = { role: 'assistant', content: "Hello! I am your offline assistant. Chat features are currently limited." };
-      messagesStore.push(assistantMessage);
-      setResponseMessage(assistantMessage.content);
-      setShowProgressBar((prevShowProgressBar) => !prevShowProgressBar);
-    } catch (error) {
-      setShowProgressBar((prevShowProgressBar) => !prevShowProgressBar);
-      console.error(error);
-      setShowAlert(true);
-    }
-  }
+  // AI Engine State
+  const [llamaReady, setLlamaStatus] = useState(false);
+  const [aiEngine, setAiEngine] = useState('local');
+  const [initProgress, setInitProgress] = useState({ progress: 0, status: '' });
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    initGtp();
+      const initChat = async () => {
+          const userStr = localStorage.getItem('userId');
+          const userId = userStr ? JSON.parse(userStr) : 1;
+
+          // 1. Get Settings
+          const settings = await window.electron.database.getAllSettings();
+          const engine = settings.aiEngine || 'local';
+          setAiEngine(engine);
+
+          // 2. Fetch Llama Status
+          const status = await window.electron.ai.getLlamaStatus();
+          
+          // Trigger Llama init ONLY if engine is local
+          if (engine === 'local' && !status.ready && !status.isInitializing) {
+              window.electron.ai.initLlama();
+          }
+          setLlamaStatus(status.ready);
+
+          // 3. Fetch Chat History
+          const history = await window.electron.ai.getHistory(userId);
+          setMessages(history);
+      };
+      initChat();
+
+      // Listen for initialization progress
+      const progressHandler = (data: { progress: number, status: string }) => {
+          setInitProgress({ progress: data.progress, status: data.status });
+          if (data.status === 'Model gotowy!') setLlamaStatus(true);
+      };
+      window.electron.ai.onProgress(progressHandler);
+
+      // Listen for streaming chunks
+      window.electron.ai.onDelta((chunk: string) => {
+          if (typeof chunk !== 'string') return;
+          setMessages(prev => {
+              const last = prev[prev.length - 1];
+              if (last && last.role === 'assistant') {
+                  // Create a new array with updated last message
+                  const updated = [...prev];
+                  updated[updated.length - 1] = { 
+                      ...last, 
+                      content: last.content + chunk 
+                  };
+                  return updated;
+              }
+              // If no assistant message exists yet, create one
+              return [...prev, { role: 'assistant', content: chunk }];
+          });
+      });
   }, []);
+
+  // Force scroll to bottom on every message change
+  useEffect(() => {
+      if (scrollRef.current) {
+          scrollRef.current.scrollTo({
+              top: scrollRef.current.scrollHeight,
+              behavior: 'smooth'
+          });
+      }
+  }, [messages, isLoading]);
+
+  const handleSubmit = async (event?: any) => {
+    if (event) event.preventDefault();
+    if (!inputValue.trim() || isLoading) return;
+
+    if (aiEngine === 'local' && !llamaReady) {
+        setError("Lokalne AI nie jest jeszcze gotowe.");
+        return;
+    }
+
+    const userStr = localStorage.getItem('userId');
+    const userId = userStr ? JSON.parse(userStr) : 1;
+    const userPrompt = inputValue.trim();
+
+    // 1. Clear input and show user message immediately
+    setInputValue('');
+    setMessages(prev => [...prev, { role: 'user', content: userPrompt }]);
+    await window.electron.ai.saveMessage(userId, 'user', userPrompt); 
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const context = {
+          unfinishedTasks: tasks.filter(t => t.status !== 'Completed').map(t => t.title),
+          currentInsights: insights,
+          time: new Date().toLocaleTimeString()
+      };
+
+      const finalResponse = await window.electron.ai.askLlama(userPrompt, context);
+      
+      if (finalResponse.startsWith('Error:')) {
+          setError(finalResponse);
+      } else {
+          // If Gemini was used, onDelta never fired, so we must add the message manually now
+          if (aiEngine === 'gemini') {
+              setMessages(prev => [...prev, { role: 'assistant', content: finalResponse }]);
+          }
+          await window.electron.ai.saveMessage(userId, 'assistant', finalResponse);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError(`AI failed to respond: ${err.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleKeyPress = (event: React.KeyboardEvent) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      handleSubmit();
+    }
+  };
+
+  const clearChat = async () => {
+      if (confirm("Clear history?")) {
+          try {
+              const userStr = localStorage.getItem('userId');
+              const userId = userStr ? JSON.parse(userStr) : 1;
+              setIsLoading(true); // Temporarily block to avoid race conditions
+              await window.electron.ai.clearHistory(userId);
+              setMessages([]);
+              setError(null);
+          } catch (e) {
+              console.error("Failed to clear chat", e);
+          } finally {
+              setIsLoading(false);
+              // Small delay to ensure render is done before focus
+              setTimeout(() => inputRef.current?.focus(), 100);
+          }
+      }
+  };
+
+  // Button disabled logic: only block if loading OR (using local AND not ready)
+  const isSendDisabled = isLoading || !inputValue.trim() || (aiEngine === 'local' && !llamaReady);
+
   return (
-    <div>
-      <SpeedDial
-        ariaLabel="SpeedDial basic example"
-        sx={{ position: 'fixed', bottom: 16, right: 16 }}
-        icon={<SpeedDialIcon />}
-      >
-        {actions.map((action) => (
-          <SpeedDialAction
-            key={action.name}
-            icon={action.icon}
-            tooltipTitle={action.name}
-            onClick={() => handleClick(action.name)}
-          />
-        ))}
-      </SpeedDial>
-      <div>
-        <Grid display="flex" justifyContent="center" alignItems="center">
-          <Stack
-            direction="row"
-            sx={{ position: 'fixed', bottom: 10, marginTop: 17 }}
-            spacing={1}
-          >
-            <form onSubmit={handleSubmit}>
-              <Box
-                sx={{
-                  minWidth: 500,
-                  width: '100%',
-                }}
-              >
-                <TextField
-                  fullWidth
-                  label="Send a message..."
-                  variant="standard"
-                  value={inputValue}
-                  onChange={handleInputChange}
-                  onKeyPress={handleKeyPress}
-                  multiline
-                  maxRows={4}
-                />
+    <Box className="chat-container">
+      {/* Header */}
+      <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
+          <Box display="flex" alignItems="center" gap={1}>
+              <IconButton onClick={() => navigate('/')} size="small"><ArrowBackIcon /></IconButton>
+              <Typography variant="h5" fontWeight="300">
+                  Thingy {aiEngine === 'gemini' ? 'Cloud AI' : 'Local AI'}
+              </Typography>
+          </Box>
+          <Button variant="text" color="inherit" onClick={clearChat} size="small" sx={{ opacity: 0.6 }}>
+              Clear History
+          </Button>
+      </Box>
+
+      {/* Progress ONLY for local */}
+      {aiEngine === 'local' && !llamaReady && (
+          <Box sx={{ mb: 2, p: 2, bgcolor: 'rgba(33, 158, 188, 0.05)', borderRadius: 2, border: '1px solid rgba(33, 158, 188, 0.2)' }}>
+              <Typography variant="caption" color="primary" fontWeight="bold" display="block">
+                  {initProgress.status || "Inicjalizacja mózgu AI..."}
+              </Typography>
+              <LinearProgress variant="determinate" value={initProgress.progress} sx={{ height: 4, borderRadius: 2, mt: 1 }} />
+          </Box>
+      )}
+
+      {/* Messages Area */}
+      <Box className="messages-area" ref={scrollRef}>
+          {messages.length === 0 && (
+              <Box textAlign="center" py={10} color="text.secondary" sx={{ opacity: 0.5 }}>
+                  <SmartToyIcon sx={{ fontSize: 48, mb: 1 }} />
+                  <Typography variant="h6" fontWeight="300">
+                      {aiEngine === 'gemini' ? 'Gemini 1.5 jest gotowy.' : 'Jak mogę Ci dzisiaj pomóc?'}
+                  </Typography>
               </Box>
-            </form>
-            <form className="formMsg">
-              <TextField
-                sx={{
-                  width: { sm: 100, md: 100 },
-                  marginRight: 1,
-                }}
-                label="Tokens"
-                variant="standard"
-                value={inputTokensValue}
-                onChange={handleInputTokensChange}
-              />
-              <FormControl>
-                <InputLabel id="temper">Temp</InputLabel>
-                <Select
-                  sx={{
-                    width: { sm: 60, md: 60 },
-                  }}
-                  labelId="temper"
-                  variant="standard"
-                  value={inputTempValue}
-                  label="Temperature"
-                  onChange={handleInputTempChange}
-                >
-                  <MenuItem value={0}>0</MenuItem>
-                  <MenuItem value={0.2}>0.2</MenuItem>
-                  <MenuItem value={0.3}>0.3</MenuItem>
-                  <MenuItem value={0.4}>0.4</MenuItem>
-                  <MenuItem value={0.7}>0.7</MenuItem>
-                </Select>
-              </FormControl>
-            </form>
-          </Stack>
-        </Grid>
-        <List
-          sx={{
-            width: '100%',
-            bgcolor: 'background.paper',
-            position: 'relative',
-            overflow: 'auto',
-            maxHeight: 500,
-            minWidth: 500,
-            paddingBottom: 5,
-          }}
-        >
-          {messagesStore.map(({ role, content }, index) => {
-            const codeRegex = /```(.*?)```/gs; // używamy flagi 's' (dotAll) aby uwzględnić nowe linie
-            const matches = content.match(codeRegex);
-            const matches2 = content.match(/\[(.*?)\]/);
-
-            if (matches2) {
-              const extract = matches2[1];
-              assistantName = extract;
-            }
-            let formattedContent = content;
-            if (matches && matches[0]) {
-              const code = matches[0].replace(/```/g, ''); // usuwamy wszystkie wystąpienia '```'
-              formattedContent = (
-                <SyntaxHighlighter
-                  language="typescript"
-                  showLineNumbers="true"
-                  style={a11yDark}
-                >
-                  {code}
-                </SyntaxHighlighter>
-              );
-            }
-            const primary = role === 'assistant' ? assistantName : role;
-            return (
-              <ListItem key={index + content}>
-                <ListItemText primary={primary} secondary={formattedContent} />
-              </ListItem>
-            );
-          })}
-        </List>
-
-        <Box sx={{ width: '100%' }}>
-          {showProgressBar && (
-            <div>
-              <Skeleton />
-              <Skeleton animation="wave" />
-              <Skeleton animation={false} />
-            </div>
           )}
-        </Box>
-        <Box sx={{ width: '100%' }}>
-          {showAlert && (
-            <div>
-              <Alert severity="error">Something went wrong...</Alert>
-            </div>
+          
+          {messages.map((msg, idx) => (
+              <Box key={idx} className={`message-wrapper ${msg.role}`}>
+                  <Avatar className="chat-avatar" sx={{ bgcolor: msg.role === 'user' ? '#023047' : '#219ebc' }}>
+                      {msg.role === 'user' ? <PersonIcon fontSize="small" /> : <SmartToyIcon fontSize="small" />}
+                  </Avatar>
+                  <Box className="message-bubble">
+                      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+                          {msg.content}
+                      </Typography>
+                  </Box>
+              </Box>
+          ))}
+          
+          {isLoading && !messages[messages.length-1]?.content && (
+              <Box className="message-wrapper assistant">
+                  <Avatar className="chat-avatar" sx={{ bgcolor: '#219ebc' }}><SmartToyIcon fontSize="small" /></Avatar>
+                  <Box className="message-bubble">
+                      <Skeleton width={100} height={20} />
+                  </Box>
+              </Box>
           )}
-        </Box>
-      </div>
-    </div>
+          {error && <Alert severity="error" sx={{ mt: 2, borderRadius: 2 }}>{error}</Alert>}
+      </Box>
+
+      {/* Input Area */}
+      <Box component="form" onSubmit={handleSubmit} className="input-container">
+          <input 
+            ref={inputRef}
+            className="chat-input"
+            placeholder={aiEngine === 'gemini' || llamaReady ? "Napisz do Thingy..." : "AI się ładuje..."}
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={handleKeyPress}
+            disabled={isLoading || (aiEngine === 'local' && !llamaReady)}
+          />
+          <IconButton 
+            className="send-button"
+            type="submit" 
+            disabled={isSendDisabled}
+          >
+              {isLoading ? <CircularProgress size={24} color="inherit" /> : <SendIcon sx={{ fontSize: 20 }} />}
+          </IconButton>
+      </Box>
+    </Box>
   );
 }

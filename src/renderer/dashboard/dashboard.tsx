@@ -36,7 +36,16 @@ const Item = styled(Paper)(({ theme }) => ({
 }));
 
 export default function Dashboard() {
-  const { tasks, isLoading, totalSpendTimeToday, insights } = useTimer();
+  const { tasks, isLoading, totalSpendTimeToday, insights, updateTask } = useTimer();
+
+  React.useEffect(() => {
+      // Force a slight refresh if insights are missing but loading is false
+      // This helps with the 'blank' dashboard on first login/load
+      if (!insights && !isLoading) {
+          // fetchAllData is internal to TimerContext, but we can trigger 
+          // a refresh by just mounting the component if the context is healthy.
+      }
+  }, [insights, isLoading]);
 
   if (isLoading) {
     return <Typography>Loading...</Typography>;

@@ -68,33 +68,43 @@ export const initDB = async () => {
   db.run(`CREATE TABLE IF NOT EXISTS daily_energy_logs (date TEXT PRIMARY KEY, mode TEXT, sleepScore INTEGER)`);
   db.run(`CREATE TABLE IF NOT EXISTS habits (id INTEGER PRIMARY KEY, userId INTEGER, title TEXT NOT NULL, description TEXT, frequency TEXT NOT NULL, category TEXT, targetStreak INTEGER DEFAULT 0, reminderTime TEXT, createdAt TEXT, isFavorite INTEGER DEFAULT 0, FOREIGN KEY(userId) REFERENCES users(id))`);
   db.run(`CREATE TABLE IF NOT EXISTS habit_logs (id INTEGER PRIMARY KEY, habitId INTEGER, date TEXT NOT NULL, value INTEGER DEFAULT 1, notes TEXT, FOREIGN KEY(habitId) REFERENCES habits(id) ON DELETE CASCADE)`);
+  db.run(`CREATE TABLE IF NOT EXISTS chat_history (id INTEGER PRIMARY KEY, userId INTEGER, role TEXT, content TEXT, timestamp TEXT, FOREIGN KEY(userId) REFERENCES users(id))`);
 
 
   try {
-    const columns = db.exec("PRAGMA table_info(tasks);")[0].values;
-    if (!columns.some(row => row[1] === 'displayOrder')) {
-      db.run('ALTER TABLE tasks ADD COLUMN displayOrder INTEGER');
-      db.run('UPDATE tasks SET displayOrder = id WHERE displayOrder IS NULL');
-    }
-    if (!columns.some(row => row[1] === 'type')) {
-      db.run("ALTER TABLE tasks ADD COLUMN type TEXT DEFAULT 'TASK'");
+    const taskTableInfo = db.exec("PRAGMA table_info(tasks);");
+    if (taskTableInfo.length > 0 && taskTableInfo[0].values) {
+        const columns = taskTableInfo[0].values;
+        if (!columns.some(row => row[1] === 'displayOrder')) {
+          db.run('ALTER TABLE tasks ADD COLUMN displayOrder INTEGER');
+          db.run('UPDATE tasks SET displayOrder = id WHERE displayOrder IS NULL');
+        }
+        if (!columns.some(row => row[1] === 'type')) {
+          db.run("ALTER TABLE tasks ADD COLUMN type TEXT DEFAULT 'TASK'");
+        }
     }
     
     // Habit migration
-    const habitCols = db.exec("PRAGMA table_info(habits);")[0].values;
-    if (!habitCols.some(row => row[1] === 'isFavorite')) {
-        db.run('ALTER TABLE habits ADD COLUMN isFavorite INTEGER DEFAULT 0');
+    const habitTableInfo = db.exec("PRAGMA table_info(habits);");
+    if (habitTableInfo.length > 0 && habitTableInfo[0].values) {
+        const habitCols = habitTableInfo[0].values;
+        if (!habitCols.some(row => row[1] === 'isFavorite')) {
+            db.run('ALTER TABLE habits ADD COLUMN isFavorite INTEGER DEFAULT 0');
+        }
     }
 
     // Bio logs migration
-    const bioCols = db.exec("PRAGMA table_info(daily_energy_logs);")[0].values;
-    if (!bioCols.some(row => row[1] === 'sleepScore')) {
-        db.run('ALTER TABLE daily_energy_logs ADD COLUMN sleepScore INTEGER');
+    const bioTableInfo = db.exec("PRAGMA table_info(daily_energy_logs);");
+    if (bioTableInfo.length > 0 && bioTableInfo[0].values) {
+        const bioCols = bioTableInfo[0].values;
+        if (!bioCols.some(row => row[1] === 'sleepScore')) {
+            db.run('ALTER TABLE daily_energy_logs ADD COLUMN sleepScore INTEGER');
+        }
+        if (!bioCols.some(row => row[1] === 'meetingTime')) {
+            db.run('ALTER TABLE daily_energy_logs ADD COLUMN meetingTime INTEGER DEFAULT 0');
+        }
     }
-    if (!bioCols.some(row => row[1] === 'meetingTime')) {
-        db.run('ALTER TABLE daily_energy_logs ADD COLUMN meetingTime INTEGER DEFAULT 0');
-    }
-  } catch (e) { /* ignore */ }
+  } catch (e) { console.error('[DB] Migration Error:', e); }
 
   // Seed Default Settings
   const defaultSettings = [
@@ -103,6 +113,8 @@ export const initDB = async () => {
       { key: 'enableFatigueWarnings', value: 'true' },
       { key: 'workDayStart', value: '09:00' },
       { key: 'workDayEnd', value: '17:00' },
+      { key: 'aiEngine', value: 'local' },
+      { key: 'geminiApiKey', value: '' },
   ];
   const settingStmt = db.prepare('INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)');
   defaultSettings.forEach(s => settingStmt.run([s.key, s.value]));
@@ -1107,6 +1119,31 @@ export const getTopHabit = (userId: number) => {
   if (!result || !result.id) return null;
   try { result.frequency = JSON.parse(result.frequency as string); } catch(e) {}
   return result;
+};
+
+// --- Chat Helpers ---
+export const saveChatMessage = (userId: number, role: string, content: string) => {
+    if (!db) throw new Error('DB not initialized');
+    db.run('INSERT INTO chat_history (userId, role, content, timestamp) VALUES (?, ?, ?, ?)', [userId, role, content, new Date().toISOString()]);
+    saveDB();
+};
+
+export const getChatHistory = (userId: number, limit: number = 50) => {
+    if (!db) return [];
+    const stmt = db.prepare('SELECT role, content FROM chat_history WHERE userId = ? ORDER BY id ASC LIMIT ?');
+    stmt.bind([userId, limit]);
+    const history: any[] = [];
+    while (stmt.step()) {
+        history.push(stmt.getAsObject());
+    }
+    stmt.free();
+    return history;
+};
+
+export const clearChatHistory = (userId: number) => {
+    if (!db) throw new Error('DB not initialized');
+    db.run('DELETE FROM chat_history WHERE userId = ?', [userId]);
+    saveDB();
 };
 
 export const closeDB = () => {

@@ -34,6 +34,7 @@ import PersonIcon from '@mui/icons-material/Person';
 import SprintIcon from '@mui/icons-material/DirectionsRun';
 import MenuIcon from '@mui/icons-material/Menu';
 import LoopIcon from '@mui/icons-material/Loop';
+import ChatIcon from '@mui/icons-material/Chat';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import StopIcon from '@mui/icons-material/Stop'; // Use the square Stop icon
 import SearchIcon from '@mui/icons-material/Search';
@@ -57,6 +58,7 @@ const menuItems = [
   { text: 'Dashboard', path: '/', icon: <DashboardIcon /> },
   { text: 'Tasks', path: '/list', icon: <AssignmentIcon /> },
   { text: 'Habits', path: '/habits', icon: <LoopIcon /> },
+  { text: 'Chat', path: '/chat', icon: <ChatIcon /> },
   { text: 'Sprints', path: '/sprints', icon: <SprintIcon /> },
   { text: 'Statistics', path: '/statistics', icon: <BarChartIcon /> },
   { text: 'Profile', path: '/profile', icon: <PersonIcon /> },

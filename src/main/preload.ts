@@ -75,6 +75,16 @@ contextBridge.exposeInMainWorld('electron', {
     getDailyChallenge: (userId: number) => ipcRenderer.invoke('db:get-daily-challenge', userId),
     getProductivityInsights: (userId: number) => ipcRenderer.invoke('db:get-productivity-insights', userId),
   },
+  ai: {
+    initLlama: () => ipcRenderer.invoke('ai:init-llama'),
+    getLlamaStatus: () => ipcRenderer.invoke('ai:get-llama-status'),
+    askLlama: (prompt: string, context: any) => ipcRenderer.invoke('ai:ask-llama', { prompt, context }),
+    onProgress: (func: (data: { progress: number, status: string }) => void) => ipcRenderer.on('ai:llama-progress', (event, data) => func(data as any)),
+    onDelta: (func: (chunk: string) => void) => ipcRenderer.on('ai:llama-delta', (event, chunk) => func(chunk as string)),
+    getHistory: (userId: number) => ipcRenderer.invoke('chat:get-history', userId),
+    saveMessage: (userId: number, role: string, content: string) => ipcRenderer.invoke('chat:save-message', { userId, role, content }),
+    clearHistory: (userId: number) => ipcRenderer.invoke('chat:clear-history', userId),
+  },
   ipcRenderer: {
     on(channel: string, func: (...args: unknown[]) => void) {
       ipcRenderer.on(channel, (event, ...args) => func(...args));

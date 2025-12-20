@@ -220,7 +220,7 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     fetchAllData();
-  }, [navigate, settings.activityGraphDays]);
+  }, [settings.activityGraphDays]); // Fetch on mount and when graph settings change
 
   useEffect(() => {
     const todayISO = getWorkdayISO();

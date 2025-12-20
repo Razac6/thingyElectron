@@ -55,11 +55,16 @@ import {
   logHabit,
   getHabitLogs,
   getTopHabit,
-  toggleHabitFavorite
+  toggleHabitFavorite,
+  saveChatMessage,
+  getChatHistory,
+  clearChatHistory
 } from './db';
 import { autoScheduleTasks, getProposedSchedule } from './TaskScheduler';
 import { ProductivityAnalyst, AnalysisResult } from './ProductivityAnalysis';
 import { neuralCore } from './NeuralCore';
+import { llamaEngine } from './LlamaEngine';
+import { askGemini } from './GeminiService';
 
 // --- Aggressive Error Logging ---
 log.transports.file.level = 'info';
@@ -89,7 +94,7 @@ let cachedInsights: AnalysisResult | null = null;
 let hasSentFatigueWarning = false;
 let lastPeakHourNotificationDate: string | null = null;
 
-const refreshInsights = (userId: number) => {
+const refreshInsights = async (userId: number) => {
   try {
     const recentSessions = getRecentWorkSessions(userId, 30);
     const trendData = getLast14DaysProductivity(userId);
@@ -131,17 +136,8 @@ const refreshInsights = (userId: number) => {
         dailyBio.sleepScore || 75, 
         dailyBio.meetingTime || 0
     );
-    const neuralResult = neuralCore.getNeuralAdvice(activeTaskInfo?.title);
 
-    let finalTip = neuralResult.text;
-    let finalCategory = neuralResult.category;
-
-    // Prioritize Meeting Overload Tip
-    if ((dailyBio.meetingTime || 0) > 90) {
-        finalTip = algoTip;
-        finalCategory = (dailyBio.meetingTime || 0) > 180 ? 'high' : 'neutral';
-    }
-
+    // Initial result without waiting for heavy AI
     cachedInsights = {
       peakHours: ProductivityAnalyst.identifyPeakHours(recentSessions).peakHours,
       peakHourRange: ProductivityAnalyst.identifyPeakHours(recentSessions).formattedRange,
@@ -149,11 +145,21 @@ const refreshInsights = (userId: number) => {
       trend,
       focusScore: ProductivityAnalyst.analyzeFocusQuality(recentSessions),
       tagConsistency: newConsistency,
-      tagDifficulty: difficultyProfile, // Include in insights
-      dailyTip: finalTip,
-      dailyTipCategory: finalCategory
+      tagDifficulty: difficultyProfile,
+      dailyTip: algoTip, // Use fast algo tip first
+      dailyTipCategory: 'neutral'
     };
-    log.info('Smart Insights Refreshed:', cachedInsights);
+
+    // Update with heavy Llama AI in background - don't await this for the UI
+    neuralCore.getNeuralAdvice(activeTaskInfo?.title).then(neuralResult => {
+        if (cachedInsights) {
+            cachedInsights.dailyTip = neuralResult.text;
+            cachedInsights.dailyTipCategory = neuralResult.category;
+            // Optionally notify renderer that tip is ready, but next poll will catch it
+        }
+    }).catch(err => log.error('Background AI advice failed', err));
+
+    log.info('Smart Insights Refreshed (Fast Path)');
 
     // --- Daily Challenge Generation ---
     const today = new Date().toISOString().split('T')[0];
@@ -458,10 +464,10 @@ ipcMain.handle('db:get-notes', (event, userId) => getNotes(userId));
 ipcMain.handle('db:create-note', (event, note, userId) => createNote(note, userId));
 ipcMain.handle('db:update-note', (event, note) => updateNote(note));
 ipcMain.handle('db:delete-note', (event, noteId) => deleteNote(noteId));
-ipcMain.handle('db:login', (event, { username, password }) => {
+ipcMain.handle('db:login', async (event, { username, password }) => {
   const user = loginUser(username, password);
   if (user) {
-    refreshInsights(user.id); // Load insights on login
+    await refreshInsights(user.id); // Load insights on login
     
     // Train Neural Core
     try {
@@ -541,6 +547,50 @@ ipcMain.handle('db:get-productivity-insights', async (event, userId) => {
 
   return cachedInsights;
 });
+
+// --- Llama AI Handlers ---
+ipcMain.handle('ai:init-llama', async () => {
+    await llamaEngine.initialize((data) => {
+        if (mainWindow) {
+            mainWindow.webContents.send('ai:llama-progress', data);
+        }
+    });
+    return true;
+});
+
+ipcMain.handle('ai:get-llama-status', () => {
+    return llamaEngine.getStatus();
+});
+
+ipcMain.handle('ai:ask-llama', async (event, { prompt, context }) => {
+    try {
+        const engine = getSetting('aiEngine') || 'local';
+        
+        if (engine === 'gemini') {
+            const apiKey = getSetting('geminiApiKey');
+            if (!apiKey) return "Error: Brak klucza API dla Gemini. Sprawdź Ustawienia.";
+            log.info('AI Request: Using Gemini');
+            return await askGemini(prompt, apiKey, context);
+        }
+
+        // Default: Local Llama
+        log.info('AI Request: Using Local Llama');
+        const response = await llamaEngine.generateMessage(prompt, context, (chunk) => {
+            if (mainWindow) {
+                mainWindow.webContents.send('ai:llama-delta', chunk);
+            }
+        });
+        return response;
+    } catch (err: any) {
+        log.error('AI generation failed in main:', err);
+        return `Error: ${err.message}`;
+    }
+});
+
+// --- Chat History Handlers ---
+ipcMain.handle('chat:get-history', (event, userId) => getChatHistory(userId));
+ipcMain.handle('chat:save-message', (event, { userId, role, content }) => saveChatMessage(userId, role, content));
+ipcMain.handle('chat:clear-history', (event, userId) => clearChatHistory(userId));
 
 ipcMain.handle('gamification:reward-fatigue-compliance', (event, userId) => {
   const profile = getProfile(userId);
