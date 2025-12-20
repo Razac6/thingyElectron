@@ -10,6 +10,7 @@ import Profile from './pages/profile/Profile';
 import SystemLogs from './pages/system-logs/SystemLogs';
 import Settings from './pages/settings/Settings';
 import SprintsPage from './pages/sprints/Sprints';
+import SprintDetail from './pages/sprints/SprintDetail';
 import TaskDetail from './pages/task/TaskDetail';
 import { TimerProvider } from './context/TimerContext';
 import { GamificationProvider } from './context/GamificationContext';
@@ -23,8 +24,8 @@ export default function App() {
       <CssBaseline />
       <Router>
         <SettingsProvider>
-          <TimerProvider>
-            <GamificationProvider>
+          <GamificationProvider>
+            <TimerProvider>
               <Layout>
                 <Routes>
                   <Route path="/list" element={<List />} />
@@ -34,12 +35,14 @@ export default function App() {
                                   <Route path="/profile" element={<Profile />} />
                                   <Route path="/logs" element={<SystemLogs />} />
                                   <Route path="/settings" element={<Settings />} />
-                                  <Route path="/sprints" element={<SprintsPage />} />                  <Route path="/task/:taskId" element={<TaskDetail />} />
+                                  <Route path="/sprints" element={<SprintsPage />} />
+                                  <Route path="/sprints/:sprintId" element={<SprintDetail />} />
+                                  <Route path="/task/:taskId" element={<TaskDetail />} />
                   <Route path="/" element={<Dashboard />} />
                 </Routes>
               </Layout>
-            </GamificationProvider>
-          </TimerProvider>
+            </TimerProvider>
+          </GamificationProvider>
         </SettingsProvider>
       </Router>
     </ThemeProvider>

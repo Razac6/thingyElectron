@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Box, Paper, Typography, Switch, FormControlLabel, Slider, Divider, Grid, Button, CircularProgress } from '@mui/material';
+import { Box, Paper, Typography, Switch, FormControlLabel, Slider, Divider, Grid, Button, CircularProgress, TextField } from '@mui/material';
 import { useSettings } from '../../context/SettingsContext';
 import { forceNeuralTraining } from '../../services/DatabaseService';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
@@ -137,6 +137,27 @@ function Settings() {
                 <Typography variant="caption" display="block" color="text.secondary" sx={{ ml: 4 }}>
                     Show Sleep Score input in Smart Insights. Data is used to adjust fatigue recommendations.
                 </Typography>
+            </Grid>
+
+            <Grid item xs={6}>
+                <TextField
+                    label="Work Day Start"
+                    type="time"
+                    fullWidth
+                    InputLabelProps={{ shrink: true }}
+                    value={settings.workDayStart || '09:00'}
+                    onChange={(e) => updateSetting('workDayStart', e.target.value)}
+                />
+            </Grid>
+            <Grid item xs={6}>
+                <TextField
+                    label="Work Day End"
+                    type="time"
+                    fullWidth
+                    InputLabelProps={{ shrink: true }}
+                    value={settings.workDayEnd || '17:00'}
+                    onChange={(e) => updateSetting('workDayEnd', e.target.value)}
+                />
             </Grid>
         </Grid>
       </Paper>

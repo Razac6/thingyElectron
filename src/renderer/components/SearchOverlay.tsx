@@ -18,6 +18,7 @@ import {
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import SearchIcon from '@mui/icons-material/Search';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
 import { useTimer } from '../context/TimerContext';
 import { globalSearch, getTagAnalytics, getTagByName, getAllTags } from '../services/DatabaseService';
 import { Task } from '../../interfaces/task.interface';
@@ -54,6 +55,7 @@ export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
   const [isAdding, setIsAdding] = useState(true);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [suggestion, setSuggestion] = useState<string | null>(null);
+  const [aiEstimate, setAiEstimate] = useState<number | null>(null);
   
   // Autocomplete State
   const [availableTags, setAvailableTags] = useState<string[]>([]);
@@ -64,6 +66,45 @@ export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
   const { createTask } = useTimer();
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const parseQueryForAI = (text: string) => {
+      let mutableTitle = text;
+      let tags: string[] = [];
+      const tagMatches = Array.from(mutableTitle.matchAll(/(?:\s|^)#([\w-]+)(?=\s|$)/g));
+      tags = [...new Set(tagMatches.map(m => m[1]))];
+      
+      for (const tag of tags) {
+          mutableTitle = mutableTitle.replace(new RegExp(`\\s?#${tag}\\b`, 'g'), '').trim();
+      }
+      mutableTitle = mutableTitle.replace(/@(bug|feature|doc|task)/i, '').trim();
+      mutableTitle = mutableTitle.replace(/\b(\d+(\.\d+)?)(h|m)\b/i, '').trim();
+      return { title: mutableTitle, tags };
+  };
+
+  useEffect(() => {
+    const fetchAiEstimate = async () => {
+        if (!isAdding || query.length < 3) {
+            setAiEstimate(null);
+            return;
+        }
+        const { title, tags } = parseQueryForAI(query);
+        if (!title) {
+            setAiEstimate(null);
+            return;
+        }
+
+        try {
+            const userId = localStorage.getItem('userId') ? JSON.parse(localStorage.getItem('userId')!) : 1;
+            const predMin = await window.electron.database.predictDuration({ title, tags, userId, priority: 'Medium' });
+            setAiEstimate(Number((predMin / 60).toFixed(1)));
+        } catch (e) {
+            console.error("AI Estimate fetch failed", e);
+        }
+    };
+
+    const debounce = setTimeout(fetchAiEstimate, 800);
+    return () => clearTimeout(debounce);
+  }, [query, isAdding]);
 
   useEffect(() => {
     if (open) {
@@ -382,6 +423,30 @@ export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
               {suggestion}
             </Typography>
           </Box>
+        )}
+
+        {aiEstimate !== null && isAdding && !showSuggestions && (
+            <Box 
+                sx={{ 
+                    mt: 0.5, 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: 0.5, 
+                    color: '#219ebc',
+                    cursor: 'pointer',
+                    '&:hover': { opacity: 0.8 }
+                }}
+                onClick={() => {
+                    const cleanQuery = query.replace(/\b(\d+(\.\d+)?)(h|m)\b/i, '').trim();
+                    setQuery(`${cleanQuery} ${aiEstimate}h`);
+                    inputRef.current?.focus();
+                }}
+            >
+                <SmartToyIcon sx={{ fontSize: 14 }} />
+                <Typography variant="caption" fontWeight="bold">
+                    AI suggests: {aiEstimate}h estimate (Click to apply)
+                </Typography>
+            </Box>
         )}
         {!isAdding && query && (
           <List>

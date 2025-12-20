@@ -108,15 +108,56 @@ export const GamificationProvider = ({ children }: { children: ReactNode }) => {
   }, [profile]);
 
   const checkForAchievements = useCallback(async (action: string, data?: any): Promise<boolean> => {
+    let earned = false;
+
     if (action === 'TASK_COMPLETED') {
+      // 1. First Task
       if (!earnedAchievements.includes('FIRST_TASK')) {
         await window.electron.database.grantAchievement(userId, 'FIRST_TASK');
         setEarnedAchievements(prev => [...prev, 'FIRST_TASK']);
         addXp(10);
-        return true; // Achievement earned
+        earned = true;
+      }
+
+      // 2. Count Tasks
+      const tasks = await window.electron.database.getTasks(userId);
+      const completedCount = tasks.filter((t: any) => t.status === 'Completed').length;
+
+      if (completedCount >= 5 && !earnedAchievements.includes('FIVE_TASKS')) {
+          await window.electron.database.grantAchievement(userId, 'FIVE_TASKS');
+          setEarnedAchievements(prev => [...prev, 'FIVE_TASKS']);
+          addXp(50);
+          earned = true;
+      }
+
+      if (completedCount >= 10 && !earnedAchievements.includes('TEN_TASKS')) {
+          await window.electron.database.grantAchievement(userId, 'TEN_TASKS');
+          setEarnedAchievements(prev => [...prev, 'TEN_TASKS']);
+          addXp(100);
+          earned = true;
       }
     }
-    return false; // No new achievement
+
+    if (action === 'SPRINT_CREATED') {
+        if (!earnedAchievements.includes('THE_PLANNER')) {
+            await window.electron.database.grantAchievement(userId, 'THE_PLANNER');
+            setEarnedAchievements(prev => [...prev, 'THE_PLANNER']);
+            addXp(25);
+            earned = true;
+        }
+    }
+
+    if (action === 'WORK_SESSION_ENDED') {
+        const durationMin = data?.duration / (1000 * 60);
+        if (durationMin >= 120 && !earnedAchievements.includes('DEEP_DIVE')) {
+            await window.electron.database.grantAchievement(userId, 'DEEP_DIVE');
+            setEarnedAchievements(prev => [...prev, 'DEEP_DIVE']);
+            addXp(50);
+            earned = true;
+        }
+    }
+
+    return earned;
   }, [addXp, earnedAchievements, userId]);
 
   if (isLoading) {

@@ -518,4 +518,69 @@ export class ProductivityAnalyst {
 
       return null;
   }
+
+  /**
+   * Algorithm 10: Sprint Risk Analysis
+   * Predicts if the sprint will be completed on time.
+   */
+  static analyzeSprintRisk(sprint: any, tasks: any[], recentSessions: WorkSession[], neuralPredictions: number[], workHours: { start: string, end: string }): { completed: number, total: number, risk: 'Stable' | 'At Risk' | 'Critical', message: string } {
+      const unfinishedTasks = tasks.filter(t => t.status !== 'Completed');
+      const finishedTasks = tasks.filter(t => t.status === 'Completed');
+      
+      const totalTasks = tasks.length;
+      const completedTasks = finishedTasks.length;
+
+      if (totalTasks === 0) return { completed: 0, total: 0, risk: 'Stable', message: 'Brak zadań w sprincie.' };
+
+      // 1. Calculate remaining workload (Hours)
+      const remainingMinutesAI = neuralPredictions.reduce((acc, val) => acc + val, 0);
+      const remainingHours = remainingMinutesAI > 0 ? remainingMinutesAI / 60 : unfinishedTasks.reduce((acc, t) => acc + (t.estimate || 1), 0);
+
+      // 2. Calculate available capacity based on Work Hours
+      const now = new Date();
+      const end = new Date(sprint.endDate);
+      
+      // Calculate work hours per day
+      const [startH, startM] = workHours.start.split(':').map(Number);
+      const [endH, endM] = workHours.end.split(':').map(Number);
+      const dailyWorkHours = (endH + endM/60) - (startH + startM/60);
+
+      // Remaining days (excluding weekends? for now just total days)
+      const diffTime = end.getTime() - now.getTime();
+      const daysLeft = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+
+      // Precise capacity calculation: (Today's remaining hours) + (Full remaining days * dailyWorkHours)
+      const currentHour = now.getHours() + (now.getMinutes() / 60);
+      const hoursLeftToday = Math.max(0, (endH + endM/60) - currentHour);
+      
+      const totalCapacity = hoursLeftToday + ((daysLeft - 1) * dailyWorkHours);
+      
+      // 3. Fallback to historical velocity if totalCapacity seems unrealistic or no workHours
+      const dailyTotals: Record<string, number> = {};
+      recentSessions.forEach(s => {
+          const d = s.startTime.split('T')[0];
+          dailyTotals[d] = (dailyTotals[d] || 0) + (s.duration / (1000 * 60 * 60));
+      });
+      const velocities = Object.values(dailyTotals);
+      const avgVelocity = velocities.length > 0 
+          ? velocities.reduce((a, b) => a + b, 0) / velocities.length
+          : dailyWorkHours; // Use workHours as fallback
+
+      const riskRatio = remainingHours / Math.max(1, totalCapacity);
+
+      let risk: 'Stable' | 'At Risk' | 'Critical' = 'Stable';
+      let message = 'Sprint postępuje zgodnie z planem.';
+
+      if (riskRatio > 1.2) {
+          risk = 'Critical';
+          message = `Krytyczne opóźnienie! Pozostało ${remainingHours.toFixed(1)}h pracy, a Twój harmonogram oferuje tylko ${totalCapacity.toFixed(1)}h.`;
+      } else if (riskRatio > 0.95) {
+          risk = 'At Risk';
+          message = `Zagrożenie! Masz bardzo mało czasu na dokończenie zadań (${totalCapacity.toFixed(1)}h dostępnych).`;
+      } else if (riskRatio > 0.75) {
+          message = `Uwaga: Wykorzystujesz już ${(riskRatio * 100).toFixed(0)}% dostępnego czasu w sprincie.`;
+      }
+
+      return { completed: completedTasks, total: totalTasks, risk, message };
+  }
 }

@@ -51,41 +51,42 @@ export default function Dashboard() {
 
   return (
     <Box sx={{ flexGrow: 1 }}>
-      <Grid container spacing={3}>
+      <Grid container spacing={2}>
         <Grid item xs={12} sm={4}>
-          <Item>
-            <Typography variant="h4">{tasks.length}</Typography>
-            <Typography variant="subtitle1" sx={{ fontWeight: 300, color: 'text.secondary' }}>Total Tasks</Typography>
+          <Item sx={{ py: 1 }}>
+            <Typography variant="h5" fontWeight="300" color="#023047">{tasks.length}</Typography>
+            <Typography variant="caption" sx={{ fontWeight: 300, color: 'text.secondary', textTransform: 'uppercase', fontSize: '0.65rem' }}>Total Tasks</Typography>
           </Item>
         </Grid>
         <Grid item xs={12} sm={4}>
-          <Item>
-            <Typography variant="h4">{toDoTasksCount}</Typography>
-            <Typography variant="subtitle1" sx={{ fontWeight: 300, color: 'text.secondary' }}>Tasks To Do</Typography>
+          <Item sx={{ py: 1 }}>
+            <Typography variant="h5" fontWeight="300" color="#219ebc">{toDoTasksCount}</Typography>
+            <Typography variant="caption" sx={{ fontWeight: 300, color: 'text.secondary', textTransform: 'uppercase', fontSize: '0.65rem' }}>Tasks To Do</Typography>
           </Item>
         </Grid>
         <Grid item xs={12} sm={4}>
-          <Item>
-            <Typography variant="h4">{completedTasksCount}</Typography>
-            <Typography variant="subtitle1" sx={{ fontWeight: 300, color: 'text.secondary' }}>Tasks Completed</Typography>
+          <Item sx={{ py: 1 }}>
+            <Typography variant="h5" fontWeight="300" color="#8ecae6">{completedTasksCount}</Typography>
+            <Typography variant="caption" sx={{ fontWeight: 300, color: 'text.secondary', textTransform: 'uppercase', fontSize: '0.65rem' }}>Tasks Completed</Typography>
           </Item>
         </Grid>
 
         <Grid item xs={12} md={6}>
           <Item>
-            <Typography variant="h5">
+            <Typography variant="subtitle1" fontWeight="300">
               Total Time Spent Today
             </Typography>
-            <Typography variant="h3" sx={{ mt: 1 }}>
+            <Typography variant="h4" sx={{ mt: 0.5, color: '#023047', fontWeight: 300 }}>
               {formatTime(totalSpendTimeToday)}
             </Typography>
             <SmartInsightWidget />
+            
             <FavoriteHabitWidget />
           </Item>
         </Grid>
         <Grid item xs={12} md={6}>
           <Item sx={{ display: 'flex', flexDirection: 'column' }}>
-             <Typography variant="h5" gutterBottom>
+             <Typography variant="subtitle1" fontWeight="300" gutterBottom>
               Last 7 Days Activity
             </Typography>
             <Box sx={{ flexGrow: 1, minHeight: 200, width: '100%' }}>

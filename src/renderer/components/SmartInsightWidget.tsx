@@ -13,6 +13,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import BedIcon from '@mui/icons-material/Bed';
 import GroupsIcon from '@mui/icons-material/Groups';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
+import FlagIcon from '@mui/icons-material/Flag';
 import { useTimer } from '../context/TimerContext';
 import { useSettings } from '../context/SettingsContext';
 import { getDailyBio, updateDailyBio } from '../services/DatabaseService';
@@ -23,14 +24,23 @@ const SmartInsightWidget = () => {
   const [dailyBio, setDailyBioState] = useState<{ mode: string, sleepScore: number | null, meetingTime: number }>({ mode: 'normal', sleepScore: null, meetingTime: 0 });
   const [anchorEl, setAnchorEl] = useState<HTMLButtonElement | null>(null);
   const [meetingAnchorEl, setMeetingAnchorEl] = useState<HTMLButtonElement | null>(null);
+  const [sprintAnalysis, setSprintAnalysis] = useState<any>(null);
 
   useEffect(() => {
+    const userStr = localStorage.getItem('userId');
+    const userId = userStr ? JSON.parse(userStr) : 1;
+
     const fetchMode = async () => {
       const today = new Date().toISOString().split('T')[0];
       const data = await getDailyBio(today);
       setDailyBioState({ ...data, meetingTime: data.meetingTime || 0 });
     };
+    const fetchSprint = async () => {
+        const analysis = await window.electron.database.getSprintAnalysis(userId);
+        setSprintAnalysis(analysis);
+    };
     fetchMode();
+    fetchSprint();
   }, []);
 
   const handleModeChange = async (mode: string) => {
@@ -39,15 +49,13 @@ const SmartInsightWidget = () => {
     setDailyBioState({ ...dailyBio, ...updated });
   };
 
-  const handleSleepChange = async (event: Event, newValue: number | number[]) => {
-    const val = newValue as number;
+  const handleSleepUpdate = async (val: number) => {
     const today = new Date().toISOString().split('T')[0];
     const updated = await updateDailyBio(today, { sleepScore: val });
     setDailyBioState({ ...dailyBio, ...updated });
   };
 
-  const handleMeetingChange = async (event: Event, newValue: number | number[]) => {
-    const val = newValue as number;
+  const handleMeetingUpdate = async (val: number) => {
     const today = new Date().toISOString().split('T')[0];
     const updated = await updateDailyBio(today, { meetingTime: val });
     setDailyBioState({ ...dailyBio, ...updated });
@@ -95,146 +103,95 @@ const SmartInsightWidget = () => {
 
   return (
     <Box sx={{ mt: 2, p: 1, backgroundColor: 'rgba(0,0,0,0.03)', borderRadius: 2 }}>
-       <Typography variant="overline" color="text.secondary" display="block" gutterBottom>
+       <Typography variant="overline" color="text.secondary" display="block" gutterBottom sx={{ fontSize: '0.65rem', lineHeight: 1 }}>
          Smart Insights
        </Typography>
        
        <Box sx={{ display: 'flex', alignItems: 'flex-start' }}>
            {/* Left Side: Stats */}
-           <Stack spacing={1} sx={{ flexGrow: 1 }}>
-             {/* ... (keep stats) ... */}
+           <Stack spacing={0.5} sx={{ flexGrow: 1 }}>
              <Box display="flex" alignItems="center" gap={1}>
-                <WbSunnyIcon fontSize="small" sx={{ color: '#ffb703' }} />
-                <Typography variant="body2">
-                   <strong>Peak:</strong> {peakHourRange}
-                </Typography>
+                <WbSunnyIcon sx={{ color: '#ffb703', fontSize: 16 }} />
+                <Typography variant="caption"><strong>Peak:</strong> {peakHourRange}</Typography>
              </Box>
 
              <Box display="flex" alignItems="center" gap={1}>
-                <CenterFocusStrongIcon fontSize="small" color="primary" />
-                <Typography variant="body2">
-                   <strong>Deep Work:</strong> {focusScore}%
-                </Typography>
+                <CenterFocusStrongIcon sx={{ color: '#219ebc', fontSize: 16 }} />
+                <Typography variant="caption"><strong>Deep Work:</strong> {focusScore}%</Typography>
              </Box>
 
              <Box display="flex" alignItems="center" gap={1}>
-                <BatteryAlertIcon fontSize="small" color="warning" />
-                <Typography variant="body2">
-                   <strong>Max Focus:</strong> {fatigueProfile.maxRecommended}m
-                </Typography>
+                <BatteryAlertIcon sx={{ color: '#fb8500', fontSize: 16 }} />
+                <Typography variant="caption"><strong>Max Focus:</strong> {fatigueProfile.maxRecommended}m</Typography>
              </Box>
              
              <Tooltip title={trend.description} arrow>
                 <Box display="flex" alignItems="center" gap={1} sx={{ cursor: 'help' }}>
                    {getTrendIcon()}
-                   <Typography variant="body2">
-                      <strong>Trend:</strong> {trend.direction}
-                   </Typography>
+                   <Typography variant="caption"><strong>Trend:</strong> {trend.direction}</Typography>
                 </Box>
              </Tooltip>
 
-             {tagConsistency && tagConsistency.consistent.length > 0 && (
-               <Box display="flex" alignItems="center" gap={1}>
-                 <SpeedIcon fontSize="small" color="success" />
-                 <Typography variant="body2">
-                   <strong>Consistent:</strong> #{tagConsistency.consistent[0]}
-                 </Typography>
-               </Box>
-             )}
-
-             {tagConsistency && tagConsistency.volatile.length > 0 && (
-               <Box display="flex" alignItems="center" gap={1}>
-                 <SpeedIcon fontSize="small" color="error" />
-                 <Typography variant="body2">
-                   <strong>Volatile:</strong> #{tagConsistency.volatile[0]}
-                 </Typography>
-               </Box>
+             {/* Sprint Progress - New compact version */}
+             {sprintAnalysis && (
+                <Tooltip title={sprintAnalysis.message} arrow>
+                    <Box display="flex" alignItems="center" gap={1}>
+                        <FlagIcon sx={{ 
+                            color: sprintAnalysis.risk === 'Critical' ? '#d32f2f' : (sprintAnalysis.risk === 'At Risk' ? '#fb8500' : '#2e7d32'), 
+                            fontSize: 16 
+                        }} />
+                        <Box sx={{ flexGrow: 1, maxWidth: 100 }}>
+                            <Box sx={{ width: '100%', bgcolor: '#e9ecef', height: 4, borderRadius: 2 }}>
+                                <Box sx={{ 
+                                    width: `${(sprintAnalysis.completed / sprintAnalysis.total) * 100}%`, 
+                                    bgcolor: sprintAnalysis.risk === 'Critical' ? '#d32f2f' : (sprintAnalysis.risk === 'At Risk' ? '#fb8500' : '#2e7d32'), 
+                                    height: '100%', 
+                                    borderRadius: 2 
+                                }} />
+                            </Box>
+                        </Box>
+                        <Typography variant="caption" sx={{ 
+                            fontSize: '0.6rem', 
+                            fontWeight: 'bold', 
+                            color: sprintAnalysis.risk === 'Critical' ? '#d32f2f' : (sprintAnalysis.risk === 'At Risk' ? '#fb8500' : '#2e7d32') 
+                        }}>
+                            {sprintAnalysis.risk}
+                        </Typography>
+                    </Box>
+                </Tooltip>
              )}
            </Stack>
 
            {/* Right Side: Daily Mode & Bio */}
-           <Box sx={{ ml: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+           <Box sx={{ ml: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
               <ButtonGroup variant="text" size="small" orientation="vertical" aria-label="daily mode">
-                <Tooltip title="Boost Mode: High focus, demo day" placement="left">
-                  <IconButton onClick={() => handleModeChange('boost')} color={dailyBio.mode === 'boost' ? 'error' : 'default'}>
-                    <LocalFireDepartmentIcon />
+                <Tooltip title="Boost Mode" placement="left">
+                  <IconButton size="small" onClick={() => handleModeChange('boost')} color={dailyBio.mode === 'boost' ? 'error' : 'default'}>
+                    <LocalFireDepartmentIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
-                <Tooltip title="Normal Mode: Standard productivity" placement="left">
-                  <IconButton onClick={() => handleModeChange('normal')} color={dailyBio.mode === 'normal' ? 'primary' : 'default'}>
-                    <CheckCircleIcon />
+                <Tooltip title="Normal Mode" placement="left">
+                  <IconButton size="small" onClick={() => handleModeChange('normal')} color={dailyBio.mode === 'normal' ? 'primary' : 'default'}>
+                    <CheckCircleIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
-                <Tooltip title="Recovery Mode: Less pressure, more breaks" placement="left">
-                  <IconButton onClick={() => handleModeChange('recovery')} color={dailyBio.mode === 'recovery' ? 'success' : 'default'}>
-                    <SpaIcon />
+                <Tooltip title="Recovery Mode" placement="left">
+                  <IconButton size="small" onClick={() => handleModeChange('recovery')} color={dailyBio.mode === 'recovery' ? 'success' : 'default'}>
+                    <SpaIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
               </ButtonGroup>
               
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0 }}>
                   {settings.enableSleepTracking === 'true' && (
-                      <>
-                        <Tooltip title={`Sleep Score: ${dailyBio.sleepScore || '-'}%`} placement="left">
-                            <IconButton size="small" onClick={handleOpenSleep} color={dailyBio.sleepScore ? 'primary' : 'default'}>
-                                <BedIcon fontSize="small" />
-                            </IconButton>
-                        </Tooltip>
-                        <Popover
-                            open={openSleep}
-                            anchorEl={anchorEl}
-                            onClose={handleCloseSleep}
-                            anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-                            transformOrigin={{ vertical: 'top', horizontal: 'center' }}
-                        >
-                            <Box sx={{ p: 2, width: 200 }}>
-                                <Typography variant="caption" gutterBottom>Sleep Score: {dailyBio.sleepScore || 0}%</Typography>
-                                <Slider
-                                    value={dailyBio.sleepScore || 75}
-                                    onChange={handleSleepChange}
-                                    step={5}
-                                    min={0}
-                                    max={100}
-                                    valueLabelDisplay="auto"
-                                />
-                            </Box>
-                        </Popover>
-                      </>
+                      <IconButton size="small" onClick={handleOpenSleep} color={dailyBio.sleepScore ? 'primary' : 'default'}>
+                          <BedIcon fontSize="small" />
+                      </IconButton>
                   )}
-
-                  {/* Meeting Time Input */}
-                  <>
-                    <Tooltip title={`Meetings: ${dailyBio.meetingTime ? (dailyBio.meetingTime / 60).toFixed(1) : 0}h today`} placement="left">
-                        <IconButton size="small" onClick={handleOpenMeeting} color={dailyBio.meetingTime > 0 ? 'primary' : 'default'}>
-                            <GroupsIcon fontSize="small" />
-                        </IconButton>
-                    </Tooltip>
-                    <Popover
-                        open={openMeeting}
-                        anchorEl={meetingAnchorEl}
-                        onClose={handleCloseMeeting}
-                        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-                        transformOrigin={{ vertical: 'top', horizontal: 'center' }}
-                    >
-                        <Box sx={{ p: 2, width: 200 }}>
-                            <Typography variant="caption" gutterBottom>
-                                Meetings: {(dailyBio.meetingTime ? dailyBio.meetingTime / 60 : 0).toFixed(1)}h
-                            </Typography>
-                            <Slider
-                                value={dailyBio.meetingTime || 0}
-                                onChange={handleMeetingChange}
-                                step={15}
-                                min={0}
-                                max={480} // 8 hours max
-                                valueLabelDisplay="auto"
-                                valueLabelFormat={(x) => `${(x / 60).toFixed(1)}h`}
-                            />
-                        </Box>
-                    </Popover>
-                  </>
-
-                  {/* AI Advisor Tip */}
-                  {insights && insights.dailyTip && (
+                  <IconButton size="small" onClick={handleOpenMeeting} color={dailyBio.meetingTime > 0 ? 'primary' : 'default'}>
+                      <GroupsIcon fontSize="small" />
+                  </IconButton>
+                  {insights.dailyTip && (
                       <Tooltip title={insights.dailyTip} arrow placement="left">
                           <IconButton color={getAiColor(insights.dailyTipCategory)} size="small">
                               <SmartToyIcon fontSize="small" />
@@ -244,6 +201,66 @@ const SmartInsightWidget = () => {
               </Box>
            </Box>
        </Box>
+
+       {/* Sleep Popover */}
+       <Popover
+            open={openSleep}
+            anchorEl={anchorEl}
+            onClose={handleCloseSleep}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+            transformOrigin={{ vertical: 'top', horizontal: 'center' }}
+        >
+            <Box sx={{ p: 2, width: 150 }}>
+                <TextField
+                    label="Sleep Score (%)"
+                    type="number"
+                    size="small"
+                    fullWidth
+                    value={dailyBio.sleepScore || ''}
+                    onChange={(e) => handleSleepUpdate(Number(e.target.value))}
+                    inputProps={{ min: 0, max: 100 }}
+                />
+            </Box>
+        </Popover>
+
+        {/* Meeting Popover */}
+        <Popover
+            open={openMeeting}
+            anchorEl={meetingAnchorEl}
+            onClose={handleCloseMeeting}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+            transformOrigin={{ vertical: 'top', horizontal: 'center' }}
+        >
+            <Box sx={{ p: 2, width: 220 }}>
+                <Typography variant="caption" display="block" sx={{ mb: 1 }}>Meeting Duration</Typography>
+                <Box display="flex" gap={1}>
+                    <TextField
+                        label="Hrs"
+                        type="number"
+                        size="small"
+                        value={Math.floor((dailyBio.meetingTime || 0) / 60)}
+                        onChange={(e) => {
+                            const h = Math.max(0, Number(e.target.value));
+                            const m = (dailyBio.meetingTime || 0) % 60;
+                            handleMeetingUpdate((h * 60) + m);
+                        }}
+                        inputProps={{ min: 0, max: 12 }}
+                    />
+                    <TextField
+                        label="Min"
+                        type="number"
+                        size="small"
+                        value={(dailyBio.meetingTime || 0) % 60}
+                        onChange={(e) => {
+                            const h = Math.floor((dailyBio.meetingTime || 0) / 60);
+                            const m = Math.max(0, Math.min(59, Number(e.target.value)));
+                            handleMeetingUpdate((h * 60) + m);
+                        }}
+                        inputProps={{ min: 0, max: 59 }}
+                    />
+                </Box>
+            </Box>
+        </Popover>
     </Box>
   );
 };

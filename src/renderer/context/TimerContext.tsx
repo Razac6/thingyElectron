@@ -7,6 +7,7 @@ import React, {
 } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSettings } from './SettingsContext';
+import { useGamification } from './GamificationContext';
 import { Task } from '../../interfaces/task.interface';
 import {
   fetchData as fetchTasks,
@@ -103,6 +104,7 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
   const [totalSpendTimeToday, setTotalSpendTimeToday] = useState(0);
   const navigate = useNavigate();
   const { settings } = useSettings();
+  const { checkForAchievements, triggerRewardAnimation } = useGamification();
   
   // Ref to access latest tasks inside the event listener closure
   const tasksRef = React.useRef(tasks);
@@ -315,6 +317,10 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
         endTime: new Date().toISOString(),
         duration: timeSpent,
       });
+
+      // Achievement Check
+      const earned = await checkForAchievements('WORK_SESSION_ENDED', { duration: timeSpent });
+      if (earned) triggerRewardAnimation('achievement');
 
       // 2. Update the task state (stop timer, update spendTime)
       await updateTaskService(updatedTaskData);

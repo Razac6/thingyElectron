@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('electron', {
     createSprint: (sprint: any) => ipcRenderer.invoke('db:create-sprint', sprint),
     updateSprint: (sprint: any) => ipcRenderer.invoke('db:update-sprint', sprint),
     updateSprintStatus: (sprintId: number, status: string) => ipcRenderer.invoke('db:update-sprint-status', sprintId, status),
+    getSprintAnalysis: (userId: number) => ipcRenderer.invoke('db:get-sprint-analysis', userId),
 
     // Notes
     getNotes: (userId: number) => ipcRenderer.invoke('db:get-notes', userId),

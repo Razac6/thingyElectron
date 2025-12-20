@@ -9,8 +9,14 @@ import { resolveHtmlPath } from './util';
 import {
   initDB,
   getTasks, createTask, updateTask, deleteTask, updateTasksOrder,
-  getSprints, createSprint, updateSprintStatus, updateSprint,
-  getNotes, createNote, updateNote, deleteNote,
+  getSprints,
+  createSprint,
+  updateSprintStatus,
+  updateSprint,
+  getActiveSprint,
+  getSprintTasks,
+  getNotes,
+  createNote,
   loginUser, registerUser,
   getProfile, updateProfile, getEarnedAchievements, grantAchievement,
   globalSearch,
@@ -433,6 +439,21 @@ ipcMain.handle('db:get-sprints', () => getSprints());
 ipcMain.handle('db:create-sprint', (event, sprint) => createSprint(sprint));
 ipcMain.handle('db:update-sprint', (event, sprint) => updateSprint(sprint));
 ipcMain.handle('db:update-sprint-status', (event, sprintId, status) => updateSprintStatus(sprintId, status));
+ipcMain.handle('db:get-sprint-analysis', (event, userId) => {
+    const sprint = getActiveSprint();
+    if (!sprint) return null;
+    const tasks = getSprintTasks(sprint.id);
+    const unfinished = tasks.filter(t => t.status !== 'Completed');
+    
+    const predictions = unfinished.map(t => neuralCore.predictForTask(t));
+    const sessions = getRecentWorkSessions(userId, 14);
+
+    // Fetch work hours from settings
+    const workStart = getSetting('workDayStart') || '09:00';
+    const workEnd = getSetting('workDayEnd') || '17:00';
+
+    return ProductivityAnalyst.analyzeSprintRisk(sprint, tasks, sessions, predictions, { start: workStart, end: workEnd });
+});
 ipcMain.handle('db:get-notes', (event, userId) => getNotes(userId));
 ipcMain.handle('db:create-note', (event, note, userId) => createNote(note, userId));
 ipcMain.handle('db:update-note', (event, note) => updateNote(note));

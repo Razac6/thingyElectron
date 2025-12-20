@@ -27,6 +27,8 @@ import {
   Autocomplete,
   List as MuiList,
   ListItem,
+  CircularProgress,
+  Tooltip,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
@@ -40,6 +42,7 @@ import VerticalAlignBottomIcon from '@mui/icons-material/VerticalAlignBottom';
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
 import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import { StatusEnum } from '../../../enums/status.enum';
 import { PriorityEnum } from '../../../enums/priority.enum';
@@ -83,6 +86,7 @@ function List() {
   const [isColumnSortActive, setIsColumnSortActive] = useState(false);
   const [editingStatusId, setEditingStatusId] = useState<number | null>(null);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
+  const [isPredicting, setIsPredicting] = useState(false);
   
   // AI & Drag States
   const [isProposalOpen, setIsProposalOpen] = useState(false);
@@ -140,6 +144,26 @@ function List() {
           setTimeout(() => setShowAiSuccess(false), 4000);
       } catch (error) {
           console.error("AI Schedule Apply failed", error);
+      }
+  };
+
+  const handleAiSuggestEstimate = async () => {
+      if (!newTask.title) return;
+      setIsPredicting(true);
+      try {
+          const taskForPrediction = {
+              title: newTask.title,
+              priority: newTask.priority,
+              tags: newTask.tags || [],
+              userId: localStorage.getItem('userId') ? JSON.parse(localStorage.getItem('userId')!) : 1
+          };
+          const predictionMin = await window.electron.database.predictDuration(taskForPrediction);
+          const hours = Number((predictionMin / 60).toFixed(1));
+          setNewTask(prev => ({ ...prev, estimate: hours }));
+      } catch (error) {
+          console.error("AI Prediction failed", error);
+      } finally {
+          setIsPredicting(false);
       }
   };
 
@@ -578,6 +602,20 @@ function List() {
                fullWidth
                value={newTask.estimate}
                onChange={(e) => setNewTask({ ...newTask, estimate: Number(e.target.value) })}
+               InputProps={{
+                 endAdornment: (
+                   <Tooltip title="AI Suggest Estimate">
+                     <IconButton 
+                        onClick={handleAiSuggestEstimate} 
+                        disabled={isPredicting || !newTask.title}
+                        size="small"
+                        color="secondary"
+                     >
+                       {isPredicting ? <CircularProgress size={20} /> : <SmartToyIcon />}
+                     </IconButton>
+                   </Tooltip>
+                 )
+               }}
              />
              <Autocomplete
                 fullWidth

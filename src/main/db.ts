@@ -101,6 +101,8 @@ export const initDB = async () => {
       { key: 'complexityThreshold', value: '8' },
       { key: 'enableRewardAnimations', value: 'true' },
       { key: 'enableFatigueWarnings', value: 'true' },
+      { key: 'workDayStart', value: '09:00' },
+      { key: 'workDayEnd', value: '17:00' },
   ];
   const settingStmt = db.prepare('INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)');
   defaultSettings.forEach(s => settingStmt.run([s.key, s.value]));
@@ -146,29 +148,40 @@ export const getNeuralConfidence = () => {
   if (!db) return 0;
   
   try {
-      // 1. Task Volume (Max 50 pts)
+      // 1. Task Volume (Max 40 pts)
+      // Each completed task gives 2 points.
       const taskCountStmt = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE status = 'Completed' COLLATE NOCASE");
       const taskRow = taskCountStmt.getAsObject();
       const taskCount = Number(taskRow.count) || 0;
       taskCountStmt.free();
-      const taskScore = Math.min(50, taskCount);
+      const taskScore = Math.min(40, taskCount * 2);
 
-      // 2. Tag Maturity (Max 30 pts)
+      // 2. Tag Maturity (Max 25 pts)
+      // Each "mature" tag (3+ uses) gives 5 points.
       const tagStmt = db.prepare("SELECT COUNT(*) as count FROM tag_analytics WHERE completed_count >= 3");
       const tagRow = tagStmt.getAsObject();
       const matureTags = Number(tagRow.count) || 0;
       tagStmt.free();
-      const tagScore = Math.min(30, matureTags * 5);
+      const tagScore = Math.min(25, matureTags * 5);
 
-      // 3. Sprint History (Max 20 pts)
+      // 3. Sprint History (Max 15 pts)
+      // Each completed sprint gives 5 points.
       const sprintStmt = db.prepare("SELECT COUNT(*) as count FROM sprints WHERE status = 'COMPLETED' COLLATE NOCASE");
       const sprintRow = sprintStmt.getAsObject();
       const sprintCount = Number(sprintRow.count) || 0;
       sprintStmt.free();
-      const sprintScore = Math.min(20, sprintCount * 5);
+      const sprintScore = Math.min(15, sprintCount * 5);
+
+      // 4. Habit History (Max 20 pts)
+      // Each habit log gives 1 point.
+      const habitStmt = db.prepare("SELECT COUNT(*) as count FROM habit_logs WHERE value >= 1");
+      const habitRow = habitStmt.getAsObject();
+      const habitCount = Number(habitRow.count) || 0;
+      habitStmt.free();
+      const habitScore = Math.min(20, habitCount);
       
-      const total = Math.round(taskScore + tagScore + sprintScore);
-      return total;
+      const total = Math.round(taskScore + tagScore + sprintScore + habitScore);
+      return Math.min(100, total);
   } catch (error) {
       console.error('[DB] Error calculating neural confidence:', error);
       return 0;
@@ -178,11 +191,17 @@ export const getNeuralConfidence = () => {
 export const getAiMaturity = () => {
   if (!db) return 0;
   const trainingCount = Number(getSetting('neural_training_count') || 0);
-  const dataCount = Number(getSetting('neural_data_count') || 0);
   
-  // Score: Training (max 50) + Data Volume (max 50)
-  const trainingScore = Math.min(50, trainingCount * 2); // 25 trainings to max
-  const dataScore = Math.min(50, dataCount); // 50 tasks to max
+  // Data Count comes from completed tasks with spendTime
+  const taskCountStmt = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE status = 'Completed' AND spendTime > 0");
+  const taskRow = taskCountStmt.getAsObject();
+  const dataCount = Number(taskRow.count) || 0;
+  taskCountStmt.free();
+  
+  // Maturity Score: Training (max 50) + Data Volume (max 50)
+  // 25 trainings for max training score, 50 tasks for max data score
+  const trainingScore = Math.min(50, trainingCount * 2); 
+  const dataScore = Math.min(50, dataCount); 
   
   return Math.round(trainingScore + dataScore);
 };
@@ -726,6 +745,35 @@ export const getSprints = () => {
   stmt.free();
 
   return sprints;
+};
+
+export const getActiveSprint = () => {
+  if (!db) return null;
+  const stmt = db.prepare("SELECT * FROM sprints WHERE status = 'ACTIVE' LIMIT 1");
+  let sprint = null;
+  if (stmt.step()) {
+    sprint = stmt.getAsObject();
+  }
+  stmt.free();
+  return sprint;
+};
+
+export const getSprintTasks = (sprintId: number) => {
+  if (!db) return [];
+  const stmt = db.prepare(`
+    SELECT t.*, (SELECT GROUP_CONCAT(tags.name) FROM task_tags JOIN tags ON tags.id = task_tags.tagId WHERE task_tags.taskId = t.id) as tags
+    FROM tasks t 
+    WHERE t.sprintId = ?
+  `);
+  stmt.bind([sprintId]);
+  const tasks: any[] = [];
+  while (stmt.step()) {
+    const task = stmt.getAsObject();
+    task.tags = task.tags ? (task.tags as string).split(',') : [];
+    tasks.push(task);
+  }
+  stmt.free();
+  return tasks;
 };
 
 export const createSprint = (sprint: { name: string, startDate: string, endDate: string }) => {

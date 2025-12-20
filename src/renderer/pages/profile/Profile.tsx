@@ -8,6 +8,8 @@ const allAchievements = [
   { id: 'FIRST_TASK', name: 'First Step', description: 'Complete your first task.' },
   { id: 'FIVE_TASKS', name: 'Apprentice', description: 'Complete 5 tasks.' },
   { id: 'TEN_TASKS', name: 'Journeyman', description: 'Complete 10 tasks.' },
+  { id: 'THE_PLANNER', name: 'The Planner', description: 'Create your first sprint.' },
+  { id: 'DEEP_DIVE', name: 'Deep Dive', description: 'Complete a work session over 2 hours.' },
 ];
 
 function Profile() {
