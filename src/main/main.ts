@@ -285,7 +285,10 @@ const createTray = () => {
   const icon = nativeImage.createFromPath(trayIconPath).resize({ width: 16, height: 16 });
   tray = new Tray(icon);
   const contextMenu = Menu.buildFromTemplate([
-    { label: 'Show App', click: () => { mainWindow?.show(); } },
+    { label: 'Show App', click: () => { 
+        setCompactMode(false);
+        mainWindow?.show(); 
+    } },
     { label: 'Quit', click: () => { app.quit(); } },
   ]);
   tray.setContextMenu(contextMenu);
@@ -293,7 +296,12 @@ const createTray = () => {
   tray.setTitle('');
 
   tray.on('click', () => {
-    mainWindow?.isVisible() ? mainWindow?.hide() : mainWindow?.show();
+    if (mainWindow?.isVisible()) {
+        mainWindow.hide();
+    } else {
+        setCompactMode(false);
+        mainWindow?.show();
+    }
   });
 
   if (activeTaskInfo) {
@@ -447,6 +455,7 @@ ipcMain.handle('db:get-system-logs', (event, limit) => getSystemLogs(limit));
 ipcMain.handle('db:get-neural-confidence', () => getNeuralConfidence());
 ipcMain.handle('db:get-ai-maturity', () => getAiMaturity());
 ipcMain.handle('db:get-ai-stats', () => getAiStats());
+ipcMain.handle('db:get-energy-level', () => neuralCore.getEnergyLevel());
 
 // Settings Handlers
 ipcMain.handle('db:get-all-settings', () => getAllSettings());
@@ -666,6 +675,61 @@ const createWindow = async () => {
   mainWindow.webContents.setWindowOpenHandler((edata) => {
     shell.openExternal(edata.url);
     return { action: 'deny' };
+  });
+
+  // --- Notch Island / Compact Mode Logic ---
+  const setCompactMode = (enabled: boolean) => {
+    if (!mainWindow) return;
+
+    if (enabled) {
+      const { screen } = require('electron');
+      const primaryDisplay = screen.getPrimaryDisplay();
+      const { width } = primaryDisplay.workAreaSize;
+
+      mainWindow.setAlwaysOnTop(true, 'screen-saver');
+      mainWindow.setVisibleOnAllWorkspaces(true);
+      mainWindow.setResizable(false);
+      mainWindow.setFullScreen(false);
+
+      // Notch-friendly bounds
+      mainWindow.setBounds({
+        width: 400,
+        height: 150, // More height to allow offset + expansion + shadow
+        x: Math.floor(width / 2 - 200),
+        y: 0,
+      }, true);
+
+      mainWindow.webContents.send('enter-compact-mode');
+    } else {
+      mainWindow.setAlwaysOnTop(false);
+      mainWindow.setVisibleOnAllWorkspaces(false);
+      mainWindow.setResizable(true);
+      
+      mainWindow.setBounds({
+        width: 1254,
+        height: 728,
+      }, true);
+      
+      mainWindow.center();
+      mainWindow.webContents.send('exit-compact-mode');
+    }
+  };
+
+  // Intercept minimize to enter compact mode if setting is enabled
+  mainWindow.on('minimize', (event) => {
+    const isMac = process.platform === 'darwin';
+    const useNotch = getSetting('enableMacosNotch') === 'true';
+
+    if (isMac && useNotch) {
+      event.preventDefault();
+      setCompactMode(true);
+    }
+  });
+
+  ipcMain.on('restore-window', () => {
+    setCompactMode(false);
+    mainWindow?.show();
+    mainWindow?.focus();
   });
 };
 

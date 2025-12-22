@@ -312,45 +312,42 @@ export class NeuralCore {
   resetCooldown() { this.lastTrainingTime = 0; }
 
   async getNeuralAdvice(activeTask?: string): Promise<{ text: string, category: 'high' | 'low' | 'neutral' | 'focus' }> {
-    if (!this.model || this.isTraining) return { text: "Thingy: Kalibruję się... proszę czekać.", category: 'neutral' };
+    // ... existing code ...
+  }
 
-    const date = new Date();
-    const dateStr = date.toISOString().split('T')[0];
-    const userId = 1;
-
+  getEnergyLevel(): { level: 'high' | 'low', score: number, label: string } {
+    const now = new Date();
+    const hour = now.getHours();
+    const dateStr = now.toISOString().split('T')[0];
     const bio = getDailyBio(dateStr);
-    const sleep = bio.sleepScore !== null ? Number(bio.sleepScore) : 75;
-    const habits = getHabits(userId);
-    const logs = getHabitLogs(userId);
-    const habitCount = logs.filter((l: any) => l.date === dateStr && l.value >= 1).length;
-    const habitScore = habits.length > 0 ? habitCount / habits.length : 0.5;
+    
+    let score = 70; // Base energy
 
-    const sprint = getActiveSprint();
-    let risk = null; let tasksRemaining = 0;
-    if (sprint) {
-        const tasks = getSprintTasks(sprint.id);
-        const unfinished = tasks.filter(t => t.status !== 'Completed');
-        tasksRemaining = unfinished.length;
-        const predictions = unfinished.map(t => this.predictForTask(t));
-        const sessions = getRecentWorkSessions(userId, 14);
-        risk = ProductivityAnalyst.analyzeSprintRisk(sprint, tasks, sessions, predictions, {
-            start: getSetting('workDayStart') || '09:00',
-            end: getSetting('workDayEnd') || '17:00'
-        });
+    // 1. Circadian Rhythm factor
+    if (hour >= 8 && hour <= 12) score += 20; // Peak morning
+    else if (hour >= 13 && hour <= 15) score -= 20; // Post-lunch dip
+    else if (hour >= 19 && hour <= 21) score += 10; // Evening second wind
+    else if (hour >= 23 || hour <= 5) score -= 40; // Night fatigue
+
+    // 2. Sleep factor
+    if (bio.sleepScore) {
+      const sleepImpact = (bio.sleepScore - 75) / 2;
+      score += sleepImpact;
     }
 
-    if (activeTask) return { text: `Thingy: Widzę, że pracujesz nad "${activeTask}". Monitoruję Twoje skupienie.`, category: 'focus' };
+    // 3. Meeting load factor
+    if (bio.meetingTime) {
+      score -= (bio.meetingTime / 30) * 5; // -5 points for every 30m of meetings
+    }
 
-    const mood = this.determineMood(risk, sleep, habitScore);
+    // Clamp score
+    score = Math.max(0, Math.min(100, score));
 
-    // --- Removed Llama Integration ---
-    // We now rely solely on the personalityEngine (templates)
-    const text = personalityEngine.generateMessage({ mood, userName: 'Marcin', sprintRisk: risk, habitScore, tasksRemaining });
-
-    const categoryMap: Record<AiMood, 'high' | 'low' | 'neutral' | 'focus'> = {
-        PANIC: 'high', SUPPORTIVE: 'high', GRIND: 'low', CELEBRATION: 'low', STABLE: 'neutral', CHILL: 'neutral'
+    return {
+      level: score > 60 ? 'high' : 'low',
+      score,
+      label: score > 60 ? 'High Energy: Focus on Deep Work' : 'Low Energy: Time for Shallow Tasks'
     };
-    return { text, category: categoryMap[mood] };
   }
 }
 

@@ -6,6 +6,26 @@ import '@fontsource/roboto/400.css';
 import '@fontsource/roboto/500.css';
 import '@fontsource/roboto/700.css';
 
+// Module augmentation to add 'glass' to the palette
+declare module '@mui/material/styles' {
+  interface Palette {
+    glass: {
+      main: string;
+      light: string;
+      dark: string;
+      contrastText: string;
+    };
+  }
+  interface PaletteOptions {
+    glass?: {
+      main: string;
+      light?: string;
+      dark?: string;
+      contrastText?: string;
+    };
+  }
+}
+
 const theme = createTheme({
   palette: {
     primary: {
@@ -14,9 +34,15 @@ const theme = createTheme({
     secondary: {
       main: '#ffb703', // Accent yellow/orange
     },
+    glass: {
+      main: 'rgba(255, 255, 255, 0.2)', // Base glass
+      light: 'rgba(255, 255, 255, 0.4)', // Highlight
+      dark: 'rgba(2, 48, 71, 0.6)', // Dark glass (for text/contrast)
+      contrastText: '#ffffff',
+    },
     background: {
       default: '#f0f4f8', // A very light, cool grey
-      paper: '#ffffff',   // White for cards, drawers, etc.
+      paper: '#ffffff', // White for cards, drawers, etc.
     },
     text: {
       primary: '#023047', // Dark blue for primary text
@@ -44,13 +70,24 @@ const theme = createTheme({
     button: { fontWeight: 500, textTransform: 'none' },
   },
   components: {
+    MuiCssBaseline: {
+      styleOverrides: {
+        '.glass-panel': {
+          background: 'rgba(255, 255, 255, 0.15)',
+          backdropFilter: 'blur(10px)',
+          WebkitBackdropFilter: 'blur(10px)', // Safari support
+          border: '1px solid rgba(255, 255, 255, 0.2)',
+          boxShadow: '0 4px 30px rgba(0, 0, 0, 0.1)',
+        },
+      },
+    },
     MuiAppBar: {
       styleOverrides: {
         root: {
           backgroundColor: '#023047', // Deep blue for the AppBar
-          color: '#ffffff'
-        }
-      }
+          color: '#ffffff',
+        },
+      },
     },
     MuiDrawer: {
       styleOverrides: {
@@ -63,10 +100,10 @@ const theme = createTheme({
           '& .MuiListItemIcon-root': {
             color: '#ef476f', // New icon color
           },
-        }
-      }
-    }
-  }
+        },
+      },
+    },
+  },
 });
 
 export default theme;

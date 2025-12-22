@@ -7,9 +7,13 @@ interface SettingsContextType {
   loading: boolean;
 }
 
-const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
+const SettingsContext = createContext<SettingsContextType | undefined>(
+  undefined,
+);
 
-export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const [settings, setSettings] = useState<any>({});
   const [loading, setLoading] = useState(true);
 
@@ -17,11 +21,12 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const loadSettings = async () => {
       // Default fallback if DB is empty/init
       const defaults = {
-          complexityThreshold: '8',
-          enableRewardAnimations: 'true',
-          enableFatigueWarnings: 'true'
+        complexityThreshold: '8',
+        enableRewardAnimations: 'true',
+        enableFatigueWarnings: 'true',
+        enableMacosNotch: 'false',
       };
-      
+
       const data = await getAllSettings();
       setSettings({ ...defaults, ...data });
       setLoading(false);
@@ -34,8 +39,10 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setSettings((prev: any) => ({ ...prev, [key]: value }));
   };
 
+  const contextValue = React.useMemo(() => ({ settings, updateSetting, loading }), [settings, loading]);
+
   return (
-    <SettingsContext.Provider value={{ settings, updateSetting, loading }}>
+    <SettingsContext.Provider value={contextValue}>
       {children}
     </SettingsContext.Provider>
   );
