@@ -55,10 +55,6 @@ import {
   getHabitLogs,
   getTopHabit,
   toggleHabitFavorite,
-  // Usunięte funkcje czatu
-  saveChatMessage,
-  getChatHistory,
-  clearChatHistory,
   getDailyStandupData
 } from './db';
 import { autoScheduleTasks, getProposedSchedule } from './TaskScheduler';

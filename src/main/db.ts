@@ -1120,25 +1120,6 @@ export const getTopHabit = (userId: number) => {
   return result;
 };
 
-// --- Chat Helpers ---
-export const saveChatMessage = (userId: number, role: string, content: string) => {
-    if (!db) throw new Error('DB not initialized');
-    db.run('INSERT INTO chat_history (userId, role, content, timestamp) VALUES (?, ?, ?, ?)', [userId, role, content, new Date().toISOString()]);
-    saveDB();
-};
-
-export const getChatHistory = (userId: number, limit: number = 50) => {
-    if (!db) return [];
-    const stmt = db.prepare('SELECT role, content FROM chat_history WHERE userId = ? ORDER BY id ASC LIMIT ?');
-    stmt.bind([userId, limit]);
-    const history: any[] = [];
-    while (stmt.step()) {
-        history.push(stmt.getAsObject());
-    }
-    stmt.free();
-    return history;
-};
-
 export const getDailyStandupData = (userId: number) => {
     if (!db) return null;
 
@@ -1185,12 +1166,6 @@ export const getDailyStandupData = (userId: number) => {
         },
         topHabit
     };
-};
-
-export const clearChatHistory = (userId: number) => {
-    if (!db) throw new Error('DB not initialized');
-    db.run('DELETE FROM chat_history WHERE userId = ?', [userId]);
-    saveDB();
 };
 
 export const closeDB = () => {
