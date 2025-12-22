@@ -640,94 +640,96 @@ const installExtensions = async () => {
   return installer.default(extensions.map((name) => installer[name]), forceDownload).catch(console.log);
 };
 
-// --- Notch Island / Compact Mode Logic ---
-const setCompactMode = (enabled: boolean) => {
-  if (!mainWindow) return;
+  // --- Notch Island / Compact Mode Logic ---
+  const setCompactMode = (enabled: boolean) => {
+    if (!mainWindow) return;
 
-      if (enabled) {
+    if (enabled) {
+      const { screen } = require('electron');
+      const primaryDisplay = screen.getPrimaryDisplay();
+      const { width } = primaryDisplay.bounds;
+      const menuBarHeight = primaryDisplay.workArea.y - primaryDisplay.bounds.y;
 
-        const { screen } = require('electron');
+      mainWindow.setAlwaysOnTop(true, 'screen-saver');
+      mainWindow.setVisibleOnAllWorkspaces(true);
+      
+      if (process.platform === 'darwin') {
+         app.dock.hide();
+         mainWindow.setWindowButtonVisibility(false);
+         mainWindow.setHasShadow(false);
+         mainWindow.setVibrancy('fullscreen-ui'); // Native macOS blur
+      }
 
-        const primaryDisplay = screen.getPrimaryDisplay();
+      mainWindow.setResizable(false);
+      mainWindow.setFullScreen(false);
 
-        const { width } = primaryDisplay.bounds; // Use bounds (full screen)
+      // Collapsed Pill Geometry
+      const pillWidth = 220;
+      const pillHeight = menuBarHeight > 0 ? menuBarHeight : 38; 
+      
+      mainWindow.setBounds({
+        width: pillWidth,
+        height: 200, // Ample height for expansion
+        x: Math.floor(width / 2 - (pillWidth / 2)),
+        y: 0,
+      }, true);
 
-  
+      mainWindow.webContents.send('enter-compact-mode', { menuBarHeight: pillHeight });
+    } else {
+      // Restore to normal Application State
+      if (process.platform === 'darwin') {
+         app.dock.show();
+         mainWindow.setWindowButtonVisibility(true);
+         mainWindow.setHasShadow(true);
+         mainWindow.setVibrancy(null); // Disable native blur for main window
+      }
+      
+      mainWindow.setAlwaysOnTop(false);
+      mainWindow.setVisibleOnAllWorkspaces(false);
+      mainWindow.setResizable(true);
 
-        mainWindow.setAlwaysOnTop(true, 'screen-saver');
-
-        mainWindow.setVisibleOnAllWorkspaces(true);
-
-        
-
-        if (process.platform === 'win32') {
-
-            mainWindow.setSkipTaskbar(true);
-
-            mainWindow.setFullScreenable(false);
-
-            mainWindow.setMenu(null);
-
-        }
-
-  
-
-        mainWindow.setResizable(false);
-
-        mainWindow.setFullScreen(false);
-
-        
-
-        mainWindow.setHasShadow(false);
-
-  
-
-        // Start as small pill (200px width), height 300px to allow expansion without clipping
-
-        mainWindow.setBounds({
-
-          width: 200, 
-
-          height: 300, 
-
-          x: Math.floor(width / 2 - 100),
-
-          y: 0,
-
-        }, true);
-
-  
-
-        // Crucial for Windows: Ensure window is visible/restored if minimize wasn't fully prevented
-
-        if (mainWindow.isMinimized()) mainWindow.restore();
-
-        mainWindow.show();
-
-  
-
-        mainWindow.webContents.send('enter-compact-mode');
-
-      } else {    mainWindow.setAlwaysOnTop(false);
-    mainWindow.setVisibleOnAllWorkspaces(false);
-    
-    if (process.platform === 'win32') {
-        mainWindow.setSkipTaskbar(false);
-        mainWindow.setResizable(true);
+      mainWindow.setBounds({
+        width: 1254,
+        height: 728,
+      }, true);
+      
+      mainWindow.center();
+      mainWindow.webContents.send('exit-compact-mode');
     }
+  };
 
-    mainWindow.setHasShadow(true);
+  // IPC Handlers for "Breathing" Expansion (Hover interaction)
+  ipcMain.on('island:expand', () => {
+      if (!mainWindow) return;
+      const { screen } = require('electron');
+      const { width } = screen.getPrimaryDisplay().bounds;
+      
+      const expandedWidth = 450; // Wider to show full task title comfortably
+      const expandedHeight = 120; // Just enough for the info bar
+      
+      mainWindow.setBounds({
+          x: Math.floor(width / 2 - (expandedWidth / 2)),
+          y: 0,
+          width: expandedWidth,
+          height: expandedHeight
+      }, true); // 'true' for animation
+  });
 
-    mainWindow.setBounds({
-      width: 1254,
-      height: 728,
-    }, true);
-    
-    mainWindow.center();
-    mainWindow.webContents.send('exit-compact-mode');
-  }
-};
+  ipcMain.on('island:shrink', () => {
+      if (!mainWindow) return;
+      const { screen } = require('electron');
+      const { width } = screen.getPrimaryDisplay().bounds;
+      
+      const collapsedWidth = 200; // Small, unobtrusive
+      const collapsedHeight = 38; // Standard menu bar height
 
+      mainWindow.setBounds({
+          x: Math.floor(width / 2 - (collapsedWidth / 2)),
+          y: 0,
+          width: collapsedWidth,
+          height: collapsedHeight
+      }, true);
+  });
 const createWindow = async () => {
   if (isDebug) await installExtensions();
 

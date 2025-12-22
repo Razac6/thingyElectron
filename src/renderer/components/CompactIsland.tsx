@@ -56,86 +56,92 @@ const CompactIsland: React.FC<CompactIslandProps> = ({
 
   const [isHovered, setIsHovered] = useState(false);
 
+  const handleMouseEnter = () => {
+      setIsHovered(true);
+      window.electron.ipcRenderer.send('island:expand');
+  };
+
+  const handleMouseLeave = () => {
+      setIsHovered(false);
+      window.electron.ipcRenderer.send('island:shrink');
+  };
+
   return (
     <Box
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      className="glass-panel"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
       sx={{
-        // Smooth width transition for the "Pop out" effect
-        width: isHovered ? '320px' : '60px', 
-        height: '42px',
-        borderRadius: '21px',
+        width: '100%', 
+        height: '100%',
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: isHovered ? 'space-between' : 'center',
-        padding: isHovered ? '0 14px' : '0',
-        cursor: 'default', // Cursor default, clickable elements inside
-        transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)', // Apple-like spring ease
-        animation: isHovered ? 'none' : animation, // Breathe only when collapsed
-        border: '1px solid rgba(255,255,255,0.1)',
-        background: isHovered ? 'rgba(0, 0, 0, 0.65)' : 'rgba(0, 0, 0, 0.85)', // Darker when collapsed (blends with notch)
-        backdropFilter: 'blur(20px)',
-        margin: '0 auto', 
-        color: theme.palette.text.primary,
-        overflow: 'hidden',
-        boxShadow: isHovered ? '0 10px 30px rgba(0,0,0,0.5)' : 'none'
+        alignItems: 'flex-start',
+        justifyContent: 'center',
+        padding: '0 16px',
+        pt: '10px', // Content padding inside the pill
+        cursor: 'default',
+        // Boring.Notch Style: Pure Black, merged with hardware notch
+        background: '#000000', 
+        borderRadius: '0 0 20px 20px', // Smooth bottom rounding
+        borderBottom: `1px solid ${energyColor}30`, // Very subtle bottom highlight
+        boxShadow: isHovered ? `0 20px 50px -10px ${energyColor}40` : 'none',
+        transition: 'all 0.5s cubic-bezier(0.16, 1, 0.3, 1)', // iOS-like Spring
+        overflow: 'hidden'
       }}
     >
-      {/* Icon always visible, centered when collapsed */}
+      {/* Content Container */}
       <Box sx={{ 
+          width: '100%', 
           display: 'flex', 
           alignItems: 'center', 
-          justifyContent: 'center',
-          minWidth: '24px',
-          height: '100%'
-      }}>
-        <BoltIcon sx={{ 
-            fontSize: '1.2rem', 
-            color: energyColor,
-            filter: `drop-shadow(0 0 5px ${energyColor})`
-        }} />
-      </Box>
-        
-      {/* Details - Visible only on Hover */}
-      <Box sx={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          opacity: isHovered ? 1 : 0,
-          transform: isHovered ? 'translateX(0)' : 'translateX(20px)',
-          transition: 'all 0.3s ease 0.1s', // Slight delay for content
-          flexGrow: 1,
           justifyContent: 'space-between',
-          overflow: 'hidden',
-          ml: 1
+          mt: isHovered ? 0.5 : 0,
+          transition: 'margin 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
       }}>
-          <Box sx={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', mr: 1 }}>
-            {currentTask ? (
-                <Typography variant="body2" noWrap sx={{ fontWeight: 600, fontSize: '0.8rem', color: '#fff' }}>
-                    {currentTask.title}
-                </Typography>
-            ) : (
-                <Typography variant="caption" noWrap sx={{ fontWeight: 500, color: '#aaa', fontSize: '0.75rem' }}>
-                    {energy.label.split(':')[0]}
-                </Typography>
-            )}
+          {/* Left: Icon / Pulse */}
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <BoltIcon sx={{ fontSize: '1.2rem', color: energyColor, filter: `drop-shadow(0 0 8px ${energyColor})` }} />
+          </Box>
+            
+          {/* Middle: Info */}
+          <Box sx={{ 
+              display: 'flex', 
+              flexDirection: 'column', 
+              alignItems: 'center',
+              opacity: isHovered ? 1 : 0, 
+              transform: isHovered ? 'translateY(0)' : 'translateY(-10px)',
+              transition: 'all 0.3s ease 0.1s',
+              maxWidth: '220px',
+              flexGrow: 1
+          }}>
+                {currentTask ? (
+                    <Typography variant="body2" noWrap sx={{ fontWeight: 600, fontSize: '0.85rem', color: '#fff', textAlign: 'center' }}>
+                        {currentTask.title}
+                    </Typography>
+                ) : (
+                    <Typography variant="caption" sx={{ fontWeight: 500, color: '#888', fontSize: '0.75rem', letterSpacing: '0.5px' }}>
+                        {energy.label.split(':')[0].toUpperCase()}
+                    </Typography>
+                )}
           </Box>
 
-          {/* Restore Button */}
-          <IconButton 
-            size="small" 
-            onClick={onExpand}
-            sx={{ 
-                color: '#fff', 
-                bgcolor: 'rgba(255,255,255,0.1)',
-                '&:hover': { bgcolor: 'rgba(255,255,255,0.2)' },
-                width: 28, height: 28
-            }}
-          >
-             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                 <path d="M15 3h6v6M14 10l6.1-6.1M9 21H3v-6M10 14l-6.1 6.1"/>
-             </svg>
-          </IconButton>
+          {/* Right: Restore Button */}
+          <Box sx={{ opacity: isHovered ? 1 : 0, transform: isHovered ? 'scale(1)' : 'scale(0.8)', transition: 'all 0.3s ease 0.1s' }}>
+              <IconButton 
+                size="small" 
+                onClick={onExpand}
+                sx={{ 
+                    color: '#fff', 
+                    bgcolor: 'rgba(255,255,255,0.15)',
+                    '&:hover': { bgcolor: 'rgba(255,255,255,0.3)', transform: 'scale(1.1)' },
+                    transition: 'all 0.2s',
+                    width: 28, height: 28
+                }}
+              >
+                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                     <path d="M15 3h6v6M14 10l6.1-6.1M9 21H3v-6M10 14l-6.1 6.1"/>
+                 </svg>
+              </IconButton>
+          </Box>
       </Box>
     </Box>
   );

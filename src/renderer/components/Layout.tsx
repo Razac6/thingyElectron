@@ -19,8 +19,6 @@ import {
 import { useNavigate, useLocation } from 'react-router-dom';
 import Lottie from 'lottie-react';
 
-// Import all animations
-
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import AssignmentIcon from '@mui/icons-material/Assignment';
 import BarChartIcon from '@mui/icons-material/BarChart';
@@ -30,14 +28,16 @@ import SprintIcon from '@mui/icons-material/DirectionsRun';
 import MenuIcon from '@mui/icons-material/Menu';
 import LoopIcon from '@mui/icons-material/Loop';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
-import StopIcon from '@mui/icons-material/Stop'; // Use the square Stop icon
+import StopIcon from '@mui/icons-material/Stop';
 import SearchIcon from '@mui/icons-material/Search';
 import TerminalIcon from '@mui/icons-material/Terminal';
+
 import trophyAnimation from '../../../assets/Trophy.json';
 import catRocket from '../../../assets/Cat in a rocket.json';
 import meditatingFox from '../../../assets/Meditating Fox.json';
 import flirtingDog from '../../../assets/Flirting Dog.json';
 import catMovement from '../../../assets/Cat Movement.json';
+
 import { useTimer } from '../context/TimerContext';
 import { useGamification } from '../context/GamificationContext';
 import Timer from './Timer';
@@ -142,6 +142,8 @@ export default function Layout({ children }: LayoutProps) {
   const [open, setOpen] = React.useState(false);
   const [searchOpen, setSearchOpen] = React.useState(false);
   const [isCompactMode, setIsCompactMode] = React.useState(false);
+  const [notchHeight, setNotchHeight] = React.useState(38);
+  
   const { tasks, stopTimer } = useTimer();
   const { rewardAnimation, hideRewardAnimation } = useGamification();
 
@@ -150,7 +152,10 @@ export default function Layout({ children }: LayoutProps) {
   useEffect(() => {
     const handleOpenSearch = () => setSearchOpen(true);
     const handleOpenSettings = () => navigate('/settings');
-    const handleEnterCompact = () => setIsCompactMode(true);
+    const handleEnterCompact = (data?: { menuBarHeight: number }) => {
+        if (data?.menuBarHeight) setNotchHeight(data.menuBarHeight);
+        setIsCompactMode(true);
+    };
     const handleExitCompact = () => setIsCompactMode(false);
 
     window.electron.ipcRenderer.on('open-search', handleOpenSearch);
@@ -159,32 +164,29 @@ export default function Layout({ children }: LayoutProps) {
     window.electron.ipcRenderer.on('exit-compact-mode', handleExitCompact);
 
     return () => {
-      window.electron.ipcRenderer.removeListener(
-        'open-search',
-        handleOpenSearch,
-      );
-      window.electron.ipcRenderer.removeListener(
-        'open-settings',
-        handleOpenSettings,
-      );
-      window.electron.ipcRenderer.removeListener(
-        'enter-compact-mode',
-        handleEnterCompact,
-      );
-      window.electron.ipcRenderer.removeListener(
-        'exit-compact-mode',
-        handleExitCompact,
-      );
+      window.electron.ipcRenderer.removeListener('open-search', handleOpenSearch);
+      window.electron.ipcRenderer.removeListener('open-settings', handleOpenSettings);
+      window.electron.ipcRenderer.removeListener('enter-compact-mode', handleEnterCompact);
+      window.electron.ipcRenderer.removeListener('exit-compact-mode', handleExitCompact);
     };
   }, [navigate]);
+
+  // Force transparency on HTML/Body when in compact mode
+  useEffect(() => {
+      if (isCompactMode) {
+          document.documentElement.style.background = 'transparent';
+          document.body.style.background = 'transparent';
+      } else {
+          document.documentElement.style.background = '';
+          document.body.style.background = '';
+      }
+  }, [isCompactMode]);
 
   const handleDrawerOpen = () => setOpen(true);
   const handleDrawerClose = () => setOpen(false);
 
   const handleExpandIsland = () => {
-    // Optimistically update UI
     setIsCompactMode(false);
-    // Notify main process to restore window
     window.electron.ipcRenderer.send('restore-window');
   };
 
@@ -201,22 +203,22 @@ export default function Layout({ children }: LayoutProps) {
     : null;
 
   if (isCompactMode) {
-      return (
-          <Box sx={{ 
-              width: '100vw', 
-              height: '100vh', 
-              display: 'flex', 
-              justifyContent: 'center', 
-              alignItems: 'flex-start', 
-              pt: '74px', // EXACT MBP NOTCH HEIGHT
-              background: 'transparent' 
-          }}>
+    return (
+      <Box
+        sx={{
+          width: '100vw',
+          height: '100vh',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'flex-start',
+          pt: `${notchHeight}px`,
+          background: 'transparent',
+        }}
+      >
         <CssBaseline />
         <CompactIsland
           currentTask={
-            activeTask
-              ? { title: activeTask.title, status: 'active' }
-              : undefined
+            activeTask ? { title: activeTask.title, status: 'active' } : undefined
           }
           onExpand={handleExpandIsland}
         />
@@ -300,11 +302,7 @@ export default function Layout({ children }: LayoutProps) {
         <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
           <List>
             {menuItems.map((item) => (
-              <ListItem
-                key={item.text}
-                disablePadding
-                sx={{ display: 'block' }}
-              >
+              <ListItem key={item.text} disablePadding sx={{ display: 'block' }}>
                 <ListItemButton
                   sx={{
                     minHeight: 48,
@@ -334,11 +332,7 @@ export default function Layout({ children }: LayoutProps) {
           <Box sx={{ flexGrow: 1 }} />
           <List>
             {bottomMenuItems.map((item) => (
-              <ListItem
-                key={item.text}
-                disablePadding
-                sx={{ display: 'block' }}
-              >
+              <ListItem key={item.text} disablePadding sx={{ display: 'block' }}>
                 <ListItemButton
                   sx={{
                     minHeight: 48,
