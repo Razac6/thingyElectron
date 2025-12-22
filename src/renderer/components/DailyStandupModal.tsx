@@ -56,17 +56,21 @@ export default function DailyStandupModal() {
     checkAndShow();
 
     // Listen for manual trigger
-    window.addEventListener('open-daily-briefing', fetchAndOpen);
-    return () => window.removeEventListener('open-daily-briefing', fetchAndOpen);
+    const handleOpen = () => {
+        fetchAndOpen();
+    };
+
+    window.addEventListener('open-daily-briefing', handleOpen);
+    return () => window.removeEventListener('open-daily-briefing', handleOpen);
   }, []);
 
   if (!data) return null;
 
   return (
-    <Dialog 
-        open={open} 
-        onClose={() => setOpen(false)} 
-        maxWidth="xs" 
+    <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        maxWidth="xs"
         fullWidth
         PaperProps={{
             sx: { borderRadius: 4, p: 1 }
@@ -109,12 +113,12 @@ export default function DailyStandupModal() {
                               {data.topSuggestion.title}
                           </Typography>
                           <Stack direction="row" spacing={1} alignItems="center">
-                              <Chip 
-                                icon={<TrendingUpIcon />} 
-                                label={`AI: ~${(data.topSuggestion.neuralEst / 60).toFixed(1)}h`} 
-                                size="small" 
-                                color="primary" 
-                                variant="outlined" 
+                              <Chip
+                                icon={<TrendingUpIcon />}
+                                label={`AI: ~${(data.topSuggestion.neuralEst / 60).toFixed(1)}h`}
+                                size="small"
+                                color="primary"
+                                variant="outlined"
                               />
                               {data.isPeakHour && (
                                   <Chip label="Peak Hour ✨" size="small" sx={{ bgcolor: '#ffb703', color: '#023047', fontWeight: 'bold' }} />
@@ -141,8 +145,8 @@ export default function DailyStandupModal() {
       </DialogContent>
 
       <DialogActions sx={{ justifyContent: 'center', pb: 3 }}>
-        <Button 
-            variant="contained" 
+        <Button
+            variant="contained"
             onClick={() => setOpen(false)}
             sx={{ borderRadius: 3, px: 4, bgcolor: '#023047', '&:hover': { bgcolor: '#219ebc' } }}
             startIcon={<CheckCircleIcon />}

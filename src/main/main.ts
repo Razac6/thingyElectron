@@ -86,14 +86,14 @@ const refreshInsights = async (userId: number) => {
     const recentSessions = getRecentWorkSessions(userId, 30);
     const trendData = getLast14DaysProductivity(userId);
     const tagData = getTagAnalyticsWithNames(); // This returns {id, name, ema, std_dev...}
-    const allTasks = getTasks(userId); 
-    
+    const allTasks = getTasks(userId);
+
     // Create a map for the analysis
     const tagMap = new Map<number, string>();
     tagData.forEach((t: any) => tagMap.set(t.id, t.name));
 
     const newConsistency = ProductivityAnalyst.analyzeTagConsistency(tagData, tagMap);
-    const difficultyProfile = ProductivityAnalyst.analyzeTagDifficulty(allTasks); 
+    const difficultyProfile = ProductivityAnalyst.analyzeTagDifficulty(allTasks);
 
     // Filter out undefined names just in case
     newConsistency.consistent = newConsistency.consistent.filter(name => !!name);
@@ -485,7 +485,7 @@ ipcMain.handle('db:force-neural-training', (event, userId) => {
 
 ipcMain.handle('db:get-productivity-insights', async (event, userId) => {
   refreshInsights(userId); // Ensure fresh data
-  
+
   // Trigger Neural Training in background
   try {
       const tasks = getTasks(userId);
@@ -496,6 +496,8 @@ ipcMain.handle('db:get-productivity-insights', async (event, userId) => {
 
   return cachedInsights;
 });
+
+ipcMain.handle('db:get-daily-standup', (event, userId) => getDailyStandupData(userId));
 
 ipcMain.handle('gamification:reward-fatigue-compliance', (event, userId) => {
   const profile = getProfile(userId);
