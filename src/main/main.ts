@@ -640,6 +640,94 @@ const installExtensions = async () => {
   return installer.default(extensions.map((name) => installer[name]), forceDownload).catch(console.log);
 };
 
+// --- Notch Island / Compact Mode Logic ---
+const setCompactMode = (enabled: boolean) => {
+  if (!mainWindow) return;
+
+      if (enabled) {
+
+        const { screen } = require('electron');
+
+        const primaryDisplay = screen.getPrimaryDisplay();
+
+        const { width } = primaryDisplay.bounds; // Use bounds (full screen)
+
+  
+
+        mainWindow.setAlwaysOnTop(true, 'screen-saver');
+
+        mainWindow.setVisibleOnAllWorkspaces(true);
+
+        
+
+        if (process.platform === 'win32') {
+
+            mainWindow.setSkipTaskbar(true);
+
+            mainWindow.setFullScreenable(false);
+
+            mainWindow.setMenu(null);
+
+        }
+
+  
+
+        mainWindow.setResizable(false);
+
+        mainWindow.setFullScreen(false);
+
+        
+
+        mainWindow.setHasShadow(false);
+
+  
+
+        // Start as small pill (200px width), height 300px to allow expansion without clipping
+
+        mainWindow.setBounds({
+
+          width: 200, 
+
+          height: 300, 
+
+          x: Math.floor(width / 2 - 100),
+
+          y: 0,
+
+        }, true);
+
+  
+
+        // Crucial for Windows: Ensure window is visible/restored if minimize wasn't fully prevented
+
+        if (mainWindow.isMinimized()) mainWindow.restore();
+
+        mainWindow.show();
+
+  
+
+        mainWindow.webContents.send('enter-compact-mode');
+
+      } else {    mainWindow.setAlwaysOnTop(false);
+    mainWindow.setVisibleOnAllWorkspaces(false);
+    
+    if (process.platform === 'win32') {
+        mainWindow.setSkipTaskbar(false);
+        mainWindow.setResizable(true);
+    }
+
+    mainWindow.setHasShadow(true);
+
+    mainWindow.setBounds({
+      width: 1254,
+      height: 728,
+    }, true);
+    
+    mainWindow.center();
+    mainWindow.webContents.send('exit-compact-mode');
+  }
+};
+
 const createWindow = async () => {
   if (isDebug) await installExtensions();
 
@@ -648,6 +736,10 @@ const createWindow = async () => {
     width: 1254,
     height: 728,
     icon: getAssetPath('icon.png'),
+    transparent: true, // Crucial for Notch Island effect
+    backgroundColor: '#00000000', // Fully transparent by default
+    frame: process.platform === 'darwin' ? false : true, // Frameless on Mac for Notch, native on Windows
+    titleBarStyle: 'hiddenInset', // Better integration on Mac
     webPreferences: {
       preload: app.isPackaged ? path.join(__dirname, 'preload.js') : path.join(__dirname, '../../.erb/dll/preload.js'),
       devTools: true,
@@ -676,44 +768,6 @@ const createWindow = async () => {
     shell.openExternal(edata.url);
     return { action: 'deny' };
   });
-
-  // --- Notch Island / Compact Mode Logic ---
-  const setCompactMode = (enabled: boolean) => {
-    if (!mainWindow) return;
-
-    if (enabled) {
-      const { screen } = require('electron');
-      const primaryDisplay = screen.getPrimaryDisplay();
-      const { width } = primaryDisplay.workAreaSize;
-
-      mainWindow.setAlwaysOnTop(true, 'screen-saver');
-      mainWindow.setVisibleOnAllWorkspaces(true);
-      mainWindow.setResizable(false);
-      mainWindow.setFullScreen(false);
-
-      // Notch-friendly bounds
-      mainWindow.setBounds({
-        width: 400,
-        height: 150, // More height to allow offset + expansion + shadow
-        x: Math.floor(width / 2 - 200),
-        y: 0,
-      }, true);
-
-      mainWindow.webContents.send('enter-compact-mode');
-    } else {
-      mainWindow.setAlwaysOnTop(false);
-      mainWindow.setVisibleOnAllWorkspaces(false);
-      mainWindow.setResizable(true);
-      
-      mainWindow.setBounds({
-        width: 1254,
-        height: 728,
-      }, true);
-      
-      mainWindow.center();
-      mainWindow.webContents.send('exit-compact-mode');
-    }
-  };
 
   // Intercept minimize to enter compact mode if setting is enabled
   mainWindow.on('minimize', (event) => {
