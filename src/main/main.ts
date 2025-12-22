@@ -2,7 +2,6 @@
 
 import path from 'path';
 import { app, BrowserWindow, shell, ipcMain, Tray, Menu, nativeImage, globalShortcut, Notification, powerMonitor } from 'electron';
-// import { autoUpdater } from 'electron-updater'; // Commented out: electron-updater
 import log from 'electron-log';
 import MenuBuilder from './menu';
 import { resolveHtmlPath } from './util';
@@ -56,15 +55,15 @@ import {
   getHabitLogs,
   getTopHabit,
   toggleHabitFavorite,
+  // Usunięte funkcje czatu
   saveChatMessage,
   getChatHistory,
-  clearChatHistory
+  clearChatHistory,
+  getDailyStandupData
 } from './db';
 import { autoScheduleTasks, getProposedSchedule } from './TaskScheduler';
 import { ProductivityAnalyst, AnalysisResult } from './ProductivityAnalysis';
 import { neuralCore } from './NeuralCore';
-import { llamaEngine } from './LlamaEngine';
-import { askGemini } from './GeminiService';
 
 // --- Aggressive Error Logging ---
 log.transports.file.level = 'info';
@@ -78,14 +77,6 @@ log.catchErrors({
 
 require('dotenv').config();
 
-// Commented out: electron-updater class definition
-// class AppUpdater {
-//   constructor() {
-//     autoUpdater.logger = log;
-//     autoUpdater.checkForUpdatesAndNotify();
-//   }
-// }
-
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 
@@ -98,17 +89,20 @@ const refreshInsights = async (userId: number) => {
   try {
     const recentSessions = getRecentWorkSessions(userId, 30);
     const trendData = getLast14DaysProductivity(userId);
-    const tagData = getTagAnalyticsWithNames();
-    const allTasks = getTasks(userId); // Fetch all tasks for difficulty analysis
+    const tagData = getTagAnalyticsWithNames(); // This returns {id, name, ema, std_dev...}
+    const allTasks = getTasks(userId); 
     
     // Create a map for the analysis
     const tagMap = new Map<number, string>();
     tagData.forEach((t: any) => tagMap.set(t.id, t.name));
 
     const newConsistency = ProductivityAnalyst.analyzeTagConsistency(tagData, tagMap);
-    const difficultyProfile = ProductivityAnalyst.analyzeTagDifficulty(allTasks); // Calculate difficulty
+    const difficultyProfile = ProductivityAnalyst.analyzeTagDifficulty(allTasks); 
 
-    // --- Detect & Log Consistency Shifts ---
+    // Filter out undefined names just in case
+    newConsistency.consistent = newConsistency.consistent.filter(name => !!name);
+    newConsistency.volatile = newConsistency.volatile.filter(name => !!name);
+
     if (cachedInsights && cachedInsights.tagConsistency) {
         const oldConsistent = new Set(cachedInsights.tagConsistency.consistent);
         const oldVolatile = new Set(cachedInsights.tagConsistency.volatile);
@@ -130,14 +124,13 @@ const refreshInsights = async (userId: number) => {
     const fatigueProfile = ProductivityAnalyst.analyzeFatigue(recentSessions);
     const dailyBio = getDailyBio(new Date().toISOString().split('T')[0]);
     const algoTip = ProductivityAnalyst.generateDailyTip(
-        trend, 
-        fatigueProfile, 
-        dailyBio.mode, 
-        dailyBio.sleepScore || 75, 
+        trend,
+        fatigueProfile,
+        dailyBio.mode,
+        dailyBio.sleepScore || 75,
         dailyBio.meetingTime || 0
     );
 
-    // Initial result without waiting for heavy AI
     cachedInsights = {
       peakHours: ProductivityAnalyst.identifyPeakHours(recentSessions).peakHours,
       peakHourRange: ProductivityAnalyst.identifyPeakHours(recentSessions).formattedRange,
@@ -146,22 +139,13 @@ const refreshInsights = async (userId: number) => {
       focusScore: ProductivityAnalyst.analyzeFocusQuality(recentSessions),
       tagConsistency: newConsistency,
       tagDifficulty: difficultyProfile,
-      dailyTip: algoTip, // Use fast algo tip first
+      dailyTip: algoTip,
       dailyTipCategory: 'neutral'
     };
 
-    // Update with heavy Llama AI in background - don't await this for the UI
-    neuralCore.getNeuralAdvice(activeTaskInfo?.title).then(neuralResult => {
-        if (cachedInsights) {
-            cachedInsights.dailyTip = neuralResult.text;
-            cachedInsights.dailyTipCategory = neuralResult.category;
-            // Optionally notify renderer that tip is ready, but next poll will catch it
-        }
-    }).catch(err => log.error('Background AI advice failed', err));
+    // Usunięto aktualizację porady przez AI
+    log.info('Smart Insights Refreshed');
 
-    log.info('Smart Insights Refreshed (Fast Path)');
-
-    // --- Daily Challenge Generation ---
     const today = new Date().toISOString().split('T')[0];
     const existingChallenge = getDailyChallenge(userId, today);
 
@@ -182,7 +166,6 @@ const refreshInsights = async (userId: number) => {
   }
 };
 
-// --- Global Asset Path Resolver ---
 const getAssetPath = (...paths: string[]): string => {
   const RESOURCES_PATH = app.isPackaged
     ? path.join(process.resourcesPath, 'assets')
@@ -190,9 +173,8 @@ const getAssetPath = (...paths: string[]): string => {
   return path.join(RESOURCES_PATH, ...paths);
 };
 
-const trayIconPath = getAssetPath('icon.png'); // Resolve icon path once for the tray
+const trayIconPath = getAssetPath('icon.png');
 
-// --- Tray Timer Logic ---
 let trayTimerInterval: NodeJS.Timeout | null = null;
 let activeTaskInfo: { title: string; startTime: number; estimate: number; initialSpendTime: number; userId?: number } | null = null;
 
@@ -227,12 +209,10 @@ const updateTrayTitle = () => {
   tray.setTitle(menubarTitle);
   tray.setToolTip(menubarTooltip);
 
-  // --- Smart Notification: Fatigue Check ---
   if (cachedInsights && !hasSentFatigueWarning) {
     const elapsedMinutes = elapsedSinceStart / (1000 * 60);
     const limit = cachedInsights.fatigueProfile.maxRecommended;
 
-    // Notify if exceeded limit (and limit is reasonable > 10m)
     if (elapsedMinutes > limit && limit > 10) {
       const notification = new Notification({
         title: '🧠 Brain Fatigue Detected',
@@ -240,7 +220,7 @@ const updateTrayTitle = () => {
         icon: getAssetPath('icon.png'),
         actions: [{ type: 'button', text: 'Stop Timer & Rest' }]
       });
-      
+
       notification.on('action', () => {
         log.info('User clicked Stop Timer on Fatigue Notification');
         if (mainWindow) {
@@ -249,27 +229,18 @@ const updateTrayTitle = () => {
       });
 
       notification.show();
-      hasSentFatigueWarning = true; // Don't spam
+      hasSentFatigueWarning = true;
     }
   }
 };
 
-// --- Habit Reminders ---
-const notifiedHabits = new Set<string>(); // Key: "habitId-YYYY-MM-DD"
+const notifiedHabits = new Set<string>();
 
 const checkHabitReminders = () => {
-  const enabled = getSetting('habit_notifications_enabled') !== 'false'; // Default true
+  const enabled = getSetting('habit_notifications_enabled') !== 'false';
   if (!enabled) return;
 
-  // We need a userId. For local single-user app, we can iterate all users or just use the last active one.
-  // Since we don't have global user context easily here without session, we'll try to get it from activeTaskInfo or just assume userId=1 for MVP if single user.
-  // Better approach: Fetch all habits for all users? No, iterate known users?
-  // Let's assume userId=1 for now as per other parts of the app (localStorage userId default).
-  // Or better: pass userId if we can.
-  // Actually, we can just fetch ALL habits if we had a getAllHabits. But we only have getHabits(userId).
-  // Let's assume single user (ID 1) or try to rely on `activeTaskInfo.userId`.
-  
-  const userId = activeTaskInfo?.userId || 1; 
+  const userId = activeTaskInfo?.userId || 1;
 
   const habits = getHabits(userId);
   const logs = getHabitLogs(userId);
@@ -279,7 +250,6 @@ const checkHabitReminders = () => {
   const currentMinute = now.getMinutes();
 
   habits.forEach((habit: any) => {
-      // 1. Is it due today?
       let isDue = false;
       if (habit.frequency.type === 'daily') isDue = true;
       else {
@@ -289,20 +259,14 @@ const checkHabitReminders = () => {
 
       if (!isDue) return;
 
-      // 2. Is it done?
       const isDone = logs.some((l: any) => l.habitId === habit.id && l.date === today && l.value >= 1);
       if (isDone) return;
 
-      // 3. Is it time? (Reminder + 3 hours)
       if (!habit.reminderTime) return;
       const [remHour, remMin] = habit.reminderTime.split(':').map(Number);
-      
-      // Target time in minutes from midnight
+
       const targetTimeMin = (remHour * 60) + remMin;
-      // Current time in minutes
       const currentTimeMin = (currentHour * 60) + currentMinute;
-      
-      // Threshold: 3 hours later (180 mins)
       const thresholdMin = targetTimeMin + 180;
 
       if (currentTimeMin >= thresholdMin) {
@@ -320,9 +284,8 @@ const checkHabitReminders = () => {
   });
 };
 
-// --- Tray Management Functions ---
 const createTray = () => {
-  if (tray) return; // Tray already exists
+  if (tray) return;
   const icon = nativeImage.createFromPath(trayIconPath).resize({ width: 16, height: 16 });
   tray = new Tray(icon);
   const contextMenu = Menu.buildFromTemplate([
@@ -337,7 +300,6 @@ const createTray = () => {
     mainWindow?.isVisible() ? mainWindow?.hide() : mainWindow?.show();
   });
 
-  // Update title immediately if we have active task info
   if (activeTaskInfo) {
       updateTrayTitle();
   }
@@ -363,7 +325,6 @@ ipcMain.handle('db:log-work-session', async (event, session) => {
        let newProgress = challenge.progress;
 
        if (challenge.type === 'TOTAL_DURATION') {
-         // Add duration (ms) converted to minutes
          newProgress += Math.round(session.duration / (1000 * 60));
        } else if (challenge.type === 'DEEP_WORK') {
          const durationMin = session.duration / (1000 * 60);
@@ -376,8 +337,6 @@ ipcMain.handle('db:log-work-session', async (event, session) => {
        updateDailyChallengeProgress(challenge.id, newProgress, status);
 
        if (status === 'COMPLETED') {
-         // Grant XP
-         // grantAchievement(userId, 'DAILY_CHALLENGE_COMPLETED'); // Optional
          new Notification({
             title: '🎉 Challenge Completed!',
             body: `You completed: ${challenge.description} (+${challenge.xpReward} XP)`,
@@ -398,8 +357,7 @@ ipcMain.handle('db:create-task', (event, task, userId) => createTask(task, userI
 ipcMain.handle('db:update-task', (event, task) => {
   const updated = updateTask(task);
 
-  // --- Check Daily Challenge (Task-based) ---
-  if (task.status === 'Completed' && task.userId) { // Ensure we have userId
+  if (task.status === 'Completed' && task.userId) {
       const today = new Date().toISOString().split('T')[0];
       const challenge: any = getDailyChallenge(task.userId, today);
 
@@ -408,13 +366,11 @@ ipcMain.handle('db:update-task', (event, task) => {
           let shouldUpdate = false;
 
           if (challenge.type === 'FROG_EATER') {
-              // High Priority Task
               if (task.priority === 'High') {
                   newProgress += 1;
                   shouldUpdate = true;
               }
           } else if (challenge.type === 'BACKLOG_CLEANER') {
-              // Any task (or maybe small tasks? Let's say any for now to be simple, or < 1h)
               newProgress += 1;
               shouldUpdate = true;
           }
@@ -428,7 +384,6 @@ ipcMain.handle('db:update-task', (event, task) => {
                       body: `You completed: ${challenge.description} (+${challenge.xpReward} XP)`,
                       icon: getAssetPath('icon.png'),
                   }).show();
-                  // Grant XP
                   const profile = getProfile(task.userId);
                   if (profile) updateProfile({ ...profile, xp: profile.xp + challenge.xpReward });
               }
@@ -437,7 +392,7 @@ ipcMain.handle('db:update-task', (event, task) => {
   }
   return updated;
 });
-ipcMain.handle('db:delete-task', (event, taskId) => deleteTask(taskId)); // Use deleteTask directly
+ipcMain.handle('db:delete-task', (event, taskId) => deleteTask(taskId));
 ipcMain.handle('db:update-tasks-order', (event, taskIds) => updateTasksOrder(taskIds));
 ipcMain.handle('db:auto-schedule-tasks', (event, userId) => autoScheduleTasks(userId));
 ipcMain.handle('db:get-proposed-schedule', (event, userId) => getProposedSchedule(userId));
@@ -450,11 +405,10 @@ ipcMain.handle('db:get-sprint-analysis', (event, userId) => {
     if (!sprint) return null;
     const tasks = getSprintTasks(sprint.id);
     const unfinished = tasks.filter(t => t.status !== 'Completed');
-    
+
     const predictions = unfinished.map(t => neuralCore.predictForTask(t));
     const sessions = getRecentWorkSessions(userId, 14);
 
-    // Fetch work hours from settings
     const workStart = getSetting('workDayStart') || '09:00';
     const workEnd = getSetting('workDayEnd') || '17:00';
 
@@ -467,9 +421,8 @@ ipcMain.handle('db:delete-note', (event, noteId) => deleteNote(noteId));
 ipcMain.handle('db:login', async (event, { username, password }) => {
   const user = loginUser(username, password);
   if (user) {
-    await refreshInsights(user.id); // Load insights on login
-    
-    // Train Neural Core
+    await refreshInsights(user.id);
+
     try {
         const tasks = getTasks(user.id);
         neuralCore.train(tasks).catch(err => log.error('Neural Training Failed', err));
@@ -548,50 +501,6 @@ ipcMain.handle('db:get-productivity-insights', async (event, userId) => {
   return cachedInsights;
 });
 
-// --- Llama AI Handlers ---
-ipcMain.handle('ai:init-llama', async () => {
-    await llamaEngine.initialize((data) => {
-        if (mainWindow) {
-            mainWindow.webContents.send('ai:llama-progress', data);
-        }
-    });
-    return true;
-});
-
-ipcMain.handle('ai:get-llama-status', () => {
-    return llamaEngine.getStatus();
-});
-
-ipcMain.handle('ai:ask-llama', async (event, { prompt, context }) => {
-    try {
-        const engine = getSetting('aiEngine') || 'local';
-        
-        if (engine === 'gemini') {
-            const apiKey = getSetting('geminiApiKey');
-            if (!apiKey) return "Error: Brak klucza API dla Gemini. Sprawdź Ustawienia.";
-            log.info('AI Request: Using Gemini');
-            return await askGemini(prompt, apiKey, context);
-        }
-
-        // Default: Local Llama
-        log.info('AI Request: Using Local Llama');
-        const response = await llamaEngine.generateMessage(prompt, context, (chunk) => {
-            if (mainWindow) {
-                mainWindow.webContents.send('ai:llama-delta', chunk);
-            }
-        });
-        return response;
-    } catch (err: any) {
-        log.error('AI generation failed in main:', err);
-        return `Error: ${err.message}`;
-    }
-});
-
-// --- Chat History Handlers ---
-ipcMain.handle('chat:get-history', (event, userId) => getChatHistory(userId));
-ipcMain.handle('chat:save-message', (event, { userId, role, content }) => saveChatMessage(userId, role, content));
-ipcMain.handle('chat:clear-history', (event, userId) => clearChatHistory(userId));
-
 ipcMain.handle('gamification:reward-fatigue-compliance', (event, userId) => {
   const profile = getProfile(userId);
   if (profile) {
@@ -624,10 +533,7 @@ ipcMain.on('tray:start-timer', (event, info) => {
   activeTaskInfo = info;
   if (trayTimerInterval) clearInterval(trayTimerInterval);
 
-  // Reset fatigue warning state for new session
   hasSentFatigueWarning = false;
-  // Try to refresh insights (need userId in info ideally, or use global if single user)
-  // For now, assuming insights are loaded via login or dashboard load.
 
   updateTrayTitle();
   trayTimerInterval = setInterval(updateTrayTitle, 1000);
@@ -643,18 +549,15 @@ ipcMain.on('tray:stop-timer', () => {
   }
 });
 
-// Add handler for tray:get-icon-path
 ipcMain.on('tray:get-icon-path', (event) => {
-  event.returnValue = trayIconPath; // Return the icon path synchronously
+  event.returnValue = trayIconPath;
 });
 
-// --- Background Productivity Checks (Peak Hours & Fragmentation) ---
 let lastFragmentationNotificationTime = 0;
 
 setInterval(() => {
   const now = Date.now();
-  
-  // 1. Peak Hours Check (Existing)
+
   if (cachedInsights) {
     const currentHour = new Date().getHours();
     const dateString = new Date().toDateString();
@@ -672,59 +575,44 @@ setInterval(() => {
     }
   }
 
-  // 2. Fragmentation / Context Switching Check
-  // Run this check max once every 30 minutes to avoid spam
   if (now - lastFragmentationNotificationTime > 30 * 60 * 1000) {
-      // We need a userId. This background task is global, so it's tricky in multi-user, 
-      // but for local app we can use activeTaskInfo.userId if available, or just skip if no active user context.
-      // Alternatively, check for the last logged in user if available? 
-      // Safe bet: only check if a timer is active or recently active.
-      
       if (activeTaskInfo && activeTaskInfo.userId) {
-          const sessions = getRecentWorkSessions(activeTaskInfo.userId, 1); // Get last 1 day sessions
+          const sessions = getRecentWorkSessions(activeTaskInfo.userId, 1);
           const oneHourAgo = now - (60 * 60 * 1000);
-          
-          // Filter sessions from last hour
+
           const recentShortSessions = sessions.filter((s: any) => {
-              const endTime = new Date(s.endTime || s.startTime).getTime(); // Fallback if endTime missing
-              return endTime > oneHourAgo && s.duration < (10 * 60 * 1000); // Less than 10 mins
+              const endTime = new Date(s.endTime || s.startTime).getTime();
+              return endTime > oneHourAgo && s.duration < (10 * 60 * 1000);
           });
 
           if (recentShortSessions.length >= 5) {
               logSystemEvent(`High Fragmentation Detected: ${recentShortSessions.length} short sessions (<10m) in the last hour.`, 'PRODUCTIVITY');
-              
+
               new Notification({
                   title: '⚠️ Fragmented Focus',
                   body: 'You are switching contexts rapidly. Consider sticking to one task for at least 20 minutes.',
                   icon: getAssetPath('icon.png')
               }).show();
-              
+
               lastFragmentationNotificationTime = now;
           }
       }
   }
-  
-  // 3. Habit Reminders
+
   checkHabitReminders();
 
-}, 5 * 60 * 1000); // Check every 5 minutes (reduced from 15 for better responsiveness)
+}, 5 * 60 * 1000);
 
-// --- Activity Monitor (Idle Detection) ---
 setInterval(() => {
-  // Only check if a task is actively running
   if (activeTaskInfo) {
-    const idleTime = powerMonitor.getSystemIdleTime(); // Returns seconds
-    // Threshold: 10 minutes (600 seconds)
+    const idleTime = powerMonitor.getSystemIdleTime();
     if (idleTime >= 600) {
       if (mainWindow) {
         mainWindow.webContents.send('activity:idle-detected');
       }
-
-      // Optionally notify immediately here, but better to let Renderer handle the stop logic
-      // so it updates the UI state correctly.
     }
   }
-}, 60000); // Check every 1 minute
+}, 60000);
 
 
 if (process.env.NODE_ENV === 'production') {
@@ -808,7 +696,6 @@ app.whenReady().then(async () => {
 
   createWindow();
 
-  // Register global shortcut for search
   globalShortcut.register('CommandOrControl+K', () => {
     mainWindow?.webContents.send('open-search');
   });
@@ -819,6 +706,5 @@ app.whenReady().then(async () => {
 });
 
 app.on('will-quit', () => {
-  // Unregister all shortcuts.
   globalShortcut.unregisterAll();
 });

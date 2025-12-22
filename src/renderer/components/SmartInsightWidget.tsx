@@ -14,6 +14,7 @@ import BedIcon from '@mui/icons-material/Bed';
 import GroupsIcon from '@mui/icons-material/Groups';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import FlagIcon from '@mui/icons-material/Flag';
+import AssignmentIcon from '@mui/icons-material/Assignment';
 import { useTimer } from '../context/TimerContext';
 import { useSettings } from '../context/SettingsContext';
 import { getDailyBio, updateDailyBio } from '../services/DatabaseService';
@@ -191,6 +192,17 @@ const SmartInsightWidget = () => {
                   <IconButton size="small" onClick={handleOpenMeeting} color={dailyBio.meetingTime > 0 ? 'primary' : 'default'}>
                       <GroupsIcon fontSize="small" />
                   </IconButton>
+                  
+                  <Tooltip title="Otwórz Podsumowanie Dnia (Briefing)" arrow placement="left">
+                      <IconButton 
+                        color="primary" 
+                        size="small" 
+                        onClick={() => window.dispatchEvent(new CustomEvent('open-daily-briefing'))}
+                      >
+                          <AssignmentIcon fontSize="small" />
+                      </IconButton>
+                  </Tooltip>
+
                   {insights.dailyTip && (
                       <Tooltip title={insights.dailyTip} arrow placement="left">
                           <IconButton color={getAiColor(insights.dailyTipCategory)} size="small">

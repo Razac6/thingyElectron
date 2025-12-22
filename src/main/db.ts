@@ -68,7 +68,6 @@ export const initDB = async () => {
   db.run(`CREATE TABLE IF NOT EXISTS daily_energy_logs (date TEXT PRIMARY KEY, mode TEXT, sleepScore INTEGER)`);
   db.run(`CREATE TABLE IF NOT EXISTS habits (id INTEGER PRIMARY KEY, userId INTEGER, title TEXT NOT NULL, description TEXT, frequency TEXT NOT NULL, category TEXT, targetStreak INTEGER DEFAULT 0, reminderTime TEXT, createdAt TEXT, isFavorite INTEGER DEFAULT 0, FOREIGN KEY(userId) REFERENCES users(id))`);
   db.run(`CREATE TABLE IF NOT EXISTS habit_logs (id INTEGER PRIMARY KEY, habitId INTEGER, date TEXT NOT NULL, value INTEGER DEFAULT 1, notes TEXT, FOREIGN KEY(habitId) REFERENCES habits(id) ON DELETE CASCADE)`);
-  db.run(`CREATE TABLE IF NOT EXISTS chat_history (id INTEGER PRIMARY KEY, userId INTEGER, role TEXT, content TEXT, timestamp TEXT, FOREIGN KEY(userId) REFERENCES users(id))`);
 
 
   try {
@@ -1138,6 +1137,54 @@ export const getChatHistory = (userId: number, limit: number = 50) => {
     }
     stmt.free();
     return history;
+};
+
+export const getDailyStandupData = (userId: number) => {
+    if (!db) return null;
+
+    // 1. Find the last day with completed tasks
+    const lastActiveDayStmt = db.prepare("SELECT updateStatusDate FROM tasks WHERE userId = ? AND status = 'Completed' ORDER BY updateStatusDate DESC LIMIT 1");
+    const lastActiveResult = lastActiveDayStmt.getAsObject([userId]);
+    lastActiveDayStmt.free();
+
+    let lastActiveDateStr = "";
+    if (lastActiveResult && lastActiveResult.updateStatusDate) {
+        lastActiveDateStr = lastActiveResult.updateStatusDate.split(' ')[0]; // Handle "YYYY-MM-DD HH:MM:SS" or just "YYYY-MM-DD"
+        // Ensure format is YYYY-MM-DD
+        if (lastActiveDateStr.includes('.')) {
+            const parts = lastActiveDateStr.split('.');
+            lastActiveDateStr = `${parts[2]}-${parts[1]}-${parts[0]}`;
+        }
+    } else {
+        // Fallback to yesterday if no history
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        lastActiveDateStr = yesterday.toISOString().split('T')[0];
+    }
+
+    // 2. Fetch stats for that specific last active day
+    const lastDayStatsStmt = db.prepare("SELECT COUNT(*) as count, SUM(spendTime) as totalTime FROM tasks WHERE userId = ? AND status = 'Completed' AND updateStatusDate LIKE ?");
+    const lastDayStats = lastDayStatsStmt.getAsObject([userId, `${lastActiveDateStr}%`]);
+    lastDayStatsStmt.free();
+
+    // 3. Tasks for today
+    const remainingTasks = getTasks(userId).filter(t => t.status !== 'Completed');
+
+    // 4. Best habit streak
+    const topHabit = getTopHabit(userId);
+
+    return {
+        lastActiveDate: lastActiveDateStr,
+        yesterday: { // Keeping key 'yesterday' for frontend compat, but content is 'last active'
+            completedCount: lastDayStats.count || 0,
+            totalTimeMs: lastDayStats.totalTime || 0
+        },
+        today: {
+            remainingCount: remainingTasks.length,
+            tasks: remainingTasks.slice(0, 5)
+        },
+        topHabit
+    };
 };
 
 export const clearChatHistory = (userId: number) => {

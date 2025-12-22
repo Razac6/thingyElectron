@@ -17,6 +17,7 @@ import DailyProductivityBarChart from '../components/DailyProductivityBarChart';
 import ContributionGraph from '../components/ContributionGraph';
 import SmartInsightWidget from '../components/SmartInsightWidget';
 import FavoriteHabitWidget from '../components/FavoriteHabitWidget';
+import DailyStandupModal from '../components/DailyStandupModal';
 
 function formatTime(ms: number): string {
   if (ms <= 0) return '0h 0m';
@@ -60,6 +61,7 @@ export default function Dashboard() {
 
   return (
     <Box sx={{ flexGrow: 1 }}>
+      <DailyStandupModal />
       <Grid container spacing={2}>
         <Grid item xs={12} sm={4}>
           <Item sx={{ py: 1 }}>

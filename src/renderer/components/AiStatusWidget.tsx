@@ -4,7 +4,6 @@ import PsychologyIcon from '@mui/icons-material/Psychology';
 import ScienceIcon from '@mui/icons-material/Science';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import SummarizeIcon from '@mui/icons-material/Summarize';
-import BoltIcon from '@mui/icons-material/Bolt';
 
 interface AiStats {
   maturity: number;
@@ -19,16 +18,11 @@ const AiStatusWidget = () => {
   const [reportOpen, setReportOpen] = useState(false);
   const [reportText, setReportText] = useState('');
   const [reportLoading, setReportLoading] = useState(false);
-  
-  // Llama State
-  const [llamaStatus, setLlamaStatus] = useState({ ready: false, progress: 0, isInitializing: false });
 
   const fetchStats = async () => {
     try {
       const data = await window.electron.database.getAiStats();
       setStats(data);
-      const lStatus = await window.electron.ai.getLlamaStatus();
-      setLlamaStatus(lStatus);
     } catch (error) {
       console.error('Failed to fetch AI stats', error);
     } finally {
@@ -36,20 +30,26 @@ const AiStatusWidget = () => {
     }
   };
 
-  const handleInitLlama = async () => {
-      setLlamaStatus(prev => ({ ...prev, isInitializing: true }));
-      await window.electron.ai.initLlama();
+  const handleGenerateReport = async () => {
+      setReportText(''); // Clear old report immediately
+      setReportOpen(true);
+      setReportLoading(true);
+      try {
+          const userStr = localStorage.getItem('userId');
+          const userId = userStr ? JSON.parse(userStr) : 1;
+          const text = await window.electron.database.generateDailyReport(userId);
+          setReportText(text);
+      } catch (e) {
+          setReportText("Błąd generowania raportu.");
+      } finally {
+          setReportLoading(false);
+      }
   };
 
   useEffect(() => {
     fetchStats();
-    
-    // Listen for progress
-    window.electron.ai.onProgress((p: number) => {
-        setLlamaStatus(prev => ({ ...prev, progress: p, isInitializing: true }));
-    });
-
-    const interval = setInterval(fetchStats, 60000);
+    // Refresh occasionally or on mount
+    const interval = setInterval(fetchStats, 60000); // 1 min refresh
     return () => clearInterval(interval);
   }, []);
 
@@ -82,32 +82,12 @@ const AiStatusWidget = () => {
             <Typography variant="h6">Neural Core Status</Typography>
             {isMature && <CheckCircleIcon color="success" fontSize="small" />}
         </Box>
-        <Box display="flex" gap={1}>
-            {!llamaStatus.ready && (
-                <Button 
-                    size="small" 
-                    variant="outlined" 
-                    startIcon={<BoltIcon />}
-                    onClick={handleInitLlama}
-                    disabled={llamaStatus.isInitializing}
-                >
-                    {llamaStatus.isInitializing ? `Loading ${Math.round(llamaStatus.progress)}%` : 'Init Llama AI'}
-                </Button>
-            )}
-            <Tooltip title="Generuj Raport AI">
-                <IconButton onClick={handleGenerateReport} color="primary" size="small">
-                    <SummarizeIcon />
-                </IconButton>
-            </Tooltip>
-        </Box>
+        <Tooltip title="Generuj Raport AI">
+            <IconButton onClick={handleGenerateReport} color="primary" size="small">
+                <SummarizeIcon />
+            </IconButton>
+        </Tooltip>
       </Box>
-
-      {llamaStatus.isInitializing && !llamaStatus.ready && (
-          <Box sx={{ mb: 2 }}>
-              <Typography variant="caption" color="text.secondary">Downloading Local AI Brain (~1.2GB)...</Typography>
-              <LinearProgress variant="determinate" value={llamaStatus.progress} sx={{ height: 4, borderRadius: 2, mt: 0.5 }} />
-          </Box>
-      )}
 
       <Grid container spacing={2}>
         <Grid item xs={12} sm={4} display="flex" flexDirection="column" alignItems="center" justifyContent="center">

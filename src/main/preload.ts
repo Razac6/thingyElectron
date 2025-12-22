@@ -54,7 +54,7 @@ contextBridge.exposeInMainWorld('electron', {
     setSetting: (key: string, value: string) => ipcRenderer.invoke('db:set-setting', key, value),
         getDailyBio: (date: string) => ipcRenderer.invoke('db:get-daily-bio', date),
         updateDailyBio: (date: string, data: any) => ipcRenderer.invoke('db:update-daily-bio', date, data),
-    
+
         // Habits
         getHabits: (userId: number) => ipcRenderer.invoke('db:get-habits', userId),
         createHabit: (habit: any, userId: number) => ipcRenderer.invoke('db:create-habit', habit, userId),
@@ -64,7 +64,7 @@ contextBridge.exposeInMainWorld('electron', {
                 getHabitLogs: (userId: number, fromDate?: string) => ipcRenderer.invoke('db:get-habit-logs', userId, fromDate),
                 getTopHabit: (userId: number) => ipcRenderer.invoke('db:get-top-habit', userId),
                 toggleHabitFavorite: (habitId: number, userId: number) => ipcRenderer.invoke('db:toggle-habit-favorite', habitId, userId),
-            
+
                 getChecklistItems: (taskId: number) => ipcRenderer.invoke('db:get-checklist-items', taskId),    addChecklistItem: (taskId: number, text: string) => ipcRenderer.invoke('db:add-checklist-item', taskId, text),
     toggleChecklistItem: (itemId: number, isCompleted: boolean) => ipcRenderer.invoke('db:toggle-checklist-item', itemId, isCompleted),
     deleteChecklistItem: (itemId: number) => ipcRenderer.invoke('db:delete-checklist-item', itemId),
@@ -74,16 +74,7 @@ contextBridge.exposeInMainWorld('electron', {
     forceNeuralTraining: (userId: number) => ipcRenderer.invoke('db:force-neural-training', userId),
     getDailyChallenge: (userId: number) => ipcRenderer.invoke('db:get-daily-challenge', userId),
     getProductivityInsights: (userId: number) => ipcRenderer.invoke('db:get-productivity-insights', userId),
-  },
-  ai: {
-    initLlama: () => ipcRenderer.invoke('ai:init-llama'),
-    getLlamaStatus: () => ipcRenderer.invoke('ai:get-llama-status'),
-    askLlama: (prompt: string, context: any) => ipcRenderer.invoke('ai:ask-llama', { prompt, context }),
-    onProgress: (func: (data: { progress: number, status: string }) => void) => ipcRenderer.on('ai:llama-progress', (event, data) => func(data as any)),
-    onDelta: (func: (chunk: string) => void) => ipcRenderer.on('ai:llama-delta', (event, chunk) => func(chunk as string)),
-    getHistory: (userId: number) => ipcRenderer.invoke('chat:get-history', userId),
-    saveMessage: (userId: number, role: string, content: string) => ipcRenderer.invoke('chat:save-message', { userId, role, content }),
-    clearHistory: (userId: number) => ipcRenderer.invoke('chat:clear-history', userId),
+    getDailyStandup: (userId: number) => ipcRenderer.invoke('db:get-daily-standup', userId),
   },
   ipcRenderer: {
     on(channel: string, func: (...args: unknown[]) => void) {

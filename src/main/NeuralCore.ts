@@ -17,7 +17,6 @@ import {
 } from './db';
 import { ProductivityAnalyst } from './ProductivityAnalysis';
 import { personalityEngine, AiMood } from './PersonalityEngine';
-import { llamaEngine } from './LlamaEngine';
 import fs from 'fs';
 import path from 'path';
 import { app } from 'electron';
@@ -238,7 +237,7 @@ export class NeuralCore {
       const tasks = getTasks(userId);
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - days);
-      
+
       const groupedData: { [key: string]: { actual: number, predicted: number } } = {};
 
       for (let i = 0; i < days; i++) {
@@ -277,8 +276,8 @@ export class NeuralCore {
       const tasks = getTasks(userId);
       const today = new Date();
       const dateStr = today.toISOString().split('T')[0];
-      
-      const todayTasks = tasks.filter(t => 
+
+      const todayTasks = tasks.filter(t =>
           t.status === 'Completed' && t.updateStatusDate && t.updateStatusDate.startsWith(dateStr)
       );
 
@@ -291,7 +290,7 @@ export class NeuralCore {
       const meetingTime = bio.meetingTime || 0;
       const sleep = bio.sleepScore;
 
-      const recentSessions = getRecentWorkSessions(userId, 1); 
+      const recentSessions = getRecentWorkSessions(userId, 1);
       const focusScore = ProductivityAnalyst.analyzeFocusQuality(recentSessions);
       const fatigue = ProductivityAnalyst.analyzeFatigue(recentSessions);
 
@@ -318,7 +317,7 @@ export class NeuralCore {
     const date = new Date();
     const dateStr = date.toISOString().split('T')[0];
     const userId = 1;
-    
+
     const bio = getDailyBio(dateStr);
     const sleep = bio.sleepScore !== null ? Number(bio.sleepScore) : 75;
     const habits = getHabits(userId);
@@ -334,35 +333,19 @@ export class NeuralCore {
         tasksRemaining = unfinished.length;
         const predictions = unfinished.map(t => this.predictForTask(t));
         const sessions = getRecentWorkSessions(userId, 14);
-        risk = ProductivityAnalyst.analyzeSprintRisk(sprint, tasks, sessions, predictions, { 
-            start: getSetting('workDayStart') || '09:00', 
-            end: getSetting('workDayEnd') || '17:00' 
+        risk = ProductivityAnalyst.analyzeSprintRisk(sprint, tasks, sessions, predictions, {
+            start: getSetting('workDayStart') || '09:00',
+            end: getSetting('workDayEnd') || '17:00'
         });
     }
 
     if (activeTask) return { text: `Thingy: Widzę, że pracujesz nad "${activeTask}". Monitoruję Twoje skupienie.`, category: 'focus' };
 
     const mood = this.determineMood(risk, sleep, habitScore);
-    
-    // --- Llama Integration ---
-    const llamaStatus = llamaEngine.getStatus();
-    let text = "";
 
-    if (llamaStatus.ready) {
-        try {
-            const sleepDesc = sleep < 50 ? "słabo spał" : (sleep > 85 ? "jest bardzo wypoczęty" : "wyspał się normalnie");
-            const sprintDesc = risk?.risk === 'Critical' ? "sprint jest bardzo zagrożony" : (risk?.risk === 'At Risk' ? "sprint jest lekko opóźniony" : "wszystko ze sprintem jest w porządku");
-            const habitDesc = habitScore > 0.8 ? "świetnie trzyma nawyki" : (habitScore < 0.3 ? "zaniedbał dziś nawyki" : "nawyki są na średnim poziomie");
-
-            const prompt = `Marcin ${sleepDesc}. Ma do zrobienia jeszcze ${tasksRemaining} zadań. ${sprintDesc}, a on ${habitDesc}. Twój nastrój to ${mood}. Powiedz mu coś krótkiego i sensownego o jego sytuacji.`;
-            
-            text = await llamaEngine.generateMessage(prompt, { mood, sleep, habitScore, risk });
-        } catch (e) {
-            text = personalityEngine.generateMessage({ mood, userName: 'Marcin', sprintRisk: risk, habitScore, tasksRemaining });
-        }
-    } else {
-        text = personalityEngine.generateMessage({ mood, userName: 'Marcin', sprintRisk: risk, habitScore, tasksRemaining });
-    }
+    // --- Removed Llama Integration ---
+    // We now rely solely on the personalityEngine (templates)
+    const text = personalityEngine.generateMessage({ mood, userName: 'Marcin', sprintRisk: risk, habitScore, tasksRemaining });
 
     const categoryMap: Record<AiMood, 'high' | 'low' | 'neutral' | 'focus'> = {
         PANIC: 'high', SUPPORTIVE: 'high', GRIND: 'low', CELEBRATION: 'low', STABLE: 'neutral', CHILL: 'neutral'
