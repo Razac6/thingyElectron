@@ -25,6 +25,7 @@ import {
   getDailyProductivity,
   getContributionData,
   getRecentWorkSessions,
+  getTaskWorkSessions,
   getLast14DaysProductivity,
   getDailyChallenge,
   createDailyChallenge,
@@ -440,6 +441,9 @@ ipcMain.handle('db:get-average-sprint-capacity', () => getAverageSprintCapacity(
 ipcMain.handle('db:get-hourly-productivity', () => getHourlyProductivity());
 ipcMain.handle('db:get-daily-productivity', (event, userId) => getDailyProductivity(userId));
 ipcMain.handle('db:get-contribution-data', (event, userId, days) => getContributionData(userId, days));
+ipcMain.handle('db:get-work-sessions', (event, userId, days) => getRecentWorkSessions(userId, days));
+ipcMain.handle('db:get-task-work-sessions', (event, taskId) => getTaskWorkSessions(taskId));
+ipcMain.handle('db:get-last-14-days-productivity', (event, userId) => getLast14DaysProductivity(userId));
 ipcMain.handle('db:get-tag-analytics', (event, tagId) => getTagAnalytics(tagId));
 ipcMain.handle('db:get-tag-by-name', (event, name) => getTagByName(name));
 ipcMain.handle('db:get-all-tags', () => getAllTags());
@@ -497,7 +501,29 @@ ipcMain.handle('db:get-productivity-insights', async (event, userId) => {
   return cachedInsights;
 });
 
-ipcMain.handle('db:get-daily-standup', (event, userId) => getDailyStandupData(userId));
+ipcMain.handle('db:get-daily-standup', (event, userId) => {
+  const stats = getDailyStandupData(userId);
+  const schedule = getProposedSchedule(userId);
+  const topTask = schedule.length > 0 ? schedule[0] : null;
+
+  let suggestion = null;
+  if (topTask) {
+      suggestion = {
+          id: topTask.id,
+          title: topTask.title,
+          link: topTask.link,
+          aiReason: topTask.aiReason,
+          neuralEst: (topTask.neuralEstimate || topTask.estimate || 0.5) * 60, // minutes
+          priority: topTask.priority
+      };
+  }
+
+  return {
+      ...stats,
+      topSuggestion: suggestion,
+      isPeakHour: cachedInsights?.peakHours?.includes(new Date().getHours()) || false
+  };
+});
 
 ipcMain.handle('gamification:reward-fatigue-compliance', (event, userId) => {
   const profile = getProfile(userId);

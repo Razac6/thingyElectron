@@ -421,6 +421,11 @@ export class ProductivityAnalyst {
           default: score += 100; break; // Low
       }
 
+      // 1a. Status Momentum (Finish what you started)
+      if (task.status === 'In Progress') {
+          score += 2000; // Massive boost to ensure context switching is minimized
+      }
+
       // 2. Difficulty/Effort Penalty (Prefer easier tasks within the same priority tier)
       let projectedEffort = 0;
 

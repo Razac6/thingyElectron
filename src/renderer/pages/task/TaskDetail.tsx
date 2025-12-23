@@ -15,9 +15,18 @@ import {
   Autocomplete,
   Chip,
   IconButton,
-  Link,
   Alert,
 } from '@mui/material';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip as ChartTooltip,
+  Legend,
+} from 'chart.js';
+import { Bar } from 'react-chartjs-2';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SaveIcon from '@mui/icons-material/Save';
 import EditIcon from '@mui/icons-material/Edit';
@@ -35,7 +44,16 @@ import { PriorityEnum } from '../../../enums/priority.enum';
 import { TaskTypeEnum } from '../../../enums/TaskTypeEnum';
 import { useGamification } from '../../context/GamificationContext';
 import { useSettings } from '../../context/SettingsContext';
-import TaskStats from '../../components/TaskStats'; // Import the new component
+import TaskStats from '../../components/TaskStats';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  ChartTooltip,
+  Legend
+);
 
 function TaskDetail() {
   const { taskId } = useParams<{ taskId: string }>();
@@ -51,20 +69,19 @@ function TaskDetail() {
   const [newChecklistItem, setNewChecklistItem] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
+  const [chartData, setChartData] = useState<any>(null);
 
   useEffect(() => {
     const fetchAndSetTask = async () => {
-      setIsLoading(true); // Start loading
+      setIsLoading(true);
 
       const taskIdNum = Number(taskId);
-      let currentTask: Task | null = null;
+      let currentTask: any = null;
 
-      // Try to find task in context first
       const foundTaskInContext = tasks.find(t => t.id === taskIdNum);
       if (foundTaskInContext) {
         currentTask = foundTaskInContext;
       } else {
-        // If not found in context, fetch directly from DB
         const fetchedTaskFromDb = await window.electron.db.getTask(taskIdNum);
         currentTask = fetchedTaskFromDb;
       }
@@ -73,8 +90,37 @@ function TaskDetail() {
         setTask({ ...currentTask, tags: currentTask.tags || [], type: currentTask.type || TaskTypeEnum.TASK });
         const items = await getChecklistItems(taskIdNum);
         setChecklist(items);
+
+        // Fetch Work Sessions for Chart
+        try {
+            const sessions = await window.electron.database.getTaskWorkSessions(taskIdNum);
+            if (sessions && sessions.length > 0) {
+                const grouped: Record<string, number> = {};
+                sessions.forEach((s: any) => {
+                    const date = s.startTime.split('T')[0];
+                    grouped[date] = (grouped[date] || 0) + (s.duration / (1000 * 60)); // minutes
+                });
+                
+                const labels = Object.keys(grouped).sort();
+                const dataPoints = labels.map(d => grouped[d]);
+
+                setChartData({
+                    labels,
+                    datasets: [
+                        {
+                            label: 'Minutes Worked',
+                            data: dataPoints,
+                            backgroundColor: '#219ebc',
+                            borderRadius: 4,
+                        }
+                    ]
+                });
+            }
+        } catch (e) {
+            console.error("Failed to load chart data", e);
+        }
       } else {
-        setTask(null); // Task not found
+        setTask(null);
       }
 
       const sprintsData = await getSprints();
@@ -83,7 +129,7 @@ function TaskDetail() {
       const allAvailableTags = await getAllTags();
       setAvailableTags(allAvailableTags || []);
 
-      setIsLoading(false); // End loading after all data is fetched
+      setIsLoading(false);
     };
     
     fetchAndSetTask();
@@ -100,6 +146,17 @@ function TaskDetail() {
   const handleToggleChecklist = async (id: number, currentStatus: number) => {
       const updated = await toggleChecklistItem(id, !currentStatus);
       setChecklist(updated);
+  };
+
+  const handleExternalLink = (e: React.MouseEvent) => {
+      e.preventDefault();
+      if (task?.link) {
+          let url = task.link;
+          if (!/^https?:\/\//i.test(url)) {
+              url = 'https://' + url;
+          }
+          window.electron.shell.openExternal(url);
+      }
   };
 
   const handleDeleteChecklist = async (id: number) => {
@@ -207,6 +264,37 @@ function TaskDetail() {
           )}
           <Typography variant="body1" paragraph sx={{ whiteSpace: 'pre-wrap' }}>{task.description || 'No description provided.'}</Typography>
           <TaskStats task={task} />
+
+          {/* Progress Chart Section */}
+          <Box sx={{ mt: 3, mb: 3 }}>
+              <Typography variant="h6" gutterBottom>Work History</Typography>
+              {chartData ? (
+                  <Box sx={{ height: 250 }}>
+                      <Bar 
+                        data={chartData} 
+                        options={{ 
+                            responsive: true, 
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { display: false },
+                                tooltip: {
+                                    callbacks: {
+                                        label: (context) => `${context.parsed.y.toFixed(0)} min`
+                                    }
+                                }
+                            },
+                            scales: {
+                                y: { beginAtZero: true, title: { display: true, text: 'Minutes' } }
+                            }
+                        }} 
+                      />
+                  </Box>
+              ) : (
+                  <Alert severity="info" variant="outlined">
+                      No work sessions recorded yet. Start the timer to track your progress over time!
+                  </Alert>
+              )}
+          </Box>
           
           {/* Complexity Warnings */}
           {task.estimate >= (Number(settings.complexityThreshold) || 8) && checklist.length === 0 && (

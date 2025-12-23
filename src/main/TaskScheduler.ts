@@ -40,15 +40,30 @@ export const getProposedSchedule = (userId: number) => {
       
       // Generate Reasoning
       let reasons = [];
-      if (task.priority === 'High') reasons.push("🔥 Priorytet");
+      
+      // 1. Momentum (Highest Priority usually)
+      if (task.status === 'In Progress') {
+          reasons.push("🚀 Momentum (Context Switching Prevention)");
+      }
+
+      // 2. Sprint Pressure
       if (endDate) {
           const daysLeft = Math.ceil((new Date(endDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-          if (daysLeft <= 2) reasons.push("⏳ Koniec Sprintu");
+          if (daysLeft <= 1) reasons.push("🚨 Sprint Critical Path");
+          else if (daysLeft <= 3) reasons.push("⏳ Sprint Risk Mitigation");
       }
-      if (neuralEstimateHours < 1) reasons.push("⚡ Szybkie (wg AI)");
-      else if (neuralEstimateHours < (task.estimate || 0)) reasons.push("📉 Łatwiejsze niż estymata");
 
-      const reason = reasons.length > 0 ? reasons.join(' + ') : 'Optymalizacja kolejki';
+      // 3. WSJF Factors
+      if (task.priority === 'High') reasons.push("🔥 High Cost of Delay (WSJF)");
+      
+      // 4. Neural Factors
+      if (neuralEstimateHours < 0.5) reasons.push("⚡ Quick Win (Neural Core)");
+      else if (neuralEstimateHours < (task.estimate || 0)) reasons.push("📉 Efficiency Opportunity");
+
+      // Fallback
+      const reason = reasons.length > 0 
+        ? reasons.slice(0, 2).join(' + ') // Limit to top 2 reasons
+        : 'Algorytm optymalizacji przepływu (Flow Optimizer)';
 
       return { ...task, score, aiReason: reason, neuralEstimate: neuralEstimateHours };
   });

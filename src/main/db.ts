@@ -92,6 +92,18 @@ export const initDB = async () => {
         }
     }
 
+    // Sprints migration
+    const sprintTableInfo = db.exec("PRAGMA table_info(sprints);");
+    if (sprintTableInfo.length > 0 && sprintTableInfo[0].values) {
+        const sprintCols = sprintTableInfo[0].values;
+        if (!sprintCols.some(row => row[1] === 'capacity')) {
+            db.run('ALTER TABLE sprints ADD COLUMN capacity INTEGER DEFAULT 0');
+        }
+        if (!sprintCols.some(row => row[1] === 'excludedDates')) {
+            db.run("ALTER TABLE sprints ADD COLUMN excludedDates TEXT DEFAULT '[]'");
+        }
+    }
+
     // Bio logs migration
     const bioTableInfo = db.exec("PRAGMA table_info(daily_energy_logs);");
     if (bioTableInfo.length > 0 && bioTableInfo[0].values) {
@@ -311,6 +323,18 @@ export const logWorkSession = (session: { taskId: number, startTime: string, end
   console.log('[DB] Work session logged and DB saved.');
 };
 
+
+export const getTaskWorkSessions = (taskId: number) => {
+  if (!db) return [];
+  const stmt = db.prepare('SELECT startTime, duration FROM work_sessions WHERE taskId = ? ORDER BY startTime ASC');
+  stmt.bind([taskId]);
+  const sessions: any[] = [];
+  while (stmt.step()) {
+    sessions.push(stmt.getAsObject());
+  }
+  stmt.free();
+  return sessions;
+};
 
 // --- Analytics Functions ---
 export const getRecentWorkSessions = (userId: number, days: number = 30) => {
@@ -752,7 +776,15 @@ export const getSprints = () => {
   if (!db) throw new Error('DB not initialized');
   const stmt = db.prepare('SELECT * FROM sprints ORDER BY startDate DESC');
   const sprints: any[] = [];
-  while (stmt.step()) { sprints.push(stmt.getAsObject()); }
+  while (stmt.step()) { 
+    const s = stmt.getAsObject();
+    try {
+        s.excludedDates = s.excludedDates ? JSON.parse(s.excludedDates as string) : [];
+    } catch(e) {
+        s.excludedDates = [];
+    }
+    sprints.push(s); 
+  }
   stmt.free();
 
   return sprints;
@@ -787,9 +819,11 @@ export const getSprintTasks = (sprintId: number) => {
   return tasks;
 };
 
-export const createSprint = (sprint: { name: string, startDate: string, endDate: string }) => {
+export const createSprint = (sprint: { name: string, startDate: string, endDate: string, capacity?: number, excludedDates?: string[] }) => {
   if (!db) throw new Error('DB not initialized');
-  db.run('INSERT INTO sprints (name, startDate, endDate, status) VALUES (?, ?, ?, ?)', [sprint.name, sprint.startDate, sprint.endDate, 'UPCOMING']);
+  const excludedDatesStr = sprint.excludedDates ? JSON.stringify(sprint.excludedDates) : '[]';
+  db.run('INSERT INTO sprints (name, startDate, endDate, status, capacity, excludedDates) VALUES (?, ?, ?, ?, ?, ?)', 
+    [sprint.name, sprint.startDate, sprint.endDate, 'UPCOMING', sprint.capacity || 0, excludedDatesStr]);
   const id = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
   saveDB();
   console.log('[DB] Sprint created and DB saved.');
@@ -806,8 +840,9 @@ export const updateSprintStatus = (sprintId: number, status: string) => {
 
 export const updateSprint = (sprint: any) => {
   if (!db) throw new Error('DB not initialized');
-  db.run('UPDATE sprints SET name = ?, startDate = ?, endDate = ?, status = ? WHERE id = ?', 
-    [sprint.name, sprint.startDate, sprint.endDate, sprint.status, sprint.id]);
+  const excludedDatesStr = sprint.excludedDates ? JSON.stringify(sprint.excludedDates) : '[]';
+  db.run('UPDATE sprints SET name = ?, startDate = ?, endDate = ?, status = ?, capacity = ?, excludedDates = ? WHERE id = ?', 
+    [sprint.name, sprint.startDate, sprint.endDate, sprint.status, sprint.capacity || 0, excludedDatesStr, sprint.id]);
   saveDB();
   console.log('[DB] Sprint updated and DB saved.');
   return sprint;
@@ -1148,9 +1183,8 @@ export const getDailyStandupData = (userId: number) => {
     const lastDayStats = lastDayStatsStmt.getAsObject([userId, `${lastActiveDateStr}%`]);
     lastDayStatsStmt.free();
 
-    // 3. Tasks for today
-    const remainingTasks = getTasks(userId).filter(t => t.status !== 'Completed');
-
+    // 3. (Removed legacy task fetching)
+    
     // 4. Best habit streak
     const topHabit = getTopHabit(userId);
 
@@ -1159,10 +1193,6 @@ export const getDailyStandupData = (userId: number) => {
         yesterday: { // Keeping key 'yesterday' for frontend compat, but content is 'last active'
             completedCount: lastDayStats.count || 0,
             totalTimeMs: lastDayStats.totalTime || 0
-        },
-        today: {
-            remainingCount: remainingTasks.length,
-            tasks: remainingTasks.slice(0, 5)
         },
         topHabit
     };

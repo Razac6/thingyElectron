@@ -44,7 +44,7 @@ const DailyChallengeWidget = () => {
         />
       </Box>
 
-      <Typography variant="body2" gutterBottom>
+      <Typography variant="body2" gutterBottom sx={{ textAlign: 'center', mt: 1, mb: 1 }}>
         {dailyChallenge.description}
       </Typography>
 
