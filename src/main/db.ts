@@ -1158,41 +1158,59 @@ export const getTopHabit = (userId: number) => {
 export const getDailyStandupData = (userId: number) => {
     if (!db) return null;
 
-    // 1. Find the last day with completed tasks
-    const lastActiveDayStmt = db.prepare("SELECT updateStatusDate FROM tasks WHERE userId = ? AND status = 'Completed' ORDER BY updateStatusDate DESC LIMIT 1");
-    const lastActiveResult = lastActiveDayStmt.getAsObject([userId]);
-    lastActiveDayStmt.free();
+    const todayStr = new Date().toISOString().split('T')[0];
+    let lastActiveDateStr = todayStr;
 
-    let lastActiveDateStr = "";
-    if (lastActiveResult && lastActiveResult.updateStatusDate) {
-        lastActiveDateStr = lastActiveResult.updateStatusDate.split(' ')[0]; // Handle "YYYY-MM-DD HH:MM:SS" or just "YYYY-MM-DD"
-        // Ensure format is YYYY-MM-DD
-        if (lastActiveDateStr.includes('.')) {
-            const parts = lastActiveDateStr.split('.');
-            lastActiveDateStr = `${parts[2]}-${parts[1]}-${parts[0]}`;
-        }
-    } else {
-        // Fallback to yesterday if no history
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        lastActiveDateStr = yesterday.toISOString().split('T')[0];
-    }
-
-    // 2. Fetch stats for that specific last active day
-    const lastDayStatsStmt = db.prepare("SELECT COUNT(*) as count, SUM(spendTime) as totalTime FROM tasks WHERE userId = ? AND status = 'Completed' AND updateStatusDate LIKE ?");
-    const lastDayStats = lastDayStatsStmt.getAsObject([userId, `${lastActiveDateStr}%`]);
-    lastDayStatsStmt.free();
-
-    // 3. (Removed legacy task fetching)
+    // 1. Find the last active day BEFORE today (to show "Yesterday's" progress)
+    const prevSessionStmt = db.prepare(`
+        SELECT startTime FROM work_sessions 
+        JOIN tasks ON work_sessions.taskId = tasks.id 
+        WHERE tasks.userId = ? AND startTime < ?
+        ORDER BY startTime DESC LIMIT 1
+    `);
+    prevSessionStmt.bind([userId, todayStr]);
     
-    // 4. Best habit streak
+    if (prevSessionStmt.step()) {
+         const row = prevSessionStmt.getAsObject();
+         if (row.startTime) {
+             lastActiveDateStr = (row.startTime as string).split('T')[0];
+         }
+    } else {
+         // Fallback to actual yesterday if no history found
+         const d = new Date();
+         d.setDate(d.getDate() - 1);
+         lastActiveDateStr = d.toISOString().split('T')[0];
+    }
+    prevSessionStmt.free();
+
+    // 2. Fetch stats for that specific day
+    
+    // A. Focus Time (from work_sessions) - REAL time spent that day
+    const timeStmt = db.prepare(`
+        SELECT SUM(ws.duration) as totalTime 
+        FROM work_sessions ws
+        JOIN tasks t ON ws.taskId = t.id
+        WHERE t.userId = :userId AND ws.startTime LIKE :datePattern
+    `);
+    const timeResult = timeStmt.getAsObject({ ':userId': userId, ':datePattern': `${lastActiveDateStr}%` });
+    timeStmt.free();
+
+    // B. Completed Tasks (from tasks table)
+    const completedStmt = db.prepare(`
+        SELECT COUNT(*) as count 
+        FROM tasks 
+        WHERE userId = :userId AND status = 'Completed' AND updateStatusDate LIKE :datePattern
+    `);
+    const completedResult = completedStmt.getAsObject({ ':userId': userId, ':datePattern': `${lastActiveDateStr}%` });
+    completedStmt.free();
+
     const topHabit = getTopHabit(userId);
 
     return {
         lastActiveDate: lastActiveDateStr,
-        yesterday: { // Keeping key 'yesterday' for frontend compat, but content is 'last active'
-            completedCount: lastDayStats.count || 0,
-            totalTimeMs: lastDayStats.totalTime || 0
+        yesterday: { 
+            completedCount: completedResult.count || 0,
+            totalTimeMs: timeResult.totalTime || 0
         },
         topHabit
     };

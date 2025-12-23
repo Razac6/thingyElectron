@@ -97,8 +97,21 @@ function TaskDetail() {
             if (sessions && sessions.length > 0) {
                 const grouped: Record<string, number> = {};
                 sessions.forEach((s: any) => {
-                    const date = s.startTime.split('T')[0];
-                    grouped[date] = (grouped[date] || 0) + (s.duration / (1000 * 60)); // minutes
+                    let date = 'Unknown';
+                    try {
+                        if (typeof s.startTime === 'string' && s.startTime.includes('T')) {
+                             date = s.startTime.split('T')[0];
+                        } else {
+                             // Handle timestamp or other formats
+                             date = new Date(s.startTime).toISOString().split('T')[0];
+                        }
+                    } catch (err) {
+                        console.error('Invalid date format:', s.startTime);
+                    }
+                    
+                    if (date !== 'Unknown') {
+                        grouped[date] = (grouped[date] || 0) + (s.duration / (1000 * 60)); // minutes
+                    }
                 });
                 
                 const labels = Object.keys(grouped).sort();

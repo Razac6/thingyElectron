@@ -30,18 +30,18 @@ const formatDuration = (ms: number) => {
 };
 
 const GREETINGS = [
-    "Gotowy na podbój dnia?",
-    "Dzisiaj będzie Twój najlepszy dzień!",
-    "Czas na odrobinę magii produktywności ✨",
-    "Zaczynamy! Jaki jest Twój główny cel?",
-    "Neural Core jest gotowy. A Ty?",
-    "Kawa wypita? No to do roboty! ☕",
-    "Pamiętaj: małe kroki prowadzą do wielkich celów.",
-    "Twoja lista zadań już na Ciebie czeka.",
-    "Skupienie to Twoja supermoc 🦸‍♂️",
-    "Zróbmy dziś coś wielkiego!",
-    "Witaj z powrotem, Mistrzu Skupienia!",
-    "Plan na dziś: być lepszym niż wczoraj."
+    "Ready to conquer the day?",
+    "Today is going to be your best day!",
+    "Time for a touch of productivity magic ✨",
+    "Let's go! What is your main goal today?",
+    "Neural Core is ready. Are you?",
+    "Coffee in hand? Let's get to work! ☕",
+    "Remember: small steps lead to big goals.",
+    "Your task list is waiting for you.",
+    "Focus is your superpower 🦸‍♂️",
+    "Let's do something great today!",
+    "Welcome back, Master of Focus!",
+    "Plan for today: be better than yesterday."
 ];
 
 export default function DailyStandupModal() {
@@ -119,7 +119,7 @@ export default function DailyStandupModal() {
               <SmartToyIcon fontSize="medium" />
           </Avatar>
           <Box sx={{ textAlign: 'left' }}>
-            <Typography variant="h6" sx={{ fontWeight: 300, lineHeight: 1.2 }}>Dzień dobry!</Typography>
+            <Typography variant="h6" sx={{ fontWeight: 300, lineHeight: 1.2 }}>Good morning!</Typography>
             <Typography variant="caption" sx={{ opacity: 0.8, fontWeight: 300 }}>{randomGreeting}</Typography>
           </Box>
       </Box>
@@ -131,13 +131,13 @@ export default function DailyStandupModal() {
                    <Typography variant="h5" sx={{ fontWeight: 100, color: '#219ebc' }}>
                        {data.yesterday.completedCount}
                    </Typography>
-                   <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 300 }}>Ukończone wczoraj</Typography>
+                   <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 300 }}>Completed Yesterday</Typography>
                </Paper>
                <Paper variant="outlined" sx={{ flex: 1, p: 1.5, textAlign: 'center', borderRadius: 2, bgcolor: '#f8f9fa' }}>
                    <Typography variant="h5" sx={{ fontWeight: 100, color: '#fb8500' }}>
                        {formatDuration(data.yesterday.totalTimeMs)}
                    </Typography>
-                   <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 300 }}>Czas skupienia</Typography>
+                   <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 300 }}>Focus Session</Typography>
                </Paper>
           </Stack>
 
@@ -146,9 +146,9 @@ export default function DailyStandupModal() {
               <Box>
                   <Stack direction="row" justifyContent="space-between" alignItems="center">
                     <Typography variant="overline" sx={{ color: 'text.secondary', fontWeight: 400, letterSpacing: 1 }}>
-                        NAJWAŻNIEJSZE NA DZIŚ
+                        TOP PRIORITY TODAY
                     </Typography>
-                    <Tooltip title={data.topSuggestion.aiReason || "Algorytm wybrał to zadanie jako priorytetowe"}>
+                    <Tooltip title={data.topSuggestion.aiReason || "The algorithm selected this task as a priority"}>
                         <HelpOutlineIcon sx={{ fontSize: 16, color: 'text.disabled', cursor: 'help' }} />
                     </Tooltip>
                   </Stack>
@@ -187,7 +187,7 @@ export default function DailyStandupModal() {
                       </Stack>
 
                       {data.topSuggestion.link && (
-                          <Tooltip title="Otwórz link">
+                          <Tooltip title="Open link">
                               <IconButton 
                                 size="small" 
                                 onClick={handleExternalLink}
@@ -201,7 +201,7 @@ export default function DailyStandupModal() {
               </Box>
           ) : (
               <Paper sx={{ p: 2, mt: 1, textAlign: 'center', bgcolor: '#f5f5f5' }}>
-                  <Typography variant="body2" color="text.secondary">Brak pilnych zadań. Czyste konto!</Typography>
+                  <Typography variant="body2" color="text.secondary">No urgent tasks. Clean slate!</Typography>
               </Paper>
           )}
 
@@ -209,7 +209,7 @@ export default function DailyStandupModal() {
           {data.topHabit && (
               <Box sx={{ mt: 2, textAlign: 'center', p: 1, bgcolor: '#fff3e0', borderRadius: 2 }}>
                   <Typography variant="caption" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, color: '#e65100', fontWeight: 300 }}>
-                      <StarIcon fontSize="inherit" /> Streak: {data.topHabit.recent_count} dni – {data.topHabit.title}
+                      <StarIcon fontSize="inherit" /> Streak: {data.topHabit.recent_count || 0} days – {data.topHabit.title}
                   </Typography>
               </Box>
           )}
@@ -223,7 +223,7 @@ export default function DailyStandupModal() {
             sx={{ borderRadius: 2, py: 1, bgcolor: '#023047', '&:hover': { bgcolor: '#219ebc' } }}
             startIcon={<CheckCircleIcon />}
         >
-          Do dzieła!
+          Let's Start!
         </Button>
       </DialogActions>
     </Dialog>
