@@ -82,8 +82,8 @@ function TaskDetail() {
       if (foundTaskInContext) {
         currentTask = foundTaskInContext;
       } else {
-        const fetchedTaskFromDb = await window.electron.db.getTask(taskIdNum);
-        currentTask = fetchedTaskFromDb;
+        const allTasks = await window.electron.database.getTasks(localStorage.getItem('userId') ? JSON.parse(localStorage.getItem('userId')!) : 1);
+        currentTask = allTasks.find((t: any) => t.id === taskIdNum);
       }
       
       if (currentTask) {
@@ -96,38 +96,46 @@ function TaskDetail() {
             const sessions = await window.electron.database.getTaskWorkSessions(taskIdNum);
             if (sessions && sessions.length > 0) {
                 const grouped: Record<string, number> = {};
+                let totalDuration = 0;
+                
                 sessions.forEach((s: any) => {
-                    let date = 'Unknown';
-                    try {
-                        if (typeof s.startTime === 'string' && s.startTime.includes('T')) {
-                             date = s.startTime.split('T')[0];
-                        } else {
-                             // Handle timestamp or other formats
-                             date = new Date(s.startTime).toISOString().split('T')[0];
-                        }
-                    } catch (err) {
-                        console.error('Invalid date format:', s.startTime);
-                    }
-                    
-                    if (date !== 'Unknown') {
-                        grouped[date] = (grouped[date] || 0) + (s.duration / (1000 * 60)); // minutes
+                    const dateObj = new Date(s.startTime);
+                    if (!isNaN(dateObj.getTime())) {
+                        const dateKey = dateObj.toLocaleDateString();
+                        // Duration in database is ms, convert to minutes
+                        const minutes = Math.round(s.duration / (1000 * 60));
+                        grouped[dateKey] = (grouped[dateKey] || 0) + minutes;
+                        totalDuration += minutes;
                     }
                 });
                 
-                const labels = Object.keys(grouped).sort();
+                const labels = Object.keys(grouped).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
                 const dataPoints = labels.map(d => grouped[d]);
+
+                // Calculate Stats
+                const avgSession = Math.round(totalDuration / sessions.length);
+                const hours = Math.floor(totalDuration / 60);
+                const mins = totalDuration % 60;
 
                 setChartData({
                     labels,
                     datasets: [
                         {
-                            label: 'Minutes Worked',
+                            label: 'Time Spent (min)',
                             data: dataPoints,
-                            backgroundColor: '#219ebc',
+                            backgroundColor: '#023047',
                             borderRadius: 4,
+                            barThickness: 20,
                         }
-                    ]
+                    ],
+                    stats: {
+                        total: `${hours}h ${mins}m`,
+                        count: sessions.length,
+                        avg: `${avgSession} min`
+                    }
                 });
+            } else {
+                setChartData(null);
             }
         } catch (e) {
             console.error("Failed to load chart data", e);
@@ -282,26 +290,54 @@ function TaskDetail() {
           <Box sx={{ mt: 3, mb: 3 }}>
               <Typography variant="h6" gutterBottom>Work History</Typography>
               {chartData ? (
-                  <Box sx={{ height: 250 }}>
-                      <Bar 
-                        data={chartData} 
-                        options={{ 
-                            responsive: true, 
-                            maintainAspectRatio: false,
-                            plugins: {
-                                legend: { display: false },
-                                tooltip: {
-                                    callbacks: {
-                                        label: (context) => `${context.parsed.y.toFixed(0)} min`
+                  <>
+                    <Box sx={{ height: 250, bgcolor: '#f8f9fa', p: 2, borderRadius: 2, mb: 2 }}>
+                        <Bar 
+                            data={chartData} 
+                            options={{ 
+                                responsive: true, 
+                                maintainAspectRatio: false,
+                                plugins: {
+                                    legend: { display: false },
+                                    tooltip: {
+                                        callbacks: {
+                                            label: (context) => `${context.parsed.y} min`
+                                        }
+                                    }
+                                },
+                                scales: {
+                                    y: { 
+                                        beginAtZero: true, 
+                                        grid: { color: '#e0e0e0' }
+                                    },
+                                    x: {
+                                        grid: { display: false }
                                     }
                                 }
-                            },
-                            scales: {
-                                y: { beginAtZero: true, title: { display: true, text: 'Minutes' } }
-                            }
-                        }} 
-                      />
-                  </Box>
+                            }} 
+                        />
+                    </Box>
+                    <Grid container spacing={2}>
+                        <Grid item xs={4}>
+                            <Paper variant="outlined" sx={{ p: 1.5, textAlign: 'center' }}>
+                                <Typography variant="caption" color="text.secondary">Total Time</Typography>
+                                <Typography variant="h6" color="primary">{chartData.stats.total}</Typography>
+                            </Paper>
+                        </Grid>
+                        <Grid item xs={4}>
+                            <Paper variant="outlined" sx={{ p: 1.5, textAlign: 'center' }}>
+                                <Typography variant="caption" color="text.secondary">Sessions</Typography>
+                                <Typography variant="h6">{chartData.stats.count}</Typography>
+                            </Paper>
+                        </Grid>
+                        <Grid item xs={4}>
+                            <Paper variant="outlined" sx={{ p: 1.5, textAlign: 'center' }}>
+                                <Typography variant="caption" color="text.secondary">Avg Session</Typography>
+                                <Typography variant="h6">{chartData.stats.avg}</Typography>
+                            </Paper>
+                        </Grid>
+                    </Grid>
+                  </>
               ) : (
                   <Alert severity="info" variant="outlined">
                       No work sessions recorded yet. Start the timer to track your progress over time!

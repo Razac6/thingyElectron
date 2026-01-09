@@ -115,6 +115,9 @@ export const initDB = async () => {
             db.run('ALTER TABLE daily_energy_logs ADD COLUMN meetingTime INTEGER DEFAULT 0');
         }
     }
+    
+    // Fix Status Casing
+    db.run("UPDATE tasks SET status = 'Completed' WHERE status = 'COMPLETED'");
   } catch (e) { console.error('[DB] Migration Error:', e); }
 
   // Seed Default Settings
@@ -124,6 +127,7 @@ export const initDB = async () => {
       { key: 'enableFatigueWarnings', value: 'true' },
       { key: 'workDayStart', value: '09:00' },
       { key: 'workDayEnd', value: '17:00' },
+      { key: 'idleTimeout', value: '600' }, // Default 10 minutes
       { key: 'aiEngine', value: 'local' },
       { key: 'geminiApiKey', value: '' },
   ];
@@ -172,40 +176,48 @@ export const getNeuralConfidence = () => {
   
   try {
       // 1. Task Volume (Max 40 pts)
-      // Each completed task gives 2 points.
-      const taskCountStmt = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE status = 'Completed' COLLATE NOCASE");
-      const taskRow = taskCountStmt.getAsObject();
-      const taskCount = Number(taskRow.count) || 0;
+      const taskCountStmt = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE status = 'Completed'");
+      let taskCount = 0;
+      if (taskCountStmt.step()) {
+          const row = taskCountStmt.getAsObject();
+          taskCount = Number(row.count) || 0;
+      }
       taskCountStmt.free();
       const taskScore = Math.min(40, taskCount * 2);
 
       // 2. Tag Maturity (Max 25 pts)
-      // Each "mature" tag (3+ uses) gives 5 points.
       const tagStmt = db.prepare("SELECT COUNT(*) as count FROM tag_analytics WHERE completed_count >= 3");
-      const tagRow = tagStmt.getAsObject();
-      const matureTags = Number(tagRow.count) || 0;
+      let matureTags = 0;
+      if (tagStmt.step()) {
+          const row = tagStmt.getAsObject();
+          matureTags = Number(row.count) || 0;
+      }
       tagStmt.free();
       const tagScore = Math.min(25, matureTags * 5);
 
       // 3. Sprint History (Max 15 pts)
-      // Each completed sprint gives 5 points.
-      const sprintStmt = db.prepare("SELECT COUNT(*) as count FROM sprints WHERE status = 'COMPLETED' COLLATE NOCASE");
-      const sprintRow = sprintStmt.getAsObject();
-      const sprintCount = Number(sprintRow.count) || 0;
+      const sprintStmt = db.prepare("SELECT COUNT(*) as count FROM sprints WHERE status = 'COMPLETED'");
+      let sprintCount = 0;
+      if (sprintStmt.step()) {
+          const row = sprintStmt.getAsObject();
+          sprintCount = Number(row.count) || 0;
+      }
       sprintStmt.free();
       const sprintScore = Math.min(15, sprintCount * 5);
 
       // 4. Habit History (Max 20 pts)
-      // Each habit log gives 1 point.
       const habitStmt = db.prepare("SELECT COUNT(*) as count FROM habit_logs WHERE value >= 1");
-      const habitRow = habitStmt.getAsObject();
-      const habitCount = Number(habitRow.count) || 0;
+      let habitCount = 0;
+      if (habitStmt.step()) {
+          const row = habitStmt.getAsObject();
+          habitCount = Number(row.count) || 0;
+      }
       habitStmt.free();
       const habitScore = Math.min(20, habitCount);
       
       const total = Math.round(taskScore + tagScore + sprintScore + habitScore);
       return Math.min(100, total);
-  } catch (error) {
+  } catch (error: any) {
       console.error('[DB] Error calculating neural confidence:', error);
       return 0;
   }
@@ -215,14 +227,16 @@ export const getAiMaturity = () => {
   if (!db) return 0;
   const trainingCount = Number(getSetting('neural_training_count') || 0);
   
-  // Data Count comes from completed tasks with spendTime
-  const taskCountStmt = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE status = 'Completed' AND spendTime > 0");
-  const taskRow = taskCountStmt.getAsObject();
-  const dataCount = Number(taskRow.count) || 0;
+  // Data Count comes from completed tasks
+  const taskCountStmt = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE status = 'Completed'");
+  let dataCount = 0;
+  if (taskCountStmt.step()) {
+      const row = taskCountStmt.getAsObject();
+      dataCount = Number(row.count) || 0;
+  }
   taskCountStmt.free();
   
   // Maturity Score: Training (max 50) + Data Volume (max 50)
-  // 25 trainings for max training score, 50 tasks for max data score
   const trainingScore = Math.min(50, trainingCount * 2); 
   const dataScore = Math.min(50, dataCount); 
   
@@ -249,12 +263,12 @@ export const getAiStats = () => {
 export const getTagAnalytics = (tagId: number) => {
   if (!db) return null;
   const stmt = db.prepare('SELECT * FROM tag_analytics WHERE tag_id = ?');
-  const result = stmt.getAsObject([tagId]); // Use getAsObject to return { column: value }
+  stmt.bind([tagId]);
+  let result: any = null;
+  if (stmt.step()) {
+      result = stmt.getAsObject();
+  }
   stmt.free();
-  // Check if result is empty (all props null/undefined if not found usually, or empty object)
-  // sql.js getAsObject returns object with keys but values might be null if no row? 
-  // Actually getAsObject returns empty object if no result? No, it usually returns object with columns if bind works.
-  // Safer to check if tag_id is present in result.
   if (result && result.tag_id) {
       return result;
   }
@@ -315,6 +329,54 @@ const updateTagAnalytics = (tagId: number, duration: number) => {
   logSystemEvent(`Analyzed #${tagName}: Updated EMA to ${hours}h (Samples: ${n})`, 'LEARNING');
 };
 
+const recalcTagAnalytics = (tagId?: number) => {
+  if (!db) return;
+  
+  // 1. Determine which tags to recalculate
+  let tagIds: number[] = [];
+  if (tagId) {
+      tagIds = [tagId];
+  } else {
+      const stmt = db.prepare('SELECT id FROM tags');
+      while (stmt.step()) tagIds.push(stmt.get()[0] as number);
+      stmt.free();
+  }
+
+  // 2. Reset analytics for these tags
+  const resetStmt = db.prepare('DELETE FROM tag_analytics WHERE tag_id = ?');
+  tagIds.forEach(id => resetStmt.run([id]));
+  resetStmt.free();
+
+  // 3. Re-process all COMPLETED tasks for these tags
+  // Collect data in memory first to avoid nested statement conflicts
+  const updates: { tagId: number, spendTime: number }[] = [];
+
+  const tasksStmt = db.prepare(`
+      SELECT t.spendTime, tt.tagId 
+      FROM tasks t
+      JOIN task_tags tt ON t.id = tt.taskId
+      WHERE t.status = 'Completed' AND tt.tagId = ?
+      ORDER BY t.updateStatusDate ASC
+  `);
+
+  tagIds.forEach(tid => {
+      tasksStmt.bind([tid]);
+      while(tasksStmt.step()) {
+          const row = tasksStmt.getAsObject();
+          updates.push({ tagId: row.tagId as number, spendTime: row.spendTime as number });
+      }
+      tasksStmt.reset();
+  });
+  tasksStmt.free();
+  
+  // 4. Perform updates
+  updates.forEach(update => {
+      updateTagAnalytics(update.tagId, update.spendTime);
+  });
+  
+  logSystemEvent(`Recalculated analytics for ${tagIds.length} tags.`, 'SYSTEM');
+};
+
 // --- Work Session Logging ---
 export const logWorkSession = (session: { taskId: number, startTime: string, endTime: string, duration: number }) => {
   if (!db) throw new Error('DB not initialized');
@@ -333,6 +395,7 @@ export const getTaskWorkSessions = (taskId: number) => {
     sessions.push(stmt.getAsObject());
   }
   stmt.free();
+  logSystemEvent(`[DEBUG] getTaskWorkSessions(${taskId}) found ${sessions.length} sessions.`, 'DEBUG');
   return sessions;
 };
 
@@ -565,7 +628,28 @@ export const globalSearch = (userId: number, query: string) => {
 
 export const deleteTask = (taskId: number) => {
   if (!db) throw new Error('DB not initialized');
+  
+  // Check if task was completed before deleting to update analytics
+  const taskStmt = db.prepare('SELECT status FROM tasks WHERE id = ?');
+  const task = taskStmt.getAsObject([taskId]);
+  taskStmt.free();
+  const wasCompleted = task.status === 'Completed';
+
+  // Get tags before deletion (cascade will remove links)
+  let tagIds: number[] = [];
+  if (wasCompleted) {
+      const tagsStmt = db.prepare('SELECT tagId FROM task_tags WHERE taskId = ?');
+      tagsStmt.bind([taskId]);
+      while (tagsStmt.step()) tagIds.push(tagsStmt.get()[0] as number);
+      tagsStmt.free();
+  }
+
   db.run('DELETE FROM tasks WHERE id = ?', [taskId]);
+  
+  if (wasCompleted && tagIds.length > 0) {
+      tagIds.forEach(id => recalcTagAnalytics(id));
+  }
+
   saveDB();
   return taskId;
 };
@@ -702,6 +786,20 @@ export const updateTask = (task: any) => {
     tagIds.forEach(tagId => {
       updateTagAnalytics(tagId, task.spendTime);
     });
+  } else if (oldStatus === 'Completed' && task.status !== 'Completed') {
+      // Task was un-completed. We must recalculate analytics for its tags to remove the bias.
+      const tagIdsStmt = db.prepare('SELECT tagId FROM task_tags WHERE taskId = ?');
+      tagIdsStmt.bind([task.id]);
+      const tagIds: number[] = [];
+      while (tagIdsStmt.step()) {
+          const row = tagIdsStmt.getAsObject();
+          tagIds.push(row.tagId as number);
+      }
+      tagIdsStmt.free();
+
+      tagIds.forEach(tagId => {
+          recalcTagAnalytics(tagId);
+      });
   }
 
   saveDB();
@@ -994,7 +1092,11 @@ export const setSetting = (key: string, value: string) => {
 export const getDailyBio = (date: string) => {
   if (!db) return { mode: 'normal', sleepScore: null, meetingTime: 30 }; // Default 30 min
   const stmt = db.prepare('SELECT * FROM daily_energy_logs WHERE date = ?');
-  const result = stmt.getAsObject([date]);
+  stmt.bind([date]);
+  let result: any = null;
+  if (stmt.step()) {
+      result = stmt.getAsObject();
+  }
   stmt.free();
   if (!result || !result.date) return { mode: 'normal', sleepScore: null, meetingTime: 30 }; // Default 30 min
   return { mode: result.mode || 'normal', sleepScore: result.sleepScore, meetingTime: result.meetingTime !== null ? result.meetingTime : 30 };
@@ -1124,7 +1226,11 @@ export const getTopHabit = (userId: number) => {
   
   // 1. Try to get favorite habit first
   const favStmt = db.prepare('SELECT * FROM habits WHERE userId = ? AND isFavorite = 1 LIMIT 1');
-  let result = favStmt.getAsObject([userId]);
+  favStmt.bind([userId]);
+  let result: any = null;
+  if (favStmt.step()) {
+      result = favStmt.getAsObject();
+  }
   favStmt.free();
 
   if (result && result.id) {
@@ -1147,7 +1253,12 @@ export const getTopHabit = (userId: number) => {
     LIMIT 1
   `);
   
-  result = stmt.getAsObject([dateStr, userId]);
+  stmt.bind([dateStr, userId]);
+  if (stmt.step()) {
+      result = stmt.getAsObject();
+  } else {
+      result = null;
+  }
   stmt.free();
   
   if (!result || !result.id) return null;

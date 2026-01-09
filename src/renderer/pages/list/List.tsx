@@ -378,9 +378,9 @@ function List() {
             <Select
               value={params.value}
               onChange={(e) => handleStatusChange(e.target.value as StatusEnum, params.row)}
-              onBlur={() => setEditingStatusId(null)}
+              onClose={() => setEditingStatusId(null)}
+              defaultOpen={true}
               autoFocus
-              open
               size="small"
               sx={{ width: '100%' }}
               onClick={(e) => e.stopPropagation()}

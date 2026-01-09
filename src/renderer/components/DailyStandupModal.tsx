@@ -22,6 +22,7 @@ import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import LaunchIcon from '@mui/icons-material/Launch';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
+import { useTimer } from '../context/TimerContext';
 
 const formatDuration = (ms: number) => {
     const hours = Math.floor(ms / (1000 * 60 * 60));
@@ -48,6 +49,7 @@ export default function DailyStandupModal() {
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<any>(null);
   const navigate = useNavigate();
+  const { refreshData } = useTimer();
 
   const randomGreeting = useMemo(() => {
       return GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
@@ -88,9 +90,15 @@ export default function DailyStandupModal() {
     return () => window.removeEventListener('open-daily-briefing', handleOpen);
   }, []);
 
+  const handleClose = () => {
+      setOpen(false);
+      refreshData();
+  };
+
   const handleTaskClick = () => {
       if (data?.topSuggestion?.id) {
           setOpen(false);
+          refreshData();
           navigate(`/task/${data.topSuggestion.id}`);
       }
   };
@@ -107,7 +115,7 @@ export default function DailyStandupModal() {
   return (
     <Dialog
         open={open}
-        onClose={() => setOpen(false)}
+        onClose={handleClose}
         maxWidth="xs"
         fullWidth
         PaperProps={{
@@ -219,7 +227,7 @@ export default function DailyStandupModal() {
         <Button
             fullWidth
             variant="contained"
-            onClick={() => setOpen(false)}
+            onClick={handleClose}
             sx={{ borderRadius: 2, py: 1, bgcolor: '#023047', '&:hover': { bgcolor: '#219ebc' } }}
             startIcon={<CheckCircleIcon />}
         >

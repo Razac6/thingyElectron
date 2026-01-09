@@ -577,6 +577,10 @@ ipcMain.on('tray:get-icon-path', (event) => {
   event.returnValue = trayIconPath;
 });
 
+ipcMain.on('electron-shell-open-external', (event, url) => {
+  shell.openExternal(url);
+});
+
 let lastFragmentationNotificationTime = 0;
 
 setInterval(() => {
@@ -630,7 +634,8 @@ setInterval(() => {
 setInterval(() => {
   if (activeTaskInfo) {
     const idleTime = powerMonitor.getSystemIdleTime();
-    if (idleTime >= 600) {
+    const threshold = Number(getSetting('idleTimeout') || 600);
+    if (idleTime >= threshold) {
       if (mainWindow) {
         mainWindow.webContents.send('activity:idle-detected');
       }

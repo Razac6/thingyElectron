@@ -59,6 +59,14 @@ interface DailyChallenge {
   status: 'ACTIVE' | 'COMPLETED';
 }
 
+export interface IdlePromptState {
+  isOpen: boolean;
+  idleTimeMs: number;
+  taskId: number;
+  taskTitle: string;
+  originalStartTime: number;
+}
+
 const getWorkdayISO = () => {
   const now = new Date();
   if (now.getHours() < 4) {
@@ -87,6 +95,10 @@ interface TimerContextType {
   insights: AnalysisResult | null;
   dailyChallenge: DailyChallenge | null;
   totalSpendTimeToday: number;
+  refreshData: () => Promise<void>;
+  idlePrompt: IdlePromptState | null;
+  handleKeepIdleTime: () => void;
+  handleDiscardIdleTime: () => Promise<void>;
 }
 
 const TimerContext = createContext<TimerContextType | undefined>(undefined);
@@ -102,6 +114,7 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
   const [insights, setInsights] = useState<AnalysisResult | null>(null);
   const [dailyChallenge, setDailyChallenge] = useState<DailyChallenge | null>(null);
   const [totalSpendTimeToday, setTotalSpendTimeToday] = useState(0);
+  const [idlePrompt, setIdlePrompt] = useState<IdlePromptState | null>(null);
   const navigate = useNavigate();
   const { settings } = useSettings();
   const { checkForAchievements, triggerRewardAnimation } = useGamification();
@@ -117,47 +130,22 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
       const currentTasks = tasksRef.current;
       const activeTask = currentTasks.find(t => t.startTimer);
       
-      if (activeTask) {
-        // We need to call stopTimer. However, stopTimer defined in component scope uses stale 'tasks'.
-        // We must replicate stopTimer logic here or make stopTimer use refs/functional updates.
-        // Replicating logic for safety and simplicity in this context:
-        
-        const taskId = activeTask.id;
-        const startTime = Number(activeTask.startTimer);
+      if (activeTask && activeTask.startTimer) {
         const IDLE_THRESHOLD = 10 * 60 * 1000; // 10 minutes
         
-        if (taskId && startTime) {
-             const now = Date.now();
-             // Calculate duration but subtract the idle time because user wasn't working
-             let timeSpent = now - startTime - IDLE_THRESHOLD;
-             
-             // Safety check: session cannot be negative (if entire session was idle)
-             if (timeSpent < 0) timeSpent = 0;
-
-             const newSpendTime = (activeTask.spendTime || 0) + timeSpent;
-             
-             // Stop the timer
-             updateTaskService({ 
-                 ...activeTask, 
-                 spendTime: newSpendTime, 
-                 startTimer: null, 
-                 updateStatusDate: new Date().toLocaleDateString() 
-             }).then(() => {
-                 // Log session with corrected end time (10 mins ago)
-                 logWorkSessionService({
-                    taskId: taskId,
-                    startTime: new Date(startTime).toISOString(),
-                    endTime: new Date(now - IDLE_THRESHOLD).toISOString(),
-                    duration: timeSpent,
-                 });
-                 // Refresh UI
-                 fetchAllData();
-                 // Notify user
-                 new Notification("💤 Idle Detected", { 
-                    body: "Timer auto-stopped. The last 10 minutes of inactivity were discarded." 
-                 });
-             });
-        }
+        // Don't auto-stop. Ask user.
+        setIdlePrompt({
+            isOpen: true,
+            idleTimeMs: IDLE_THRESHOLD,
+            taskId: activeTask.id,
+            taskTitle: activeTask.title,
+            originalStartTime: Number(activeTask.startTimer)
+        });
+        
+        // Notify user about the prompt
+        new Notification("💤 Idle Detected", { 
+           body: "Are you still working? Click to confirm." 
+        });
       }
     };
 
@@ -336,6 +324,54 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const handleKeepIdleTime = () => {
+      setIdlePrompt(null);
+      // User was working, just close prompt and let timer continue.
+  };
+
+  const handleDiscardIdleTime = async () => {
+      if (!idlePrompt) return;
+      const { taskId, originalStartTime, idleTimeMs } = idlePrompt;
+      setIdlePrompt(null); // Close prompt immediately
+
+      const currentTasks = tasksRef.current; // Use ref to get latest tasks
+      const task = currentTasks.find(t => t.id === taskId);
+      
+      if (!task) return;
+
+      const now = Date.now();
+      // "Effective" end time is NOW minus the idle time (since we discard it)
+      const effectiveEndTime = now - idleTimeMs;
+      
+      // Calculate duration of valid work
+      let duration = effectiveEndTime - originalStartTime;
+      if (duration < 0) duration = 0;
+
+      const newSpendTime = (task.spendTime || 0) + duration;
+
+      try {
+          // Log session
+          await logWorkSessionService({
+              taskId,
+              startTime: new Date(originalStartTime).toISOString(),
+              endTime: new Date(effectiveEndTime).toISOString(),
+              duration: duration
+          });
+
+          // Stop timer & Update task
+          await updateTaskService({
+              ...task,
+              spendTime: newSpendTime,
+              startTimer: null,
+              updateStatusDate: new Date().toLocaleDateString()
+          });
+
+          await fetchAllData();
+      } catch (e) {
+          console.error("Failed to discard idle time", e);
+      }
+  };
+
   return (
     <TimerContext.Provider
       value={{
@@ -355,6 +391,10 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
         insights,
         dailyChallenge,
         totalSpendTimeToday,
+        refreshData: fetchAllData,
+        idlePrompt,
+        handleKeepIdleTime,
+        handleDiscardIdleTime
       }}
     >
       {children}

@@ -95,11 +95,11 @@ export class NeuralCore {
   }
 
   private preprocessData(tasks: any[], userId: number) {
-    const inputs: number[][] = [];
-    const outputs: number[] = [];
+    const rawData: { input: number[], output: number, type: string }[] = [];
     const habits = getHabits(userId);
     const logs = getHabitLogs(userId);
 
+    // 1. Collect Raw Data
     tasks.forEach(task => {
       if (task.status === 'Completed' && task.spendTime > 0) {
         const dateObj = parseDate(task.createdAt);
@@ -114,10 +114,28 @@ export class NeuralCore {
             habitScore = completedOnDay / habits.length;
         }
 
-        inputs.push([dateObj.getHours(), dateObj.getDay(), PRIORITY_MAP[task.priority] || 2, sleep, meetingLoad, habitScore]);
-        outputs.push(task.spendTime / (1000 * 60));
+        const input = [dateObj.getHours(), dateObj.getDay(), PRIORITY_MAP[task.priority] || 2, sleep, meetingLoad, habitScore];
+        const output = task.spendTime / (1000 * 60); // minutes
+        const type = task.type || 'TASK';
+        
+        rawData.push({ input, output, type });
       }
     });
+
+    if (rawData.length < 2) {
+        const inputs = rawData.map(d => d.input);
+        const outputs = rawData.map(d => d.output);
+        return {
+            inputs: tf.tensor2d(inputs),
+            outputs: tf.tensor2d(outputs, [outputs.length, 1])
+        };
+    }
+
+    // Trust the data: No statistical filtering.
+    // The system relies on Idle Detection (TimerContext) to handle forgotten timers.
+    // Long sessions are considered valid Deep Work.
+    const inputs = rawData.map(d => d.input);
+    const outputs = rawData.map(d => d.output);
 
     return {
       inputs: tf.tensor2d(inputs),
@@ -136,7 +154,7 @@ export class NeuralCore {
 
     try {
         const { inputs, outputs } = this.preprocessData(tasks, userId);
-        if (inputs.shape[0] < 5) {
+        if (inputs.shape[0] < 2) {
             this.isTraining = false;
             inputs.dispose(); outputs.dispose();
             return;

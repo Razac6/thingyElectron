@@ -95,6 +95,25 @@ function Settings() {
             </Grid>
 
             <Grid item xs={12}>
+                <Typography gutterBottom>Idle Detection Timeout (minutes)</Typography>
+                <Typography variant="body2" color="text.secondary">
+                    If you are inactive for this long, Thingy will ask if you want to keep the timer running.
+                </Typography>
+                <Box sx={{ px: 2, mt: 2 }}>
+                    <Slider
+                        value={Math.round((Number(settings.idleTimeout || 600) / 60))}
+                        min={1}
+                        max={60}
+                        step={1}
+                        valueLabelDisplay="auto"
+                        valueLabelFormat={(value) => `${value}m`}
+                        onChange={(_, value) => updateSetting('idleTimeout', String((value as number) * 60))}
+                    />
+                </Box>
+                <Typography align="center" sx={{ mt: 1 }}>Current: {Math.round((Number(settings.idleTimeout || 600) / 60))} min</Typography>
+            </Grid>
+
+            <Grid item xs={12}>
                 <FormControlLabel
                     control={
                         <Switch 

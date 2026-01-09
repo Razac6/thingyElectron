@@ -42,6 +42,7 @@ import { useTimer } from '../context/TimerContext';
 import { useGamification } from '../context/GamificationContext';
 import Timer from './Timer';
 import SearchOverlay from './SearchOverlay';
+import IdlePromptModal from './IdlePromptModal';
 
 const animationMap = {
   cat_movement: catMovement,
@@ -140,7 +141,7 @@ export default function Layout({ children }: LayoutProps) {
   const location = useLocation();
   const [open, setOpen] = React.useState(false);
   const [searchOpen, setSearchOpen] = React.useState(false);
-  const { tasks, stopTimer } = useTimer();
+  const { tasks, stopTimer, idlePrompt, handleKeepIdleTime, handleDiscardIdleTime } = useTimer();
   const { rewardAnimation, hideRewardAnimation } = useGamification();
 
   useEffect(() => {
@@ -182,6 +183,15 @@ export default function Layout({ children }: LayoutProps) {
         </Box>
       )}
       <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} />
+      {idlePrompt && (
+        <IdlePromptModal
+          open={idlePrompt.isOpen}
+          idleTimeMs={idlePrompt.idleTimeMs}
+          taskTitle={idlePrompt.taskTitle}
+          onKeep={handleKeepIdleTime}
+          onDiscard={handleDiscardIdleTime}
+        />
+      )}
       <AppBar position="fixed" open={open}>
         <Toolbar sx={{ display: 'flex', justifyContent: 'space-between' }}>
           <Box sx={{ display: 'flex', alignItems: 'center' }}>

@@ -44,6 +44,7 @@ contextBridge.exposeInMainWorld('electron', {
     getHourlyProductivity: () => ipcRenderer.invoke('db:get-hourly-productivity'),
     getDailyProductivity: (userId: number) => ipcRenderer.invoke('db:get-daily-productivity', userId),
     getContributionData: (userId: number, days?: number) => ipcRenderer.invoke('db:get-contribution-data', userId, days),
+    getTaskWorkSessions: (taskId: number) => ipcRenderer.invoke('db:get-task-work-sessions', taskId),
     getTagByName: (name: string) => ipcRenderer.invoke('db:get-tag-by-name', name),
     getAllTags: () => ipcRenderer.invoke('db:get-all-tags'),
     getSystemLogs: (limit?: number) => ipcRenderer.invoke('db:get-system-logs', limit),
