@@ -5,18 +5,18 @@
   "description": "Companion extension for Thingy app. Blocks distractions like YouTube Shorts.",
   "permissions": [
     "storage",
-    "scripting",
-    "activeTab"
+    "scripting"
   ],
   "host_permissions": [
-    "*://*.youtube.com/*"
+    "https://*.youtube.com/*"
   ],
   "background": {
-    "service_worker": "dist/background.js"
+    "service_worker": "dist/background.js",
+    "type": "module"
   },
   "content_scripts": [
     {
-      "matches": ["*://*.youtube.com/*"],
+      "matches": ["https://*.youtube.com/*"],
       "js": ["dist/content.js"],
       "run_at": "document_end"
     }

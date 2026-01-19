@@ -1,2 +1,2 @@
-(()=>{"use strict";console.log("[Thingy Companion] Background service worker started."),module.exports={}})();
+(()=>{"use strict";var e={};console.log("[Thingy Companion] Background service worker started.");var r=self;for(var o in e)r[o]=e[o];e.__esModule&&Object.defineProperty(r,"__esModule",{value:!0})})();
 //# sourceMappingURL=background.js.map

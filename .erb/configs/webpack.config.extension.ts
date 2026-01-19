@@ -27,6 +27,12 @@ const configuration: webpack.Configuration = {
     path: extensionDistPath,
     filename: '[name].js',
     clean: true, // Clean the dist folder before build
+    // Override base config's commonjs2 library type which causes "module is not defined" in browser
+    library: {
+      type: 'self', 
+    },
+    publicPath: '',
+    globalObject: 'self',
   },
 
   optimization: {
