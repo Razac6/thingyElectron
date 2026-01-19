@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Thingy Companion",
+  "version": "1.0.0",
+  "description": "Companion extension for Thingy app. Blocks distractions like YouTube Shorts.",
+  "permissions": [
+    "storage",
+    "scripting",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "*://*.youtube.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "icons": {
+    "16": "assets/16x16.png",
+    "48": "assets/48x48.png",
+    "128": "assets/128x128.png"
+  }
+}

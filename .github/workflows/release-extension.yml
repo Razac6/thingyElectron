@@ -1,0 +1,47 @@
+name: Build & Release Chrome Extension
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Extension Version (e.g., ext-v1.0.0)'
+        required: true
+        default: 'ext-v1.0.0'
+
+jobs:
+  release-extension:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        # We need dependencies to run webpack, even though we are not building the electron app
+        run: npm ci
+
+      - name: Build Extension
+        run: npm run build:extension
+
+      - name: Package Extension
+        # Zipping manifest, dist folder (JS code), and assets
+        run: zip -r thingy-companion.zip chrome-extension/manifest.json chrome-extension/dist chrome-extension/assets
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.event.inputs.version }}
+          name: Extension Release ${{ github.event.inputs.version }}
+          files: thingy-companion.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
