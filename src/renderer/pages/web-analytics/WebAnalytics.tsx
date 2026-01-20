@@ -14,10 +14,11 @@ const WebAnalytics = () => {
     const fetchStats = async () => {
       try {
         // @ts-ignore
-        const data = await window.electron.ipcRenderer.invoke('db:get-todays-web-stats');
+        const data = await window.electron.database.getTodaysWebStats();
         setStats(data);
       } catch (error) {
-        console.error('Failed to fetch web stats', error);
+        console.error('WebAnalytics: Failed to fetch stats. Ensure app is restarted.', error);
+        setStats({ topDomains: [], totalDuration: 0 }); // Fallback to avoid stuck loading
       }
     };
 

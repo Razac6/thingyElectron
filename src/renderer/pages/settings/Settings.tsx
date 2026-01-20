@@ -4,14 +4,24 @@ import { useSettings } from '../../context/SettingsContext';
 import { forceNeuralTraining } from '../../services/DatabaseService';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import SyncIcon from '@mui/icons-material/Sync';
+import AddIcon from '@mui/icons-material/Add';
 
 function Settings() {
-  const { settings, updateSetting, loading } = useSettings();
-  const [training, setTraining] = useState(false);
-  const [webSettings, setWebSettings] = useState<any>(null);
+    const { settings, updateSetting, loading } = useSettings();
+    const [training, setTraining] = useState(false);
+    const [webSettings, setWebSettings] = useState<any>(null);
+    const [newSiteInput, setNewSiteInput] = useState('');
+  
+    const defaultSites = ['youtube.com/shorts', 'facebook.com', 'instagram.com', 'twitter.com', 'tiktok.com', 'onet.pl', 'lowcygier.pl'];
+  
+    useEffect(() => {
+        // @ts-ignore
 
-  useEffect(() => {
-    window.electron.ipcRenderer.invoke('db:get-web-settings').then(setWebSettings);
+      window.electron.database.getWebSettings()
+
+          .then(setWebSettings)
+
+  ;
   }, []);
 
   const handleWebSettingChange = (key: string, value: any) => {
@@ -20,7 +30,19 @@ function Settings() {
       }
       const newSettings = { ...webSettings, [key]: value };
       setWebSettings(newSettings);
-      window.electron.ipcRenderer.invoke('db:save-web-settings', newSettings);
+      // @ts-ignore
+      window.electron.database.saveWebSettings(newSettings);
+  };
+
+  const handleAddSite = () => {
+      if (!newSiteInput.trim()) return;
+      const site = newSiteInput.trim();
+      // Add to blocked sites if not present
+      if (!webSettings.blockedSites.includes(site)) {
+           const newSites = [...(webSettings.blockedSites || []), site];
+           handleWebSettingChange('blockedSites', newSites);
+      }
+      setNewSiteInput('');
   };
 
   const toggleBlockedSite = (site: string) => {
@@ -260,7 +282,7 @@ function Settings() {
             <Grid item xs={12}>
                 <Typography variant="subtitle2" sx={{ mt: 2, mb: 1 }}>Blocked Sites:</Typography>
                 <FormGroup row>
-                    {['youtube.com/shorts', 'facebook.com', 'instagram.com', 'twitter.com', 'tiktok.com', 'onet.pl', 'lowcygier.pl'].map(site => (
+                    {Array.from(new Set([...defaultSites, ...(webSettings.blockedSites || [])])).map(site => (
                         <FormControlLabel
                             key={site}
                             control={
@@ -274,6 +296,26 @@ function Settings() {
                         />
                     ))}
                 </FormGroup>
+                
+                <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
+                    <TextField 
+                        size="small"
+                        placeholder="Add website (e.g. reddit.com)"
+                        value={newSiteInput}
+                        onChange={(e) => setNewSiteInput(e.target.value)}
+                        onKeyPress={(e) => e.key === 'Enter' && handleAddSite()}
+                        disabled={!webSettings.blockingEnabled}
+                        sx={{ flexGrow: 1, maxWidth: 300 }}
+                    />
+                     <Button 
+                        variant="outlined" 
+                        startIcon={<AddIcon />}
+                        onClick={handleAddSite}
+                        disabled={!newSiteInput.trim() || !webSettings.blockingEnabled}
+                    >
+                        Add
+                    </Button>
+                </Box>
             </Grid>
              <Grid item xs={12}>
                 <TextField
@@ -291,29 +333,34 @@ function Settings() {
                 <Typography variant="body2" color="text.secondary">
                     How often the browser extension sends data to Thingy.
                 </Typography>
-                <Box sx={{ px: 2, mt: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <Slider
-                        value={Number(settings.web_sync_interval) || 60}
-                        onChange={(_, v) => updateSetting('web_sync_interval', String(v))}
-                        step={15}
-                        marks
-                        min={15}
-                        max={240}
-                        valueLabelDisplay="auto"
-                        valueLabelFormat={(value) => `${value}m`}
-                        sx={{ flexGrow: 1 }}
+                <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <TextField
+                        type="number"
+                        size="small"
+                        label="Minutes"
+                        value={settings.web_sync_interval || 60}
+                        onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            if (!isNaN(val) && val > 0) {
+                                updateSetting('web_sync_interval', String(val));
+                            }
+                        }}
+                        sx={{ width: 120 }}
                     />
                     <Button 
                         variant="contained" 
                         startIcon={<SyncIcon />}
                         onClick={() => {
-                            window.electron.ipcRenderer.invoke('server:request-sync');
+                            // @ts-ignore
+                            window.electron.database.requestSync();
                         }}
                     >
                         Sync Now
                     </Button>
                 </Box>
-                <Typography align="center" sx={{ mt: 1 }}>Every {settings.web_sync_interval || 60} minutes</Typography>
+                <Typography variant="caption" sx={{ mt: 1, display: 'block', color: 'text.secondary' }}>
+                    Currently syncing every {settings.web_sync_interval || 60} minutes.
+                </Typography>
             </Grid>
             </>
             )}

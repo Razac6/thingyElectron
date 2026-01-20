@@ -76,6 +76,14 @@ contextBridge.exposeInMainWorld('electron', {
     getDailyChallenge: (userId: number) => ipcRenderer.invoke('db:get-daily-challenge', userId),
     getProductivityInsights: (userId: number) => ipcRenderer.invoke('db:get-productivity-insights', userId),
     getDailyStandup: (userId: number) => ipcRenderer.invoke('db:get-daily-standup', userId),
+    // Web Integration
+    getWebSettings: () => ipcRenderer.invoke('db:get-web-settings'),
+    saveWebSettings: (settings: any) => ipcRenderer.invoke('db:save-web-settings', settings),
+    getTodaysWebStats: () => ipcRenderer.invoke('db:get-todays-web-stats'),
+    requestSync: () => ipcRenderer.invoke('server:request-sync'),
+  },
+  app: {
+    openDevTools: () => ipcRenderer.invoke('app:open-devtools'),
   },
   ipcRenderer: {
     on(channel: string, func: (...args: unknown[]) => void) {

@@ -58,10 +58,13 @@ const updateBlockingRules = async (settings: any, focusMode: boolean) => {
     return;
   }
 
-  const newRules = settings.blockedSites.map((site: string, index: number) => ({
+  const newRules: any[] = settings.blockedSites.map((site: string, index: number) => ({
     id: index + 1,
     priority: 1,
-    action: { type: 'block' },
+    action: { 
+      type: 'redirect',
+      redirect: { extensionPath: '/blocked.html' }
+    },
     condition: { urlFilter: site, resourceTypes: ['main_frame'] }
   }));
 

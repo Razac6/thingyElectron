@@ -38,7 +38,7 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import StopIcon from '@mui/icons-material/Stop'; // Use the square Stop icon
 import SearchIcon from '@mui/icons-material/Search';
 import TerminalIcon from '@mui/icons-material/Terminal';
-import PublicIcon from '@mui/icons-material/Public';
+import ExtensionIcon from '@mui/icons-material/Extension';
 import { useTimer } from '../context/TimerContext';
 import { useGamification } from '../context/GamificationContext';
 import Timer from './Timer';
@@ -62,7 +62,7 @@ const menuItems = [
   { text: 'Habits', path: '/habits', icon: <LoopIcon /> },
   { text: 'Sprints', path: '/sprints', icon: <SprintIcon /> },
   { text: 'Statistics', path: '/statistics', icon: <BarChartIcon /> },
-  { text: 'Web Activity', path: '/web-activity', icon: <PublicIcon /> },
+  { text: 'Web Activity', path: '/web-activity', icon: <ExtensionIcon /> },
   { text: 'Profile', path: '/profile', icon: <PersonIcon /> },
   { text: 'Notes', path: '/notes', icon: <NoteAltIcon /> },
 ];

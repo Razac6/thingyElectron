@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Focus Mode Active</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #023047; /* Thingy Dark Blue */
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: white;
+            text-align: center;
+        }
+
+        .container {
+            max-width: 600px;
+            padding: 40px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            animation: fadeIn 0.5s ease-out;
+        }
+
+        h1 {
+            font-size: 3rem;
+            margin-bottom: 10px;
+            color: #8ecae6; /* Light Blue */
+        }
+
+        p {
+            font-size: 1.2rem;
+            line-height: 1.6;
+            margin-bottom: 30px;
+            color: #aebbc2;
+        }
+
+        .icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+            display: inline-block;
+            animation: float 3s ease-in-out infinite;
+        }
+
+        .btn {
+            background-color: #fb8500; /* Orange */
+            color: white;
+            border: none;
+            padding: 15px 32px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: transform 0.2s, background-color 0.2s;
+            font-weight: bold;
+            box-shadow: 0 4px 15px rgba(251, 133, 0, 0.4);
+        }
+
+        .btn:hover {
+            background-color: #ffb703; /* Yellow/Gold */
+            transform: translateY(-2px);
+        }
+
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-15px); }
+            100% { transform: translateY(0px); }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .highlight {
+            color: #ffb703;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">🛡️</div>
+        <h1>Focus Mode Active</h1>
+        <p>
+            This site (<span id="site-name" class="highlight">...</span>) is blocked by <strong>Thingy</strong>.
+            <br>
+            You are currently in a Deep Work session. Don't break the flow!
+        </p>
+        <button class="btn" onclick="goBack()">Get Back to Work</button>
+    </div>
+
+    <script>
+        // Get the domain that was blocked from URL params if possible, 
+        // strictly speaking we can't easily pass it via declarativeNetRequest redirect
+        // without complex regex, so we'll keep it generic or check referrer.
+        document.getElementById('site-name').innerText = 'Distraction';
+        
+        function goBack() {
+            // Try to close tab if it was opened fresh, otherwise go back
+            if (history.length > 1) {
+                history.back();
+            } else {
+                window.close();
+            }
+        }
+    </script>
+</body>
+</html>
