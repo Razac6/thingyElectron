@@ -3,11 +3,6 @@ const API_URL = 'http://127.0.0.1:3333/api';
 let syncIntervalMinutes = 60; // Default
 let lastSyncTime = Date.now();
 
-// Thingy Companion - Background Worker
-const API_URL = 'http://127.0.0.1:3333/api';
-let syncIntervalMinutes = 60; // Default
-let lastSyncTime = Date.now();
-
 // Create Context Menu on Install
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
