@@ -513,6 +513,39 @@ ipcMain.handle('db:force-neural-training', (event, userId) => {
     return true;
 });
 
+import { personalityEngine } from './PersonalityEngine';
+import { getFocusContext } from './db';
+
+// ... (existing imports)
+
+// --- Listen for Extension Events ---
+// ... (existing listeners)
+
+ipcMain.handle('db:get-ai-message', (event, userId) => {
+    // Gather Context
+    const focusScore = getFocusContext(Date.now()) * 100; // 0-100
+    const idleTimeMin = (powerMonitor.getSystemIdleTime()) / 60;
+    
+    // Get Task Info if available
+    let tasksRemaining = 0;
+    const sprint = getActiveSprint();
+    if (sprint) {
+        const tasks = getSprintTasks(sprint.id);
+        tasksRemaining = tasks.filter(t => t.status !== 'Completed').length;
+    }
+
+    const context = {
+        mood: 'STABLE' as any, // Will be overridden by generateMessage logic
+        userName: 'Marcin', // Hardcoded or fetch from profile
+        focusScore: Math.round(focusScore),
+        idleTimeMin: Math.round(idleTimeMin),
+        tasksRemaining,
+        habitScore: 0.5 // Simplified
+    };
+
+    return personalityEngine.generateMessage(context);
+});
+
 ipcMain.handle('db:get-productivity-insights', async (event, userId) => {
   refreshInsights(userId); // Ensure fresh data
 

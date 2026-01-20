@@ -84,7 +84,9 @@ function List() {
 
   // Handle Quick Add Draft from Extension
   useEffect(() => {
+    console.log('List: Location changed', location);
     if (location.state && location.state.draftTask) {
+        console.log('List: Found draft task in state', location.state.draftTask);
         const draft = location.state.draftTask;
         setNewTask(prev => ({
             ...prev,
@@ -96,9 +98,9 @@ function List() {
         }));
         setOpenDialog(true);
         // Clear state so it doesn't reopen on refresh
-        window.history.replaceState({}, document.title);
+        navigate(location.pathname, { replace: true, state: {} });
     }
-  }, [location]);
+  }, [location, navigate]);
   const [showCompletedTasks, setShowCompletedTasks] = useState(true);
   const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
   const [currentMenuTaskId, setCurrentMenuTaskId] = useState<null | number>(null);

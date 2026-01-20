@@ -1,8 +1,7 @@
-import React, { useEffect, useState } from 'react';
-import { Box, Typography, Paper, LinearProgress, Grid, CircularProgress, Tooltip, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Button } from '@mui/material';
+import React, { useEffect, useState, useRef } from 'react';
+import { Box, Typography, Paper, CircularProgress, Tooltip, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Button, Zoom, LinearProgress } from '@mui/material';
 import PsychologyIcon from '@mui/icons-material/Psychology';
-import ScienceIcon from '@mui/icons-material/Science';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import SmartToyIcon from '@mui/icons-material/SmartToy'; 
 import SummarizeIcon from '@mui/icons-material/Summarize';
 
 interface AiStats {
@@ -18,6 +17,10 @@ const AiStatusWidget = () => {
   const [reportOpen, setReportOpen] = useState(false);
   const [reportText, setReportText] = useState('');
   const [reportLoading, setReportLoading] = useState(false);
+  
+  const [message, setMessage] = useState<string>('');
+  const [showBubble, setShowBubble] = useState(false);
+  const bubbleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const fetchStats = async () => {
     try {
@@ -30,8 +33,26 @@ const AiStatusWidget = () => {
     }
   };
 
+  const fetchAiMessage = async () => {
+      try {
+          const userStr = localStorage.getItem('userId');
+          const userId = userStr ? JSON.parse(userStr) : 1;
+          const msg = await window.electron.database.getAiMessage(userId);
+          
+          if (msg !== message || !showBubble) {
+              setMessage(msg);
+              setShowBubble(true);
+              
+              if (bubbleTimeoutRef.current) clearTimeout(bubbleTimeoutRef.current);
+              bubbleTimeoutRef.current = setTimeout(() => setShowBubble(false), 12000);
+          }
+      } catch (e) {
+          console.error(e);
+      }
+  };
+
   const handleGenerateReport = async () => {
-      setReportText(''); // Clear old report immediately
+      setReportText(''); 
       setReportOpen(true);
       setReportLoading(true);
       try {
@@ -48,9 +69,19 @@ const AiStatusWidget = () => {
 
   useEffect(() => {
     fetchStats();
-    // Refresh occasionally or on mount
-    const interval = setInterval(fetchStats, 60000); // 1 min refresh
-    return () => clearInterval(interval);
+    setTimeout(fetchAiMessage, 1500);
+
+    const loop = setInterval(() => {
+        if (!showBubble) fetchAiMessage();
+    }, 180000); 
+
+    const statsInterval = setInterval(fetchStats, 60000);
+
+    return () => {
+        clearInterval(loop);
+        clearInterval(statsInterval);
+        if (bubbleTimeoutRef.current) clearTimeout(bubbleTimeoutRef.current);
+    };
   }, []);
 
   if (loading || !stats) {
@@ -64,110 +95,103 @@ const AiStatusWidget = () => {
   const isMature = stats.maturity >= 100;
 
   return (
-    <Paper sx={{ p: 2, height: '100%', position: 'relative', overflow: 'hidden' }}>
-      {/* Background decoration for AI feel */}
-      <Box sx={{
-          position: 'absolute',
-          top: -20,
-          right: -20,
-          opacity: 0.05,
-          transform: 'rotate(15deg)'
-      }}>
-          <PsychologyIcon sx={{ fontSize: 150 }} />
-      </Box>
-
+    <Paper sx={{ p: 2, height: '100%', position: 'relative', overflow: 'visible', display: 'flex', flexDirection: 'column' }}>
+      
+      {/* Header */}
       <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
         <Box display="flex" alignItems="center" gap={1}>
             <PsychologyIcon color={isMature ? "secondary" : "action"} />
-            <Typography variant="h6">Neural Core Status</Typography>
-            {isMature && <CheckCircleIcon color="success" fontSize="small" />}
+            <Typography variant="h6">Neural Core</Typography>
         </Box>
-        <Tooltip title="Generuj Raport AI">
-            <IconButton onClick={handleGenerateReport} color="primary" size="small">
-                <SummarizeIcon />
+        <Tooltip title="Raport Dnia">
+            <IconButton onClick={handleGenerateReport} size="small" color="primary">
+                <SummarizeIcon fontSize="small" />
             </IconButton>
         </Tooltip>
       </Box>
 
-      <Grid container spacing={2}>
-        <Grid item xs={12} sm={4} display="flex" flexDirection="column" alignItems="center" justifyContent="center">
-            {/* Maturity Circle */}
-            <Box position="relative" display="inline-flex">
-                <CircularProgress 
-                    variant="determinate" 
-                    value={Math.min(stats.maturity, 100)} 
-                    size={80}
-                    thickness={4}
-                    color={isMature ? "secondary" : "primary"}
-                />
+      <Box sx={{ flexGrow: 1, display: 'flex', gap: 2 }}>
+          {/* Left: Robot & Bubble */}
+          <Box sx={{ width: '80px', display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative' }}>
+              
+              {/* Speech Bubble */}
+              <Zoom in={showBubble}>
                 <Box
+                    onClick={() => setShowBubble(false)}
                     sx={{
-                    top: 0,
-                    left: 0,
-                    bottom: 0,
-                    right: 0,
-                    position: 'absolute',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexDirection: 'column'
+                        position: 'absolute',
+                        bottom: '90px', // Above robot
+                        left: '10px',
+                        zIndex: 100,
+                        bgcolor: '#023047',
+                        color: 'white',
+                        p: 1.5,
+                        borderRadius: '12px',
+                        borderBottomLeftRadius: '0px',
+                        minWidth: '180px',
+                        maxWidth: '250px',
+                        boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
+                        cursor: 'pointer',
+                        '&::after': {
+                            content: '""',
+                            position: 'absolute',
+                            bottom: '-10px',
+                            left: '0px',
+                            borderStyle: 'solid',
+                            borderWidth: '10px 10px 0 0',
+                            borderColor: '#023047 transparent transparent transparent',
+                        }
                     }}
                 >
-                    <Typography variant="h5" component="div" color="text.secondary">
-                    {Math.min(stats.maturity, 100)}%
-                    </Typography>
-                    <Typography variant="caption" component="div" color="text.secondary">
-                        Maturity
+                    <Typography variant="body2" sx={{ fontSize: '0.85rem', fontWeight: 500 }}>
+                        {message}
                     </Typography>
                 </Box>
-            </Box>
-            <Typography variant="subtitle2" sx={{ mt: 1, color: isMature ? 'success.main' : 'text.secondary' }}>
-                {isMature ? 'Active & Learning' : 'Calibration Phase'}
-            </Typography>
-        </Grid>
+              </Zoom>
 
-        <Grid item xs={12} sm={8}>
-            <Box mb={2}>
-                <Box display="flex" justifyContent="space-between">
-                    <Typography variant="body2" color="text.secondary">Confidence Score</Typography>
-                    <Typography variant="body2" fontWeight="bold">{stats.confidence}/100</Typography>
-                </Box>
-                <LinearProgress 
-                    variant="determinate" 
-                    value={Math.min(stats.confidence, 100)} 
-                    color="primary" 
-                    sx={{ height: 8, borderRadius: 4, mt: 0.5 }}
-                />
-                <Typography variant="caption" color="text.secondary">
-                    Based on task consistency and history.
-                </Typography>
-            </Box>
-
-            <Grid container spacing={1}>
-                <Grid item xs={6}>
-                    <Paper variant="outlined" sx={{ p: 1, textAlign: 'center' }}>
-                        <Typography variant="h6" color="primary">{stats.trainingCount}</Typography>
-                        <Typography variant="caption" color="text.secondary">Training Cycles</Typography>
-                    </Paper>
-                </Grid>
-                <Grid item xs={6}>
-                    <Paper variant="outlined" sx={{ p: 1, textAlign: 'center' }}>
-                        <Typography variant="h6" color="secondary">{stats.dataCount}</Typography>
-                        <Typography variant="caption" color="text.secondary">Data Points</Typography>
-                    </Paper>
-                </Grid>
-            </Grid>
-        </Grid>
-      </Grid>
-      
-      {!isMature && (
-          <Box mt={2} p={1} bgcolor="rgba(255, 152, 0, 0.1)" borderRadius={1}>
-              <Typography variant="caption" color="warning.main">
-                  <ScienceIcon fontSize="inherit" sx={{ mr: 0.5, verticalAlign: 'text-bottom' }} />
-                  System is still learning your patterns. Predictions may vary.
+              {/* Robot Icon (The "Head") */}
+              <Box 
+                onClick={() => fetchAiMessage()}
+                sx={{ 
+                    cursor: 'pointer',
+                    bgcolor: 'rgba(0,0,0,0.04)',
+                    p: 1,
+                    borderRadius: '50%',
+                    display: 'flex',
+                    transition: 'all 0.2s',
+                    '&:hover': { bgcolor: 'rgba(0,0,0,0.08)', transform: 'scale(1.05)' }
+                }}
+              >
+                <SmartToyIcon sx={{ fontSize: 40, color: isMature ? '#219ebc' : '#ffb703' }} />
+              </Box>
+              
+              <Typography variant="caption" sx={{ mt: 1, fontWeight: 'bold', color: isMature ? 'success.main' : 'warning.main' }}>
+                  {isMature ? 'ONLINE' : 'CALIBRATING'}
               </Typography>
           </Box>
-      )}
+
+          {/* Right: Detailed Stats */}
+          <Box sx={{ flexGrow: 1 }}>
+              <Box mb={1.5}>
+                  <Box display="flex" justifyContent="space-between">
+                      <Typography variant="caption" color="text.secondary">Confidence</Typography>
+                      <Typography variant="caption" fontWeight="bold">{stats.confidence}%</Typography>
+                  </Box>
+                  <LinearProgress variant="determinate" value={stats.confidence} sx={{ height: 6, borderRadius: 3 }} />
+              </Box>
+
+              <Box display="flex" gap={1}>
+                  <Box sx={{ flex: 1, bgcolor: 'rgba(0,0,0,0.02)', p: 1, borderRadius: 1, textAlign: 'center', border: '1px solid rgba(0,0,0,0.05)' }}>
+                      <Typography variant="subtitle2" color="primary">{stats.trainingCount}</Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>Cycles</Typography>
+                  </Box>
+                  <Box sx={{ flex: 1, bgcolor: 'rgba(0,0,0,0.02)', p: 1, borderRadius: 1, textAlign: 'center', border: '1px solid rgba(0,0,0,0.05)' }}>
+                      <Typography variant="subtitle2" color="secondary">{stats.dataCount}</Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>Data</Typography>
+                  </Box>
+              </Box>
+          </Box>
+      </Box>
 
       <Dialog open={reportOpen} onClose={() => setReportOpen(false)} maxWidth="sm" fullWidth>
           <DialogTitle>Raport AI</DialogTitle>

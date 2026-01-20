@@ -20,6 +20,7 @@ import {
   getDailyChallenge,
   createTask as createTaskService,
   deleteTask as deleteTaskService,
+  getDailyBio
 } from '../services/DatabaseService';
 
 interface DailyProgressEntry {
@@ -97,8 +98,27 @@ interface TimerContextType {
   totalSpendTimeToday: number;
   refreshData: () => Promise<void>;
   idlePrompt: IdlePromptState | null;
+  createTask: (newTask: Partial<Task>) => Promise<void>;
+  deleteTask: (taskId: number) => Promise<void>;
+  startTimer: (taskId: number) => Promise<void>;
+  stopTimer: (taskId: number) => Promise<void>;
+  isLoading: boolean;
+  productivityData: DailyProgressEntry[];
+  isLoadingProductivity: boolean;
+  contributionData: any[];
+  isLoadingContribution: boolean;
+  hourlyProductivity: any[];
+  insights: AnalysisResult | null;
+  dailyChallenge: DailyChallenge | null;
+  totalSpendTimeToday: number;
+  refreshData: () => Promise<void>;
+  idlePrompt: IdlePromptState | null;
   handleKeepIdleTime: () => void;
   handleDiscardIdleTime: () => Promise<void>;
+  isBoostMode: boolean;
+  toggleBoostMode: (forceState?: boolean) => void;
+  dailyMode: string;
+  setDailyMode: (mode: string) => void;
 }
 
 const TimerContext = createContext<TimerContextType | undefined>(undefined);
@@ -115,9 +135,15 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
   const [dailyChallenge, setDailyChallenge] = useState<DailyChallenge | null>(null);
   const [totalSpendTimeToday, setTotalSpendTimeToday] = useState(0);
   const [idlePrompt, setIdlePrompt] = useState<IdlePromptState | null>(null);
+  const [isBoostMode, setIsBoostMode] = useState(false);
+  const [dailyMode, setDailyMode] = useState('normal');
   const navigate = useNavigate();
   const { settings } = useSettings();
   const { checkForAchievements, triggerRewardAnimation } = useGamification();
+
+  const toggleBoostMode = (forceState?: boolean) => {
+      setIsBoostMode(prev => forceState !== undefined ? forceState : !prev);
+  };
   
   // Ref to access latest tasks inside the event listener closure
   const tasksRef = React.useRef(tasks);
@@ -181,14 +207,16 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
     setIsLoadingContribution(true);
     try {
       // Fetch insights first to ensure Daily Challenge is generated if missing
+      const todayISO = getWorkdayISO();
       const insightsData = await getProductivityInsights();
       
-      const [taskData, prodData, contData, hourlyData, challengeData] = await Promise.all([
+      const [taskData, prodData, contData, hourlyData, challengeData, bioData] = await Promise.all([
         fetchTasks(navigate),
         getDailyProductivity(),
         getContributionData(Number(settings.activityGraphDays) || 365),
         getHourlyProductivity(),
-        getDailyChallenge(), // Now fetched after insights generation trigger
+        getDailyChallenge(), 
+        getDailyBio(todayISO)
       ]);
       
       setTasks(taskData || []);
@@ -197,6 +225,7 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
       setHourlyProductivity(hourlyData || []);
       setInsights(insightsData);
       setDailyChallenge(challengeData);
+      if (bioData) setDailyMode(bioData.mode);
     } catch (error) {
       console.error('Failed to fetch data', error);
     } finally {
@@ -394,7 +423,11 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
         refreshData: fetchAllData,
         idlePrompt,
         handleKeepIdleTime,
-        handleDiscardIdleTime
+        handleDiscardIdleTime,
+        isBoostMode,
+        toggleBoostMode,
+        dailyMode,
+        setDailyMode
       }}
     >
       {children}

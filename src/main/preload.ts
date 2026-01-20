@@ -75,6 +75,7 @@ contextBridge.exposeInMainWorld('electron', {
     forceNeuralTraining: (userId: number) => ipcRenderer.invoke('db:force-neural-training', userId),
     getDailyChallenge: (userId: number) => ipcRenderer.invoke('db:get-daily-challenge', userId),
     getProductivityInsights: (userId: number) => ipcRenderer.invoke('db:get-productivity-insights', userId),
+    getAiMessage: (userId: number) => ipcRenderer.invoke('db:get-ai-message', userId),
     getDailyStandup: (userId: number) => ipcRenderer.invoke('db:get-daily-standup', userId),
     // Web Integration
     getWebSettings: () => ipcRenderer.invoke('db:get-web-settings'),

@@ -1541,6 +1541,71 @@ export const getTodaysAppStats = () => {
   }
 };
 
+export const getFocusContext = (timestamp: number): number => {
+  if (!db) return 1.0;
+  
+  const oneHourAgo = timestamp - (60 * 60 * 1000);
+  let distractionDuration = 0;
+  let totalDuration = 0;
+
+  // 1. Web Analysis
+  const webSettings = getWebBlockingSettings();
+  const blockedSites = new Set(webSettings.blockedSites || []);
+  
+  // Get web activity in the last hour
+  const webStmt = db.prepare(`
+      SELECT ws.domain, ws.duration, dc.category
+      FROM web_stats ws
+      LEFT JOIN domain_categories dc ON ws.domain = dc.domain
+      WHERE ws.timestamp >= ? AND ws.timestamp <= ?
+  `);
+  webStmt.bind([oneHourAgo, timestamp]);
+  
+  while(webStmt.step()) {
+      const row = webStmt.getAsObject();
+      const domain = row.domain as string;
+      const duration = row.duration as number;
+      const category = row.category as string;
+      
+      totalDuration += duration;
+
+      // Check explicit blocklist or negative categories
+      if (blockedSites.has(domain) || category === 'Social' || category === 'Entertainment') {
+          distractionDuration += duration;
+      }
+  }
+  webStmt.free();
+
+  // 2. App Analysis
+  const appStmt = db.prepare(`
+      SELECT aa.app_name, aa.duration, ac.category
+      FROM app_activity aa
+      LEFT JOIN app_categories ac ON aa.app_name = ac.app_name
+      WHERE aa.timestamp >= ? AND aa.timestamp <= ?
+  `);
+  appStmt.bind([oneHourAgo, timestamp]);
+
+  while(appStmt.step()) {
+      const row = appStmt.getAsObject();
+      const duration = row.duration as number;
+      const category = row.category as string;
+
+      totalDuration += duration;
+
+      if (category === 'Game' || category === 'Entertainment') {
+          distractionDuration += duration;
+      }
+  }
+  appStmt.free();
+
+  if (totalDuration === 0) return 1.0; // Assume focused if no logs (or idle)
+
+  // Focus Score = 1 - (Distraction Ratio)
+  // Example: 15 mins distracting out of 60 mins activity = 1 - 0.25 = 0.75 score
+  const score = 1 - (distractionDuration / totalDuration);
+  return Math.max(0, Math.min(1, score));
+};
+
 export const closeDB = () => {
   if (db) {
     saveDB();

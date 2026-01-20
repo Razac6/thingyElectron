@@ -13,7 +13,8 @@ import {
   getActiveSprint,
   getSprintTasks,
   getTagAnalytics,
-  getTagByName
+  getTagByName,
+  getFocusContext
 } from './db';
 import { ProductivityAnalyst } from './ProductivityAnalysis';
 import { personalityEngine, AiMood } from './PersonalityEngine';
@@ -53,13 +54,13 @@ export class NeuralCore {
   }
 
   private initModel() {
-    // Input: [Hour, Day, Priority, SleepScore, MeetingLoad, HabitScore] (6 features)
-    this.model.add(tf.layers.dense({ units: 24, activation: 'relu', inputShape: [6] }));
+    // Input: [Hour, Day, Priority, SleepScore, MeetingLoad, HabitScore, StoryPoints, FocusContext] (8 features)
+    this.model.add(tf.layers.dense({ units: 24, activation: 'relu', inputShape: [8] }));
     this.model.add(tf.layers.dense({ units: 12, activation: 'relu' }));
     this.model.add(tf.layers.dense({ units: 1 }));
 
     this.model.compile({ optimizer: 'adam', loss: 'meanSquaredError' });
-    logSystemEvent('NeuralCore initialized. Model updated (6 Features: Hour, Day, Priority, Sleep, Meetings, Habits).', 'SYSTEM');
+    logSystemEvent(`NeuralCore initialized. Model updated (8 Features). Weights path: ${MODEL_PATH}`, 'SYSTEM');
   }
 
   private async saveWeights() {
@@ -76,12 +77,45 @@ export class NeuralCore {
     if (!fs.existsSync(MODEL_PATH)) return;
     try {
         const data = JSON.parse(fs.readFileSync(MODEL_PATH, 'utf-8'));
+        
+        // Validate Input Shape (Check first layer kernel dimensions)
+        // Layer 0 is Dense(24, input=8). Kernel shape should be [8, 24].
+        if (data.length > 0) {
+            const firstLayerKernel = data[0];
+            // data[0] is array of arrays or flat array depending on serialization.
+            // tf.getWeights() returns tensors. dataSync() returns Float32Array.
+            // But we saved array of arrays? No, Array.from(w.dataSync()) saves flat array.
+            
+            // We can't easily check shape from flat array without knowing target shape.
+            // Instead, let's try-catch setWeights, but ensure we DELETE file on error.
+        }
+
         const weights = data.map((w: any[]) => tf.tensor(w));
-        this.model.setWeights(weights);
-        logSystemEvent('NeuralCore memory loaded from disk.', 'SYSTEM');
+        
+        // Strict Try-Catch around setWeights
+        try {
+            this.model.setWeights(weights);
+            logSystemEvent('NeuralCore memory loaded from disk.', 'SYSTEM');
+        } catch (weightError) {
+            console.error('Weight Mismatch during setWeights. Resetting.', weightError);
+            weights.forEach((w: tf.Tensor) => w.dispose()); // Clean up tensors
+            throw weightError; // Re-throw to trigger outer catch block
+        }
+        
         weights.forEach((w: tf.Tensor) => w.dispose());
     } catch (e) {
-        console.error('Failed to load neural weights', e);
+        console.error('Failed to load neural weights (Dimension Mismatch?). Resetting brain.');
+        // Force delete old weights
+        try { 
+            fs.unlinkSync(MODEL_PATH); 
+            logSystemEvent('Old NeuralCore weights deleted. Starting fresh.', 'SYSTEM');
+        } catch(err) {
+            console.error('Could not delete weights file', err);
+        }
+        
+        // Re-initialize model to be sure it's clean
+        this.model = tf.sequential();
+        this.initModel();
     }
   }
 
@@ -114,7 +148,10 @@ export class NeuralCore {
             habitScore = completedOnDay / habits.length;
         }
 
-        const input = [dateObj.getHours(), dateObj.getDay(), PRIORITY_MAP[task.priority] || 2, sleep, meetingLoad, habitScore];
+        const storyPoints = task.storyPoints ? Number(task.storyPoints) : 0;
+        const focusContext = getFocusContext(dateObj.getTime());
+        
+        const input = [dateObj.getHours(), dateObj.getDay(), PRIORITY_MAP[task.priority] || 2, sleep, meetingLoad, habitScore, storyPoints, focusContext];
         const output = task.spendTime / (1000 * 60); // minutes
         const type = task.type || 'TASK';
         
@@ -210,7 +247,10 @@ export class NeuralCore {
         });
     }
 
-    const input = tf.tensor2d([[dateObj.getHours(), dateObj.getDay(), PRIORITY_MAP[task.priority] || 2, sleep, meetingLoad, habitScore]]);
+    const storyPoints = task.storyPoints ? Number(task.storyPoints) : 0;
+    const focusContext = getFocusContext(Date.now());
+
+    const input = tf.tensor2d([[dateObj.getHours(), dateObj.getDay(), PRIORITY_MAP[task.priority] || 2, sleep, meetingLoad, habitScore, storyPoints, focusContext]]);
     const prediction = this.model.predict(input) as tf.Tensor;
     let finalMin = prediction.dataSync()[0];
     input.dispose(); prediction.dispose();
@@ -244,7 +284,10 @@ export class NeuralCore {
           habitScore = completedOnDay / habits.length;
       }
 
-      const input = tf.tensor2d([[hour, day, priority, sleep, meetingLoad, habitScore]]);
+      const storyPoints = task.storyPoints ? Number(task.storyPoints) : 0;
+      const focusContext = getFocusContext(dateObj.getTime());
+
+      const input = tf.tensor2d([[hour, day, priority, sleep, meetingLoad, habitScore, storyPoints, focusContext]]);
       const prediction = this.model.predict(input) as tf.Tensor;
       let value = prediction.dataSync()[0];
       input.dispose(); prediction.dispose();

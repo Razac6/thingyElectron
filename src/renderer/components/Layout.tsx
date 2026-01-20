@@ -44,6 +44,7 @@ import { useGamification } from '../context/GamificationContext';
 import Timer from './Timer';
 import SearchOverlay from './SearchOverlay';
 import IdlePromptModal from './IdlePromptModal';
+import BoostOverlay from './BoostOverlay';
 import { useSettings } from '../context/SettingsContext';
 
 const animationMap = {
@@ -144,9 +145,20 @@ export default function Layout({ children }: LayoutProps) {
   const location = useLocation();
   const [open, setOpen] = React.useState(false);
   const [searchOpen, setSearchOpen] = React.useState(false);
-  const { tasks, stopTimer, idlePrompt, handleKeepIdleTime, handleDiscardIdleTime } = useTimer();
+  const { tasks, stopTimer, idlePrompt, handleKeepIdleTime, handleDiscardIdleTime, isBoostMode, toggleBoostMode, dailyMode } = useTimer();
   const { rewardAnimation, hideRewardAnimation } = useGamification();
   const { settings } = useSettings();
+
+  const activeTask = tasks.find(task => task.startTimer !== null);
+
+  // Auto-activate Boost Overlay if mode is Boost and timer is running
+  useEffect(() => {
+      if (dailyMode === 'boost' && activeTask) {
+          if (!isBoostMode) toggleBoostMode(true);
+      } else {
+          if (isBoostMode) toggleBoostMode(false);
+      }
+  }, [dailyMode, activeTask, isBoostMode]);
 
   const visibleMenuItems = menuItems.filter(item => {
       if (item.text === 'Monitoring') {
@@ -159,7 +171,8 @@ export default function Layout({ children }: LayoutProps) {
     const handleOpenSearch = () => setSearchOpen(true);
     const handleOpenSettings = () => navigate('/settings');
 
-    const handleTaskDraft = (_event: any, draft: any) => {
+    const handleTaskDraft = (draft: any) => {
+      console.log('Layout: Received draft task:', draft);
       // Navigate to List view and pass the draft data to open the modal there
       navigate('/list', { state: { draftTask: draft } });
     };
@@ -175,8 +188,6 @@ export default function Layout({ children }: LayoutProps) {
     };
   }, [navigate]);
 
-  const activeTask = tasks.find(task => task.startTimer !== null);
-
   const handleDrawerOpen = () => setOpen(true);
   const handleDrawerClose = () => setOpen(false);
 
@@ -191,6 +202,7 @@ export default function Layout({ children }: LayoutProps) {
   return (
     <Box sx={{ display: 'flex' }}>
       <CssBaseline />
+      <BoostOverlay open={isBoostMode} onClose={() => toggleBoostMode(false)} />
       {currentAnimationData && (
         <Box sx={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', zIndex: 9999, pointerEvents: 'none' }}>
           <Lottie

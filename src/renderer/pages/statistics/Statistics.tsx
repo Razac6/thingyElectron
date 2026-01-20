@@ -7,7 +7,8 @@ import { StatusEnum } from '../../../enums/status.enum';
 import { PriorityEnum } from '../../../enums/priority.enum';
 import ProductivityChart from '../../components/ProductivityChart';
 import HourlyProductivityChart from '../../components/HourlyProductivityChart';
-import AiStatusWidget from '../../components/AiStatusWidget';
+import TaskStats from '../../components/TaskStats';
+import { getTagAnalyticsWithNames, getHourlyProductivity, getAiStats } from '../../services/DatabaseService';
 import AiProductivityChart from '../../components/AiProductivityChart';
 
 // Helper to format date to YYYY-MM-DD for the input
@@ -169,7 +170,7 @@ function Statistics() {
       <TabPanel value={tabValue} index={1}>
         <Grid container spacing={3}>
           <Grid item xs={12}>
-              <AiStatusWidget />
+            <TaskStats />
           </Grid>
           <Grid item xs={12}>
               <AiProductivityChart />
