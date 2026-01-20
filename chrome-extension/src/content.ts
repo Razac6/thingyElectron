@@ -1,9 +1,6 @@
 let startTime = Date.now();
 let isActive = document.visibilityState === 'visible';
 
-let startTime = Date.now();
-let isActive = document.visibilityState === 'visible';
-
 // --- Task Parsing Logic ---
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'PARSE_TASK') {
