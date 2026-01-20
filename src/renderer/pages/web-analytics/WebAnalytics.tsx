@@ -11,6 +11,7 @@ const CATEGORIES = ['WORK', 'LEARNING', 'DISTRACTION', 'NEUTRAL', 'UNCATEGORIZED
 const WebAnalytics = () => {
   const theme = useTheme();
   const [stats, setStats] = useState<{ topDomains: any[], totalDuration: number } | null>(null);
+  const [appStats, setAppStats] = useState<any[]>([]);
 
   const handleCategoryChange = async (domain: string, category: string) => {
       try {
@@ -25,12 +26,29 @@ const WebAnalytics = () => {
       }
   };
 
+  const handleAppCategoryChange = async (appName: string, category: string) => {
+      try {
+          // @ts-ignore
+          await window.electron.database.setAppCategory(appName, category);
+          // Refresh stats
+          // @ts-ignore
+          const appData = await window.electron.database.getTodaysAppStats();
+          setAppStats(appData);
+      } catch (e) {
+          console.error(e);
+      }
+  };
+
   useEffect(() => {
     const fetchStats = async () => {
       try {
         // @ts-ignore
         const data = await window.electron.database.getTodaysWebStats();
         setStats(data);
+        
+        // @ts-ignore
+        const appData = await window.electron.database.getTodaysAppStats();
+        setAppStats(appData);
       } catch (error) {
         console.error('WebAnalytics: Failed to fetch stats. Ensure app is restarted.', error);
         setStats({ topDomains: [], totalDuration: 0 }); // Fallback to avoid stuck loading
@@ -75,7 +93,7 @@ const WebAnalytics = () => {
   return (
     <Box sx={{ p: 3 }}>
       <Typography variant="h4" gutterBottom sx={{ color: theme.palette.text.primary, mb: 4 }}>
-        🌐 Web Activity (Today)
+        📊 Monitoring Activity
       </Typography>
 
       <Grid container spacing={3}>
@@ -93,7 +111,7 @@ const WebAnalytics = () => {
         </Grid>
         <Grid item xs={12} md={6}>
           <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>Top Distractions</Typography>
+            <Typography variant="h6" gutterBottom>Top 10 Domains (Today)</Typography>
             <TableContainer>
               <Table>
                 <TableHead>
@@ -129,6 +147,78 @@ const WebAnalytics = () => {
                   {stats.topDomains.length === 0 && (
                       <TableRow>
                           <TableCell colSpan={2} align="center">Go browse the web!</TableCell>
+                      </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Paper>
+        </Grid>
+      </Grid>
+
+      <Typography variant="h4" gutterBottom sx={{ color: theme.palette.text.primary, mb: 4, mt: 6 }}>
+        🖥️ Desktop Apps (Today)
+      </Typography>
+
+      <Grid container spacing={3}>
+        <Grid item xs={12} md={6}>
+          <Paper sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <Typography variant="h6" gutterBottom>App Distribution</Typography>
+            {appStats.length > 0 ? (
+                <Box sx={{ maxWidth: 400, width: '100%' }}>
+                    <Doughnut data={{
+                        labels: appStats.map(d => d.appName),
+                        datasets: [{
+                            label: 'Minutes',
+                            data: appStats.map(d => Math.round(d.totalTime / 60000)),
+                            backgroundColor: ['#00d2d3', '#54a0ff', '#5f27cd', '#ff9f43', '#ee5253', '#0abde3'],
+                            borderWidth: 1,
+                        }]
+                    }} />
+                </Box>
+            ) : (
+                <Typography sx={{ mt: 5, color: 'text.secondary' }}>No desktop activity recorded yet.</Typography>
+            )}
+          </Paper>
+        </Grid>
+        <Grid item xs={12} md={6}>
+          <Paper sx={{ p: 3 }}>
+            <Typography variant="h6" gutterBottom>Top 10 Applications (Today)</Typography>
+            <TableContainer>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Application</TableCell>
+                    <TableCell>Category</TableCell>
+                    <TableCell align="right">Time Spent</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {appStats.map((row) => (
+                    <TableRow key={row.appName}>
+                      <TableCell component="th" scope="row">
+                        {row.appName}
+                      </TableCell>
+                      <TableCell>
+                        <Select
+                            value={row.category || 'UNCATEGORIZED'}
+                            size="small"
+                            onChange={(e) => handleAppCategoryChange(row.appName, e.target.value as string)}
+                            variant="standard"
+                            disableUnderline
+                            sx={{ fontSize: '0.875rem' }}
+                        >
+                            {CATEGORIES.map(cat => (
+                                <MenuItem key={cat} value={cat}>{cat}</MenuItem>
+                            ))}
+                        </Select>
+                      </TableCell>
+                      <TableCell align="right">{formatDuration(row.totalTime)}</TableCell>
+                    </TableRow>
+                  ))}
+                  {appStats.length === 0 && (
+                      <TableRow>
+                          <TableCell colSpan={2} align="center">Go use some apps!</TableCell>
                       </TableRow>
                   )}
                 </TableBody>

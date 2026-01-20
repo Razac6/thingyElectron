@@ -38,7 +38,7 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import StopIcon from '@mui/icons-material/Stop'; // Use the square Stop icon
 import SearchIcon from '@mui/icons-material/Search';
 import TerminalIcon from '@mui/icons-material/Terminal';
-import ExtensionIcon from '@mui/icons-material/Extension';
+import DvrIcon from '@mui/icons-material/Dvr';
 import { useTimer } from '../context/TimerContext';
 import { useGamification } from '../context/GamificationContext';
 import Timer from './Timer';
@@ -62,7 +62,7 @@ const menuItems = [
   { text: 'Habits', path: '/habits', icon: <LoopIcon /> },
   { text: 'Sprints', path: '/sprints', icon: <SprintIcon /> },
   { text: 'Statistics', path: '/statistics', icon: <BarChartIcon /> },
-  { text: 'Web Activity', path: '/web-activity', icon: <ExtensionIcon /> },
+  { text: 'Monitoring', path: '/web-activity', icon: <DvrIcon /> },
   { text: 'Profile', path: '/profile', icon: <PersonIcon /> },
   { text: 'Notes', path: '/notes', icon: <NoteAltIcon /> },
 ];
@@ -149,7 +149,7 @@ export default function Layout({ children }: LayoutProps) {
   const { settings } = useSettings();
 
   const visibleMenuItems = menuItems.filter(item => {
-      if (item.text === 'Web Activity') {
+      if (item.text === 'Monitoring') {
           return settings.browser_integration_enabled === 'true';
       }
       return true;

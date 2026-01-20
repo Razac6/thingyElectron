@@ -70,6 +70,8 @@ export const initDB = async () => {
   db.run(`CREATE TABLE IF NOT EXISTS habit_logs (id INTEGER PRIMARY KEY, habitId INTEGER, date TEXT NOT NULL, value INTEGER DEFAULT 1, notes TEXT, FOREIGN KEY(habitId) REFERENCES habits(id) ON DELETE CASCADE)`);
   db.run(`CREATE TABLE IF NOT EXISTS web_stats (id INTEGER PRIMARY KEY, domain TEXT, url TEXT, duration INTEGER, timestamp INTEGER)`);
   db.run(`CREATE TABLE IF NOT EXISTS domain_categories (domain TEXT PRIMARY KEY, category TEXT)`);
+  db.run(`CREATE TABLE IF NOT EXISTS app_activity (id INTEGER PRIMARY KEY, app_name TEXT, window_title TEXT, duration INTEGER, timestamp INTEGER)`);
+  db.run(`CREATE TABLE IF NOT EXISTS app_categories (app_name TEXT PRIMARY KEY, category TEXT)`);
 
 
   try {
@@ -1113,6 +1115,17 @@ export const updateDailyBio = (date: string, data: { mode?: string, sleepScore?:
   const newMeetingTime = data.meetingTime !== undefined ? data.meetingTime : current.meetingTime;
 
   db.run('INSERT OR REPLACE INTO daily_energy_logs (date, mode, sleepScore, meetingTime) VALUES (?, ?, ?, ?)', [date, newMode, newSleep, newMeetingTime]);
+  
+  if (newMode === 'boost' || newMode === 'BOOST') {
+      const currentWeb = getWebBlockingSettings();
+      saveWebBlockingSettings({ 
+          ...currentWeb, 
+          integrationEnabled: true,
+          blockingEnabled: true 
+      });
+      logSystemEvent('Boost Mode Activated: Web Blocking Enabled.', 'SYSTEM');
+  }
+
   saveDB();
   return { mode: newMode, sleepScore: newSleep, meetingTime: newMeetingTime };
 };
@@ -1457,6 +1470,58 @@ export const getAllDomainCategories = () => {
         stmt.free();
         return categories;
     } catch (e) { return {}; }
+};
+
+export const logAppActivity = (data: { appName: string, windowTitle: string, duration: number, timestamp: number }) => {
+  if (!db) return;
+  try {
+    const stmt = db.prepare(`INSERT INTO app_activity (app_name, window_title, duration, timestamp) VALUES (:app, :title, :duration, :timestamp)`);
+    stmt.run({
+      ':app': data.appName,
+      ':title': data.windowTitle,
+      ':duration': data.duration,
+      ':timestamp': data.timestamp
+    });
+    stmt.free();
+  } catch (e) {
+    console.error('Failed to log app activity', e);
+  }
+};
+
+export const setAppCategory = (appName: string, category: string) => {
+    if (!db) return;
+    try {
+        const stmt = db.prepare("INSERT OR REPLACE INTO app_categories (app_name, category) VALUES (?, ?)");
+        stmt.run([appName, category]);
+        stmt.free();
+        logSystemEvent(`Context Updated: App '${appName}' categorized as ${category}.`, 'LEARNING');
+    } catch (e) { console.error(e); }
+};
+
+export const getTodaysAppStats = () => {
+  if (!db) return [];
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const start = today.getTime();
+
+  try {
+    const stmt = db.prepare(`
+      SELECT aa.app_name as appName, SUM(aa.duration) as totalTime, ac.category
+      FROM app_activity aa
+      LEFT JOIN app_categories ac ON aa.app_name = ac.app_name
+      WHERE aa.timestamp >= :start
+      GROUP BY aa.app_name 
+      ORDER BY totalTime DESC 
+      LIMIT 10
+    `);
+    stmt.bind({ ':start': start });
+    const rows = [];
+    while(stmt.step()) rows.push(stmt.getAsObject());
+    stmt.free();
+    return rows;
+  } catch (e) {
+    return [];
+  }
 };
 
 export const closeDB = () => {

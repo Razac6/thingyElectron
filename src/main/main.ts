@@ -60,12 +60,15 @@ import {
   getWebBlockingSettings,
   saveWebBlockingSettings,
   getTodaysWebStats,
-  setDomainCategory
+  setDomainCategory,
+  getTodaysAppStats,
+  setAppCategory
 } from './db';
 import { autoScheduleTasks, getProposedSchedule } from './TaskScheduler';
 import { ProductivityAnalyst, AnalysisResult } from './ProductivityAnalysis';
 import { neuralCore } from './NeuralCore';
 import { startServer, stopServer, updateServerState, restartServer, requestSync } from './server';
+import { startAppMonitor, stopAppMonitor } from './AppMonitor';
 
 // --- Aggressive Error Logging ---
 log.transports.file.level = 'info';
@@ -554,6 +557,11 @@ ipcMain.handle('db:set-domain-category', (event, domain, category) => {
     setDomainCategory(domain, category);
     return true;
 });
+ipcMain.handle('db:get-todays-app-stats', () => getTodaysAppStats());
+ipcMain.handle('db:set-app-category', (event, appName, category) => {
+    setAppCategory(appName, category);
+    return true;
+});
 ipcMain.handle('server:restart', () => {
     restartServer();
     return true;
@@ -745,6 +753,7 @@ app.whenReady().then(async () => {
     log.info('Initializing database...');
     await initDB();
     startServer();
+    startAppMonitor();
     log.info('Database initialized successfully.');
   } catch (error) {
     log.error('CRITICAL: Failed to initialize database on startup.', error);
@@ -765,5 +774,6 @@ app.whenReady().then(async () => {
 
 app.on('will-quit', () => {
   stopServer();
+  stopAppMonitor();
   globalShortcut.unregisterAll();
 });
