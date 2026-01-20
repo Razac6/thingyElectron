@@ -205,11 +205,15 @@ function Settings() {
         </Grid>
       </Paper>
 
-      {webSettings && (
       <Paper sx={{ p: 3, mb: 3 }}>
         <Typography variant="h6" gutterBottom>Browser Integration (Chrome Extension)</Typography>
         <Divider sx={{ mb: 3 }} />
 
+        {!webSettings ? (
+            <Box display="flex" justifyContent="center" p={3}>
+                <CircularProgress />
+            </Box>
+        ) : (
         <Grid container spacing={3}>
             <Grid item xs={12}>
                 <FormControlLabel
@@ -304,7 +308,6 @@ function Settings() {
                         startIcon={<SyncIcon />}
                         onClick={() => {
                             window.electron.ipcRenderer.invoke('server:request-sync');
-                            // Visual feedback could be added here
                         }}
                     >
                         Sync Now
@@ -315,8 +318,8 @@ function Settings() {
             </>
             )}
         </Grid>
+        )}
       </Paper>
-      )}
 
       <Paper sx={{ p: 3 }}>
         <Typography variant="h6" gutterBottom>Gamification & Visuals</Typography>
