@@ -68,6 +68,7 @@ export const initDB = async () => {
   db.run(`CREATE TABLE IF NOT EXISTS daily_energy_logs (date TEXT PRIMARY KEY, mode TEXT, sleepScore INTEGER)`);
   db.run(`CREATE TABLE IF NOT EXISTS habits (id INTEGER PRIMARY KEY, userId INTEGER, title TEXT NOT NULL, description TEXT, frequency TEXT NOT NULL, category TEXT, targetStreak INTEGER DEFAULT 0, reminderTime TEXT, createdAt TEXT, isFavorite INTEGER DEFAULT 0, FOREIGN KEY(userId) REFERENCES users(id))`);
   db.run(`CREATE TABLE IF NOT EXISTS habit_logs (id INTEGER PRIMARY KEY, habitId INTEGER, date TEXT NOT NULL, value INTEGER DEFAULT 1, notes TEXT, FOREIGN KEY(habitId) REFERENCES habits(id) ON DELETE CASCADE)`);
+  db.run(`CREATE TABLE IF NOT EXISTS web_stats (id INTEGER PRIMARY KEY, domain TEXT, url TEXT, duration INTEGER, timestamp INTEGER)`);
 
 
   try {
@@ -1325,6 +1326,111 @@ export const getDailyStandupData = (userId: number) => {
         },
         topHabit
     };
+};
+
+// --- Web Integration ---
+
+export const logWebActivity = (data: { domain: string, url: string, duration: number, timestamp: number }) => {
+  if (!db) return;
+  try {
+    const stmt = db.prepare(`INSERT INTO web_stats (domain, url, duration, timestamp) VALUES (:domain, :url, :duration, :timestamp)`);
+    stmt.run({
+      ':domain': data.domain,
+      ':url': data.url,
+      ':duration': data.duration,
+      ':timestamp': data.timestamp
+    });
+    stmt.free();
+  } catch (e) {
+    console.error('Failed to log web activity', e);
+  }
+};
+
+export const logWebActivityBulk = (items: Array<{ domain: string, url: string, duration: number, timestamp: number }>) => {
+  if (!db || items.length === 0) return;
+  try {
+    const stmt = db.prepare(`INSERT INTO web_stats (domain, url, duration, timestamp) VALUES (:domain, :url, :duration, :timestamp)`);
+    db.run("BEGIN TRANSACTION");
+    items.forEach(item => {
+        stmt.run({
+            ':domain': item.domain,
+            ':url': item.url,
+            ':duration': item.duration,
+            ':timestamp': item.timestamp
+        });
+    });
+    db.run("COMMIT");
+    stmt.free();
+    console.log(`[DB] Bulk inserted ${items.length} web activity records.`);
+  } catch (e) {
+    console.error('Failed to bulk log web activity', e);
+    try { db.run("ROLLBACK"); } catch (r) {}
+  }
+};
+
+export const getWebBlockingSettings = () => {
+  const defaults = {
+    integrationEnabled: false,
+    blockingEnabled: false,
+    blockOnlyInFocus: true,
+    blockedSites: ['youtube.com/shorts', 'facebook.com', 'instagram.com', 'twitter.com', 'tiktok.com']
+  };
+
+  const integrationEnabled = getSetting('browser_integration_enabled');
+  const enabled = getSetting('web_blocking_enabled');
+  const onlyFocus = getSetting('web_blocking_only_focus');
+  const sites = getSetting('web_blocking_sites');
+
+  return {
+    integrationEnabled: integrationEnabled ? integrationEnabled === 'true' : defaults.integrationEnabled,
+    blockingEnabled: enabled ? enabled === 'true' : defaults.blockingEnabled,
+    blockOnlyInFocus: onlyFocus ? onlyFocus === 'true' : defaults.blockOnlyInFocus,
+    blockedSites: sites ? JSON.parse(sites) : defaults.blockedSites
+  };
+};
+
+export const saveWebBlockingSettings = (settings: any) => {
+  setSetting('browser_integration_enabled', String(settings.integrationEnabled));
+  setSetting('web_blocking_enabled', String(settings.blockingEnabled));
+  setSetting('web_blocking_only_focus', String(settings.blockOnlyInFocus));
+  setSetting('web_blocking_sites', JSON.stringify(settings.blockedSites));
+};
+
+export const getTodaysWebStats = () => {
+  if (!db) return { topDomains: [], totalDuration: 0 };
+  
+  // Get start of today in timestamp (ms)
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const startTimestamp = today.getTime();
+
+  try {
+    const stmt = db.prepare(`
+      SELECT domain, SUM(duration) as totalTime 
+      FROM web_stats 
+      WHERE timestamp >= :start
+      GROUP BY domain 
+      ORDER BY totalTime DESC 
+      LIMIT 10
+    `);
+    
+    // Bind parameters before executing
+    stmt.bind({ ':start': startTimestamp });
+    
+    const rows = [];
+    while(stmt.step()) {
+        rows.push(stmt.getAsObject());
+    }
+    stmt.free();
+
+    return {
+        topDomains: rows,
+        totalDuration: rows.reduce((acc: number, r: any) => acc + (r.totalTime as number), 0)
+    };
+  } catch (e) {
+    console.error('Failed to get web stats', e);
+    return { topDomains: [], totalDuration: 0 };
+  }
 };
 
 export const closeDB = () => {

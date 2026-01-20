@@ -1,56 +1,47 @@
-// Thingy Companion - Content Script
-// Blocks YouTube Shorts elements and redirects Shorts URLs
+let startTime = Date.now();
+let isActive = document.visibilityState === 'visible';
 
-const SHORTS_SELECTORS = [
-  'ytd-rich-shelf-renderer[is-shorts]', // Shorts shelf on Home
-  'ytd-reel-shelf-renderer',            // Standard Shorts shelf
-  'a[href^="/shorts"]',                 // Links to Shorts
-  'ytd-guide-entry-renderer a[title="Shorts"]', // Sidebar menu item
-  'ytd-mini-guide-entry-renderer[aria-label="Shorts"]' // Mini sidebar item
-];
+// @ts-ignore
+const syncActivity = async () => {
+  const now = Date.now();
+  const duration = now - startTime;
+  
+  // Ignoruj bardzo krótkie wizyty (< 1s)
+  if (duration < 1000) return;
 
-function nukeShorts() {
-  // 1. Check URL for hard redirection
-  if (window.location.pathname.startsWith('/shorts/')) {
-    const videoId = window.location.pathname.split('/shorts/')[1];
-    if (videoId) {
-      // Redirect to normal player view (optional, or just go home)
-      // window.location.replace(`https://www.youtube.com/watch?v=${videoId}`);
-      // For now, let's just go home to discourage usage
-      window.location.replace('https://www.youtube.com/');
-    }
+  const activity = {
+    domain: window.location.hostname,
+    url: window.location.href,
+    duration: duration,
+    timestamp: now
+  };
+
+  startTime = now; // Reset timer for next batch
+
+  try {
+     // Wysyłamy do background.ts zamiast bezpośrednio do API
+     chrome.runtime.sendMessage({ type: 'LOG_ACTIVITY', data: activity });
+  } catch (e) {
+      // Ignore errors silently (np. gdy extension context jest inwalidowany przy update)
   }
+};
 
-  // 2. Remove visual elements
-  SHORTS_SELECTORS.forEach((selector) => {
-    const elements = document.querySelectorAll(selector);
-    elements.forEach((el) => {
-      // We use 'display: none' instead of remove() to avoid breaking YT's scripts
-      (el as HTMLElement).style.display = 'none';
-    });
-  });
-}
-
-// Initial run
-nukeShorts();
-
-// Observer to handle dynamic loading (SPA navigation, infinite scroll)
-const observer = new MutationObserver((mutations) => {
-  let shouldRun = false;
-  for (const mutation of mutations) {
-    if (mutation.addedNodes.length > 0) {
-      shouldRun = true;
-      break;
-    }
-  }
-  if (shouldRun) {
-    nukeShorts();
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    isActive = true;
+    startTime = Date.now();
+  } else {
+    isActive = false;
+    syncActivity();
   }
 });
 
-observer.observe(document.body, {
-  childList: true,
-  subtree: true,
-});
+// Sync every 30 seconds if active
+setInterval(() => {
+    if (isActive) syncActivity();
+}, 30000);
 
-console.log('[Thingy Companion] Shorts blocker active.');
+// Sync on close
+window.addEventListener('beforeunload', () => {
+    if (isActive) syncActivity();
+});

@@ -2,13 +2,15 @@
   "manifest_version": 3,
   "name": "Thingy Companion",
   "version": "1.0.0",
-  "description": "Companion extension for Thingy app. Blocks distractions like YouTube Shorts.",
+  "description": "Companion extension for Thingy app. Syncs Focus Mode and blocks distractions.",
   "permissions": [
     "storage",
-    "scripting"
+    "declarativeNetRequest",
+    "tabs"
   ],
   "host_permissions": [
-    "https://*.youtube.com/*"
+    "http://127.0.0.1:3333/*",
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "dist/background.js",
@@ -16,7 +18,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://*.youtube.com/*"],
+      "matches": ["<all_urls>"],
       "js": ["dist/content.js"],
       "run_at": "document_end"
     }

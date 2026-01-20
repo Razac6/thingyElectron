@@ -56,11 +56,15 @@ import {
   getHabitLogs,
   getTopHabit,
   toggleHabitFavorite,
-  getDailyStandupData
+  getDailyStandupData,
+  getWebBlockingSettings,
+  saveWebBlockingSettings,
+  getTodaysWebStats
 } from './db';
 import { autoScheduleTasks, getProposedSchedule } from './TaskScheduler';
 import { ProductivityAnalyst, AnalysisResult } from './ProductivityAnalysis';
 import { neuralCore } from './NeuralCore';
+import { startServer, stopServer, updateServerState, restartServer, requestSync } from './server';
 
 // --- Aggressive Error Logging ---
 log.transports.file.level = 'info';
@@ -538,6 +542,23 @@ ipcMain.handle('gamification:reward-fatigue-compliance', (event, userId) => {
   }
 });
 
+// --- Web Blocking IPC ---
+ipcMain.handle('db:get-web-settings', () => getWebBlockingSettings());
+ipcMain.handle('db:save-web-settings', (event, settings) => {
+    saveWebBlockingSettings(settings);
+    return true;
+});
+ipcMain.handle('db:get-todays-web-stats', () => getTodaysWebStats());
+ipcMain.handle('server:restart', () => {
+    restartServer();
+    return true;
+});
+
+ipcMain.handle('server:request-sync', () => {
+    requestSync();
+    return true;
+});
+
 // --- Tray IPC Handlers ---
 ipcMain.on('tray:create', createTray);
 ipcMain.on('tray:destroy', destroyTray);
@@ -558,6 +579,7 @@ ipcMain.on('tray:start-timer', (event, info) => {
   if (trayTimerInterval) clearInterval(trayTimerInterval);
 
   hasSentFatigueWarning = false;
+  updateServerState({ focusMode: true });
 
   updateTrayTitle();
   trayTimerInterval = setInterval(updateTrayTitle, 1000);
@@ -567,6 +589,7 @@ ipcMain.on('tray:stop-timer', () => {
   activeTaskInfo = null;
   if (trayTimerInterval) clearInterval(trayTimerInterval);
   trayTimerInterval = null;
+  updateServerState({ focusMode: false });
   if (tray) {
     tray.setTitle('');
     tray.setToolTip('Thingy App');
@@ -716,6 +739,7 @@ app.whenReady().then(async () => {
   try {
     log.info('Initializing database...');
     await initDB();
+    startServer();
     log.info('Database initialized successfully.');
   } catch (error) {
     log.error('CRITICAL: Failed to initialize database on startup.', error);
@@ -735,5 +759,6 @@ app.whenReady().then(async () => {
 });
 
 app.on('will-quit', () => {
+  stopServer();
   globalShortcut.unregisterAll();
 });

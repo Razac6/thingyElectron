@@ -1,12 +1,36 @@
-import React, { useState } from 'react';
-import { Box, Paper, Typography, Switch, FormControlLabel, Slider, Divider, Grid, Button, CircularProgress, TextField } from '@mui/material';
+import React, { useState, useEffect } from 'react';
+import { Box, Paper, Typography, Switch, FormControlLabel, Slider, Divider, Grid, Button, CircularProgress, TextField, Checkbox, FormGroup } from '@mui/material';
 import { useSettings } from '../../context/SettingsContext';
 import { forceNeuralTraining } from '../../services/DatabaseService';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
+import SyncIcon from '@mui/icons-material/Sync';
 
 function Settings() {
   const { settings, updateSetting, loading } = useSettings();
   const [training, setTraining] = useState(false);
+  const [webSettings, setWebSettings] = useState<any>(null);
+
+  useEffect(() => {
+    window.electron.ipcRenderer.invoke('db:get-web-settings').then(setWebSettings);
+  }, []);
+
+  const handleWebSettingChange = (key: string, value: any) => {
+      if (key === 'integrationEnabled') {
+          updateSetting('browser_integration_enabled', String(value));
+      }
+      const newSettings = { ...webSettings, [key]: value };
+      setWebSettings(newSettings);
+      window.electron.ipcRenderer.invoke('db:save-web-settings', newSettings);
+  };
+
+  const toggleBlockedSite = (site: string) => {
+      const currentSites = webSettings.blockedSites || [];
+      const newSites = currentSites.includes(site)
+        ? currentSites.filter((s: string) => s !== site)
+        : [...currentSites, site];
+      
+      handleWebSettingChange('blockedSites', newSites);
+  };
 
   if (loading) return <Typography sx={{ p: 3 }}>Loading settings...</Typography>;
 
@@ -180,6 +204,119 @@ function Settings() {
             </Grid>
         </Grid>
       </Paper>
+
+      {webSettings && (
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Typography variant="h6" gutterBottom>Browser Integration (Chrome Extension)</Typography>
+        <Divider sx={{ mb: 3 }} />
+
+        <Grid container spacing={3}>
+            <Grid item xs={12}>
+                <FormControlLabel
+                    control={
+                        <Switch 
+                            checked={webSettings.integrationEnabled} 
+                            onChange={(e) => handleWebSettingChange('integrationEnabled', e.target.checked)} 
+                        />
+                    }
+                    label="Enable Browser Integration"
+                />
+                 <Typography variant="caption" display="block" color="text.secondary" sx={{ ml: 4 }}>
+                    Allows Thingy to sync with the Chrome extension to block distractions and track web usage.
+                </Typography>
+            </Grid>
+
+            {webSettings.integrationEnabled && (
+            <>
+            <Grid item xs={12}>
+                <FormControlLabel
+                    control={
+                        <Switch 
+                            checked={webSettings.blockingEnabled} 
+                            onChange={(e) => handleWebSettingChange('blockingEnabled', e.target.checked)} 
+                        />
+                    }
+                    label="Enable Website Blocking"
+                />
+            </Grid>
+            
+            <Grid item xs={12}>
+                 <FormControlLabel
+                    control={
+                        <Switch 
+                            disabled={!webSettings.blockingEnabled}
+                            checked={webSettings.blockOnlyInFocus} 
+                            onChange={(e) => handleWebSettingChange('blockOnlyInFocus', e.target.checked)} 
+                        />
+                    }
+                    label="Block only during Focus Mode (Timer Running)"
+                />
+            </Grid>
+
+            <Grid item xs={12}>
+                <Typography variant="subtitle2" sx={{ mt: 2, mb: 1 }}>Blocked Sites:</Typography>
+                <FormGroup row>
+                    {['youtube.com/shorts', 'facebook.com', 'instagram.com', 'twitter.com', 'tiktok.com', 'onet.pl', 'lowcygier.pl'].map(site => (
+                        <FormControlLabel
+                            key={site}
+                            control={
+                                <Checkbox 
+                                    disabled={!webSettings.blockingEnabled}
+                                    checked={webSettings.blockedSites.includes(site)}
+                                    onChange={() => toggleBlockedSite(site)}
+                                />
+                            }
+                            label={site}
+                        />
+                    ))}
+                </FormGroup>
+            </Grid>
+             <Grid item xs={12}>
+                <TextField
+                    label="Extension Port"
+                    type="number"
+                    size="small"
+                    value={settings.extension_port || 3333}
+                    onChange={(e) => updateSetting('extension_port', e.target.value)}
+                    helperText="Requires app restart to apply changes."
+                />
+            </Grid>
+
+            <Grid item xs={12}>
+                <Typography gutterBottom>Sync Interval (minutes)</Typography>
+                <Typography variant="body2" color="text.secondary">
+                    How often the browser extension sends data to Thingy.
+                </Typography>
+                <Box sx={{ px: 2, mt: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <Slider
+                        value={Number(settings.web_sync_interval) || 60}
+                        onChange={(_, v) => updateSetting('web_sync_interval', String(v))}
+                        step={15}
+                        marks
+                        min={15}
+                        max={240}
+                        valueLabelDisplay="auto"
+                        valueLabelFormat={(value) => `${value}m`}
+                        sx={{ flexGrow: 1 }}
+                    />
+                    <Button 
+                        variant="contained" 
+                        startIcon={<SyncIcon />}
+                        onClick={() => {
+                            window.electron.ipcRenderer.invoke('server:request-sync');
+                            // Visual feedback could be added here
+                        }}
+                    >
+                        Sync Now
+                    </Button>
+                </Box>
+                <Typography align="center" sx={{ mt: 1 }}>Every {settings.web_sync_interval || 60} minutes</Typography>
+            </Grid>
+            </>
+            )}
+        </Grid>
+      </Paper>
+      )}
 
       <Paper sx={{ p: 3 }}>
         <Typography variant="h6" gutterBottom>Gamification & Visuals</Typography>

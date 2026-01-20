@@ -12,6 +12,7 @@ import Settings from './pages/settings/Settings';
 import SprintsPage from './pages/sprints/Sprints';
 import SprintDetail from './pages/sprints/SprintDetail';
 import TaskDetail from './pages/task/TaskDetail';
+import WebAnalytics from './pages/web-analytics/WebAnalytics';
 import { TimerProvider } from './context/TimerContext';
 import { GamificationProvider } from './context/GamificationContext';
 import { SettingsProvider } from './context/SettingsContext';
@@ -33,7 +34,9 @@ export default function App() {
                   {/* Chat route removed */}
                   <Route path="/notes" element={<Notes />} />
                   <Route path="/statistics" element={<Statistics />} />
-                                  <Route path="/profile" element={<Profile />} />
+                  <Route path="/web-activity" element={<WebAnalytics />} />
+                  <Route path="/profile" element={<Profile />} />
+
                                   <Route path="/logs" element={<SystemLogs />} />
                                   <Route path="/settings" element={<Settings />} />
                                   <Route path="/sprints" element={<SprintsPage />} />

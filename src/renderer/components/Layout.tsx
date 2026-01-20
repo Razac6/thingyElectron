@@ -38,11 +38,13 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import StopIcon from '@mui/icons-material/Stop'; // Use the square Stop icon
 import SearchIcon from '@mui/icons-material/Search';
 import TerminalIcon from '@mui/icons-material/Terminal';
+import PublicIcon from '@mui/icons-material/Public';
 import { useTimer } from '../context/TimerContext';
 import { useGamification } from '../context/GamificationContext';
 import Timer from './Timer';
 import SearchOverlay from './SearchOverlay';
 import IdlePromptModal from './IdlePromptModal';
+import { useSettings } from '../context/SettingsContext';
 
 const animationMap = {
   cat_movement: catMovement,
@@ -60,6 +62,7 @@ const menuItems = [
   { text: 'Habits', path: '/habits', icon: <LoopIcon /> },
   { text: 'Sprints', path: '/sprints', icon: <SprintIcon /> },
   { text: 'Statistics', path: '/statistics', icon: <BarChartIcon /> },
+  { text: 'Web Activity', path: '/web-activity', icon: <PublicIcon /> },
   { text: 'Profile', path: '/profile', icon: <PersonIcon /> },
   { text: 'Notes', path: '/notes', icon: <NoteAltIcon /> },
 ];
@@ -143,6 +146,14 @@ export default function Layout({ children }: LayoutProps) {
   const [searchOpen, setSearchOpen] = React.useState(false);
   const { tasks, stopTimer, idlePrompt, handleKeepIdleTime, handleDiscardIdleTime } = useTimer();
   const { rewardAnimation, hideRewardAnimation } = useGamification();
+  const { settings } = useSettings();
+
+  const visibleMenuItems = menuItems.filter(item => {
+      if (item.text === 'Web Activity') {
+          return settings.browser_integration_enabled === 'true';
+      }
+      return true;
+  });
 
   useEffect(() => {
     const handleOpenSearch = () => setSearchOpen(true);
@@ -220,7 +231,7 @@ export default function Layout({ children }: LayoutProps) {
         <DrawerHeader><IconButton onClick={handleDrawerClose}><ChevronLeftIcon /></IconButton></DrawerHeader>
         <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             <List>
-              {menuItems.map((item) => (
+              {visibleMenuItems.map((item) => (
                 <ListItem key={item.text} disablePadding sx={{ display: 'block' }}>
                   <ListItemButton sx={{ minHeight: 48, justifyContent: open ? 'initial' : 'center', px: 2.5 }} selected={location.pathname === item.path} onClick={() => navigate(item.path)}>
                     <ListItemIcon sx={{ minWidth: 0, mr: open ? 3 : 'auto', justifyContent: 'center' }}>{item.icon}</ListItemIcon>
