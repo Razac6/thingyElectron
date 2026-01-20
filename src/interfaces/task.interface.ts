@@ -12,5 +12,6 @@ export interface Task {
   createdAt: string;
   spendTime: number;
   startTimer: string | null;
-  type: TaskTypeEnum
+  type: TaskTypeEnum;
+  storyPoints?: number;
 }

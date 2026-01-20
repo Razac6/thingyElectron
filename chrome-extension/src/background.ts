@@ -3,12 +3,57 @@ const API_URL = 'http://127.0.0.1:3333/api';
 let syncIntervalMinutes = 60; // Default
 let lastSyncTime = Date.now();
 
+// Thingy Companion - Background Worker
+const API_URL = 'http://127.0.0.1:3333/api';
+let syncIntervalMinutes = 60; // Default
+let lastSyncTime = Date.now();
+
+// Create Context Menu on Install
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({
+    id: "thingy-add-task",
+    title: "Add to Thingy",
+    contexts: ["page", "selection"]
+  });
+});
+
+// Handle Context Menu Click
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === "thingy-add-task" && tab && tab.id) {
+    // Send message to Content Script to parse the page
+    chrome.tabs.sendMessage(tab.id, { 
+      type: 'PARSE_TASK',
+      selectionText: info.selectionText 
+    }).catch(err => console.log('Could not send message to tab (probably restricted url):', err));
+  }
+});
+
 // Listener for content scripts
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'LOG_ACTIVITY') {
     addToBuffer(message.data);
   }
+  
+  // Handle Parsed Task from Content Script
+  if (message.type === 'TASK_PARSED') {
+    sendTaskToElectron(message.data);
+  }
 });
+
+const sendTaskToElectron = async (taskData: any) => {
+  try {
+    const res = await fetch(`${API_URL}/task/draft`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(taskData)
+    });
+    if (res.ok) {
+      console.log('Task draft sent to Thingy!');
+    }
+  } catch (e) {
+    console.error('Failed to send task to Thingy', e);
+  }
+};
 
 const addToBuffer = async (activity: any) => {
   const result = await chrome.storage.local.get(['activityBuffer']);

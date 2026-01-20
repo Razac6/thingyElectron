@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { DataGrid, GridRenderCellParams, GridSortModel, GridColDef } from '@mui/x-data-grid';
 import {
   Box,
@@ -29,6 +29,7 @@ import {
   ListItem,
   CircularProgress,
   Tooltip,
+  Grid,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
@@ -65,6 +66,7 @@ const getPriorityColor = (priority: PriorityEnum) => {
 
 function List() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { tasks, setTasks, startTimer, stopTimer, updateTask, createTask, deleteTask, insights } = useTimer();
   const { addXp, checkForAchievements, triggerRewardAnimation } = useGamification();
   const [sprints, setSprints] = useState<any[]>([]);
@@ -75,9 +77,28 @@ function List() {
     status: StatusEnum.TO_DO,
     priority: PriorityEnum.MEDIUM,
     estimate: 1,
+    storyPoints: 0,
     link: '',
     type: TaskTypeEnum.TASK,
   });
+
+  // Handle Quick Add Draft from Extension
+  useEffect(() => {
+    if (location.state && location.state.draftTask) {
+        const draft = location.state.draftTask;
+        setNewTask(prev => ({
+            ...prev,
+            title: draft.title,
+            description: draft.description || '', // Use URL as description/link
+            link: draft.sourceUrl || '',
+            storyPoints: draft.storyPoints || 0,
+            type: TaskTypeEnum.TASK // Default, user can change
+        }));
+        setOpenDialog(true);
+        // Clear state so it doesn't reopen on refresh
+        window.history.replaceState({}, document.title);
+    }
+  }, [location]);
   const [showCompletedTasks, setShowCompletedTasks] = useState(true);
   const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
   const [currentMenuTaskId, setCurrentMenuTaskId] = useState<null | number>(null);
@@ -583,8 +604,9 @@ function List() {
             value={newTask.description}
             onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
           />
-          <Box sx={{ mt: 2, display: 'flex', gap: 2 }}>
-             <FormControl fullWidth>
+          <Grid container spacing={2} sx={{ mt: 1 }}>
+            <Grid item xs={6}>
+              <FormControl fullWidth>
                 <InputLabel>Priority</InputLabel>
                 <Select
                   value={newTask.priority}
@@ -595,29 +617,10 @@ function List() {
                   <MenuItem value={PriorityEnum.MEDIUM}>Medium</MenuItem>
                   <MenuItem value={PriorityEnum.HIGH}>High</MenuItem>
                 </Select>
-             </FormControl>
-             <TextField
-               label="Estimate (h)"
-               type="number"
-               fullWidth
-               value={newTask.estimate}
-               onChange={(e) => setNewTask({ ...newTask, estimate: Number(e.target.value) })}
-               InputProps={{
-                 endAdornment: (
-                   <Tooltip title="AI Suggest Estimate">
-                     <IconButton 
-                        onClick={handleAiSuggestEstimate} 
-                        disabled={isPredicting || !newTask.title}
-                        size="small"
-                        color="secondary"
-                     >
-                       {isPredicting ? <CircularProgress size={20} /> : <SmartToyIcon />}
-                     </IconButton>
-                   </Tooltip>
-                 )
-               }}
-             />
-             <Autocomplete
+              </FormControl>
+            </Grid>
+            <Grid item xs={6}>
+              <Autocomplete
                 fullWidth
                 options={Object.values(TaskTypeEnum)}
                 value={newTask.type}
@@ -628,8 +631,41 @@ function List() {
                 }}
                 renderInput={(params) => <TextField {...params} label="Type" />}
                 disableClearable
-             />
-          </Box>
+              />
+            </Grid>
+            <Grid item xs={6}>
+              <TextField
+                label="Story Points"
+                type="number"
+                fullWidth
+                value={newTask.storyPoints}
+                onChange={(e) => setNewTask({ ...newTask, storyPoints: Number(e.target.value) })}
+              />
+            </Grid>
+            <Grid item xs={6}>
+              <TextField
+                label="Estimate (h)"
+                type="number"
+                fullWidth
+                value={newTask.estimate}
+                onChange={(e) => setNewTask({ ...newTask, estimate: Number(e.target.value) })}
+                InputProps={{
+                  endAdornment: (
+                    <Tooltip title="AI Suggest Estimate">
+                      <IconButton 
+                        onClick={handleAiSuggestEstimate} 
+                        disabled={isPredicting || !newTask.title}
+                        size="small"
+                        color="secondary"
+                      >
+                        {isPredicting ? <CircularProgress size={20} /> : <SmartToyIcon />}
+                      </IconButton>
+                    </Tooltip>
+                  )
+                }}
+              />
+            </Grid>
+          </Grid>
           <Box sx={{ mt: 2 }}>
             <Autocomplete
               multiple

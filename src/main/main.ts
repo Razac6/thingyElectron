@@ -67,7 +67,7 @@ import {
 import { autoScheduleTasks, getProposedSchedule } from './TaskScheduler';
 import { ProductivityAnalyst, AnalysisResult } from './ProductivityAnalysis';
 import { neuralCore } from './NeuralCore';
-import { startServer, stopServer, updateServerState, restartServer, requestSync } from './server';
+import { startServer, stopServer, updateServerState, restartServer, requestSync, serverEvents } from './server';
 import { startAppMonitor, stopAppMonitor } from './AppMonitor';
 
 // --- Aggressive Error Logging ---
@@ -89,6 +89,24 @@ let tray: Tray | null = null;
 let cachedInsights: AnalysisResult | null = null;
 let hasSentFatigueWarning = false;
 let lastPeakHourNotificationDate: string | null = null;
+
+// --- Listen for Extension Events ---
+serverEvents.on('task-draft', (draft) => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    // Send to renderer
+    mainWindow.webContents.send('task:draft-received', draft);
+    
+    // Optional: Show a quick notification
+    new Notification({
+        title: 'Task Draft Received',
+        body: `From: ${draft.title.substring(0, 30)}...`,
+        icon: getAssetPath('icon.png')
+    }).show();
+  }
+});
 
 const refreshInsights = async (userId: number) => {
   try {

@@ -159,12 +159,19 @@ export default function Layout({ children }: LayoutProps) {
     const handleOpenSearch = () => setSearchOpen(true);
     const handleOpenSettings = () => navigate('/settings');
 
+    const handleTaskDraft = (_event: any, draft: any) => {
+      // Navigate to List view and pass the draft data to open the modal there
+      navigate('/list', { state: { draftTask: draft } });
+    };
+
     window.electron.ipcRenderer.on('open-search', handleOpenSearch);
     window.electron.ipcRenderer.on('open-settings', handleOpenSettings);
+    window.electron.ipcRenderer.on('task:draft-received', handleTaskDraft);
 
     return () => {
       window.electron.ipcRenderer.removeListener('open-search', handleOpenSearch);
       window.electron.ipcRenderer.removeListener('open-settings', handleOpenSettings);
+      window.electron.ipcRenderer.removeListener('task:draft-received', handleTaskDraft);
     };
   }, [navigate]);
 

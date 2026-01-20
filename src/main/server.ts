@@ -1,6 +1,10 @@
 import http from 'http';
 import log from 'electron-log';
+import { EventEmitter } from 'events';
 import { getSetting, logWebActivity, logWebActivityBulk, getWebBlockingSettings, logSystemEvent } from './db';
+
+// Event Emitter for communication with main.ts
+export const serverEvents = new EventEmitter();
 
 let server: http.Server | null = null;
 let currentPort = 3333;
@@ -56,6 +60,35 @@ const handleRequest = (req: http.IncomingMessage, res: http.ServerResponse) => {
       res.writeHead(500);
       res.end(JSON.stringify({ error: 'Internal Server Error' }));
     }
+    return;
+  }
+
+  // POST /api/task/draft - Quick Add Task from Extension
+  if (req.url === '/api/task/draft' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => {
+      body += chunk.toString();
+    });
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body);
+        if (data.title) {
+          log.info('Received Task Draft:', data.title);
+          // Emit event to main.ts to open window and show modal
+          serverEvents.emit('task-draft', data);
+          
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'received' }));
+        } else {
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: 'Missing title' }));
+        }
+      } catch (e) {
+        log.error('API Task Draft Error:', e);
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: 'Invalid JSON' }));
+      }
+    });
     return;
   }
 
