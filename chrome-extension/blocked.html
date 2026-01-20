@@ -106,57 +106,47 @@
         
         <h1 id="title">Stay Focused</h1>
         <p class="quote" id="quote">"..."</p>
-        <div class="blocked-info">Blocked by Thingy</div>
-
-        <button class="btn" onclick="goBack()">Get Back to Work</button>
-    </div>
-
-    <script>
-        // --- Configuration ---
-        const quotes = [
-            "Focus is the key to all thinking.",
-            "Starve your distractions, feed your focus.",
-            "Productivity is being able to do things that you were never able to do before.",
-            "Your future is created by what you do today, not tomorrow.",
-            "Deep work is the ability to master hard things quickly.",
-            "Simplicity boils down to two steps: Identify the essential. Eliminate the rest.",
-            "It’s not that I’m so smart, it’s just that I stay with problems longer."
-        ];
-
-        // --- Randomizers ---
+                <div class="blocked-info">Blocked by Thingy</div>
+            </div>
         
-        // 1. Random Quote
-        const randomQuote = quotes[Math.floor(Math.random() * quotes.length)];
-        document.getElementById('quote').innerText = `"${randomQuote}"`;
-
-        // 2. Random Sprite Position (1 of 4)
-        // Assuming 2x2 grid. Positions:
-        // 0: top-left (0,0), 1: top-right (-200px, 0), 
-        // 2: bottom-left (0, -200px), 3: bottom-right (-200px, -200px)
-        const quadrant = Math.floor(Math.random() * 4); 
-        const sprite = document.getElementById('sprite');
+            <script>
+                // --- Configuration ---
+                const quotes = [
+                    "Focus is the key to all thinking.",
+                    "Starve your distractions, feed your focus.",
+                    "Productivity is being able to do things that you were never able to do before.",
+                    "Your future is created by what you do today, not tomorrow.",
+                    "Deep work is the ability to master hard things quickly.",
+                    "Simplicity boils down to two steps: Identify the essential. Eliminate the rest.",
+                    "It’s not that I’m so smart, it’s just that I stay with problems longer."
+                ];
         
-        const size = 200; // Window size
-        let x = 0;
-        let y = 0;
-
-        switch(quadrant) {
-            case 0: x = 0; y = 0; break;
-            case 1: x = -size; y = 0; break;
-            case 2: x = 0; y = -size; break;
-            case 3: x = -size; y = -size; break;
-        }
-
-        sprite.style.backgroundPosition = `${x}px ${y}px`;
-
-        // --- Logic ---
-        function goBack() {
-            if (history.length > 1) {
-                history.back();
-            } else {
-                window.close();
-            }
-        }
-    </script>
-</body>
-</html>
+                // --- Randomizers ---
+                
+                // 1. Random Quote
+                const randomQuote = quotes[Math.floor(Math.random() * quotes.length)];
+                document.getElementById('quote').innerText = `"${randomQuote}"`;
+        
+                // 2. Random Sprite Position (1 of 4)
+                // Assuming 2x2 grid. Positions:
+                // 0: top-left (0,0), 1: top-right (-200px, 0), 
+                // 2: bottom-left (0, -200px), 3: bottom-right (-200px, -200px)
+                const quadrant = Math.floor(Math.random() * 4); 
+                const sprite = document.getElementById('sprite');
+                
+                const size = 200; // Window size
+                let x = 0;
+                let y = 0;
+        
+                switch(quadrant) {
+                    case 0: x = 0; y = 0; break;
+                    case 1: x = -size; y = 0; break;
+                    case 2: x = 0; y = -size; break;
+                    case 3: x = -size; y = -size; break;
+                }
+        
+                sprite.style.backgroundPosition = `${x}px ${y}px`;
+            </script>
+        </body>
+        </html>
+        

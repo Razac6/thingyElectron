@@ -17,11 +17,11 @@ const addToBuffer = async (activity: any) => {
   await chrome.storage.local.set({ activityBuffer: buffer });
 };
 
-const flushData = async () => {
+const flushData = async (force: boolean = false) => {
   const result = await chrome.storage.local.get(['activityBuffer']);
   const buffer = result.activityBuffer || [];
   
-  if (buffer.length === 0) return;
+  if (buffer.length === 0 && !force) return;
 
   console.log('Flushing data...', buffer.length, 'items');
 
@@ -110,7 +110,7 @@ const checkStatus = async () => {
     
     if (data.syncRequest || timeSinceLastSync >= syncIntervalMinutes) {
         console.log('Triggering Sync. Reason:', data.syncRequest ? 'Manual Request' : 'Interval');
-        await flushData();
+        await flushData(!!data.syncRequest);
     }
 
   } catch (err) {
