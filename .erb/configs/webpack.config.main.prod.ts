@@ -27,9 +27,11 @@ const configuration: webpack.Configuration = {
     preload: path.join(webpackPaths.srcMainPath, 'preload.ts'),
   },
 
-  // Add externals to prevent Webpack from bundling sql.js
+  // Add externals to prevent Webpack from bundling sql.js and build tools
   externals: {
     'sql.js': 'commonjs sql.js',
+    '@mapbox/node-pre-gyp': 'commonjs @mapbox/node-pre-gyp',
+    'active-win': 'commonjs active-win',
   },
 
   output: {
