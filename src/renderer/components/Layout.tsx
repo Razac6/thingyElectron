@@ -150,7 +150,7 @@ export default function Layout({ children }: LayoutProps) {
 
   const visibleMenuItems = menuItems.filter(item => {
       if (item.text === 'Monitoring') {
-          return settings.browser_integration_enabled === 'true';
+          return settings.browser_integration_enabled === 'true' || settings.desktop_app_monitoring_enabled !== 'false';
       }
       return true;
   });

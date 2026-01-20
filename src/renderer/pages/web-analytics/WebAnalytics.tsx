@@ -12,6 +12,7 @@ const WebAnalytics = () => {
   const theme = useTheme();
   const [stats, setStats] = useState<{ topDomains: any[], totalDuration: number } | null>(null);
   const [appStats, setAppStats] = useState<any[]>([]);
+  const [settings, setSettings] = useState<any>({ integrationEnabled: true, appMonitoringEnabled: true });
 
   const handleCategoryChange = async (domain: string, category: string) => {
       try {
@@ -49,6 +50,10 @@ const WebAnalytics = () => {
         // @ts-ignore
         const appData = await window.electron.database.getTodaysAppStats();
         setAppStats(appData);
+
+        // @ts-ignore
+        const currentSettings = await window.electron.database.getWebSettings();
+        setSettings(currentSettings);
       } catch (error) {
         console.error('WebAnalytics: Failed to fetch stats. Ensure app is restarted.', error);
         setStats({ topDomains: [], totalDuration: 0 }); // Fallback to avoid stuck loading
@@ -96,6 +101,11 @@ const WebAnalytics = () => {
         📊 Monitoring Activity
       </Typography>
 
+      {settings.integrationEnabled && (
+      <>
+      <Typography variant="h5" gutterBottom sx={{ mt: 2, mb: 3 }}>
+        🌐 Web Activity (Today)
+      </Typography>
       <Grid container spacing={3}>
         <Grid item xs={12} md={6}>
           <Paper sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -155,8 +165,12 @@ const WebAnalytics = () => {
           </Paper>
         </Grid>
       </Grid>
+      </>
+      )}
 
-      <Typography variant="h4" gutterBottom sx={{ color: theme.palette.text.primary, mb: 4, mt: 6 }}>
+      {settings.appMonitoringEnabled && (
+      <>
+      <Typography variant="h5" gutterBottom sx={{ color: theme.palette.text.primary, mb: 3, mt: 6 }}>
         🖥️ Desktop Apps (Today)
       </Typography>
 
@@ -227,6 +241,8 @@ const WebAnalytics = () => {
           </Paper>
         </Grid>
       </Grid>
+      </>
+      )}
     </Box>
   );
 };

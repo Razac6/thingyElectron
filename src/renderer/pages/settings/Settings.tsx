@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Paper, Typography, Switch, FormControlLabel, Slider, Divider, Grid, Button, CircularProgress, TextField, Checkbox, FormGroup } from '@mui/material';
+import { Box, Paper, Typography, Switch, FormControlLabel, Slider, Divider, Grid, Button, CircularProgress, TextField, Checkbox, FormGroup, List, ListItem, ListItemIcon, ListItemText, IconButton } from '@mui/material';
 import { useSettings } from '../../context/SettingsContext';
 import { forceNeuralTraining } from '../../services/DatabaseService';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import SyncIcon from '@mui/icons-material/Sync';
 import AddIcon from '@mui/icons-material/Add';
+import DeleteIcon from '@mui/icons-material/Delete';
 
 function Settings() {
     const { settings, updateSetting, loading } = useSettings();
@@ -28,6 +29,9 @@ function Settings() {
       if (key === 'integrationEnabled') {
           updateSetting('browser_integration_enabled', String(value));
       }
+      if (key === 'appMonitoringEnabled') {
+          updateSetting('desktop_app_monitoring_enabled', String(value));
+      }
       const newSettings = { ...webSettings, [key]: value };
       setWebSettings(newSettings);
       // @ts-ignore
@@ -37,11 +41,19 @@ function Settings() {
   const handleAddSite = () => {
       if (!newSiteInput.trim()) return;
       const site = newSiteInput.trim();
-      // Add to blocked sites if not present
-      if (!webSettings.blockedSites.includes(site)) {
-           const newSites = [...(webSettings.blockedSites || []), site];
-           handleWebSettingChange('blockedSites', newSites);
-      }
+      
+      const currentManaged = webSettings.managedSites || [];
+      const currentBlocked = webSettings.blockedSites || [];
+
+      const newManaged = currentManaged.includes(site) ? currentManaged : [...currentManaged, site];
+      // Auto-enable newly added site
+      const newBlocked = currentBlocked.includes(site) ? currentBlocked : [...currentBlocked, site];
+
+      const newSettings = { ...webSettings, managedSites: newManaged, blockedSites: newBlocked };
+      setWebSettings(newSettings);
+      // @ts-ignore
+      window.electron.database.saveWebSettings(newSettings);
+      
       setNewSiteInput('');
   };
 
@@ -52,6 +64,19 @@ function Settings() {
         : [...currentSites, site];
       
       handleWebSettingChange('blockedSites', newSites);
+  };
+
+  const handleDeleteSite = (site: string) => {
+      const currentManaged = webSettings.managedSites || [];
+      const currentBlocked = webSettings.blockedSites || [];
+
+      const newManaged = currentManaged.filter((s: string) => s !== site);
+      const newBlocked = currentBlocked.filter((s: string) => s !== site);
+
+      const newSettings = { ...webSettings, managedSites: newManaged, blockedSites: newBlocked };
+      setWebSettings(newSettings);
+      // @ts-ignore
+      window.electron.database.saveWebSettings(newSettings);
   };
 
   if (loading) return <Typography sx={{ p: 3 }}>Loading settings...</Typography>;
@@ -228,7 +253,7 @@ function Settings() {
       </Paper>
 
       <Paper sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" gutterBottom>Browser Integration (Chrome Extension)</Typography>
+        <Typography variant="h6" gutterBottom>Activity Monitoring</Typography>
         <Divider sx={{ mb: 3 }} />
 
         {!webSettings ? (
@@ -241,11 +266,26 @@ function Settings() {
                 <FormControlLabel
                     control={
                         <Switch 
+                            checked={webSettings.appMonitoringEnabled} 
+                            onChange={(e) => handleWebSettingChange('appMonitoringEnabled', e.target.checked)} 
+                        />
+                    }
+                    label="Enable Desktop App Monitoring"
+                />
+                 <Typography variant="caption" display="block" color="text.secondary" sx={{ ml: 4 }}>
+                    Tracks active windows (e.g. VS Code, Slack) to analyze productivity patterns.
+                </Typography>
+            </Grid>
+
+            <Grid item xs={12}>
+                <FormControlLabel
+                    control={
+                        <Switch 
                             checked={webSettings.integrationEnabled} 
                             onChange={(e) => handleWebSettingChange('integrationEnabled', e.target.checked)} 
                         />
                     }
-                    label="Enable Browser Integration"
+                    label="Enable Browser Integration (Chrome)"
                 />
                  <Typography variant="caption" display="block" color="text.secondary" sx={{ ml: 4 }}>
                     Allows Thingy to sync with the Chrome extension to block distractions and track web usage.
@@ -281,23 +321,34 @@ function Settings() {
 
             <Grid item xs={12}>
                 <Typography variant="subtitle2" sx={{ mt: 2, mb: 1 }}>Blocked Sites:</Typography>
-                <FormGroup row>
-                    {Array.from(new Set([...defaultSites, ...(webSettings.blockedSites || [])])).map(site => (
-                        <FormControlLabel
-                            key={site}
-                            control={
-                                <Checkbox 
-                                    disabled={!webSettings.blockingEnabled}
-                                    checked={webSettings.blockedSites.includes(site)}
-                                    onChange={() => toggleBlockedSite(site)}
-                                />
-                            }
-                            label={site}
-                        />
-                    ))}
-                </FormGroup>
+                <Paper variant="outlined" sx={{ maxHeight: 200, overflow: 'auto', mb: 2 }}>
+                    <List dense>
+                        {(webSettings.managedSites || []).map((site: string) => (
+                            <ListItem
+                                key={site}
+                                secondaryAction={
+                                    <IconButton edge="end" aria-label="delete" onClick={() => handleDeleteSite(site)} disabled={!webSettings.blockingEnabled}>
+                                        <DeleteIcon />
+                                    </IconButton>
+                                }
+                            >
+                                <ListItemIcon>
+                                    <Checkbox
+                                        edge="start"
+                                        checked={webSettings.blockedSites.includes(site)}
+                                        tabIndex={-1}
+                                        disableRipple
+                                        onChange={() => toggleBlockedSite(site)}
+                                        disabled={!webSettings.blockingEnabled}
+                                    />
+                                </ListItemIcon>
+                                <ListItemText primary={site} />
+                            </ListItem>
+                        ))}
+                    </List>
+                </Paper>
                 
-                <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
+                <Box sx={{ display: 'flex', gap: 1 }}>
                     <TextField 
                         size="small"
                         placeholder="Add website (e.g. reddit.com)"

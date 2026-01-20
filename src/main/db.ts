@@ -1391,23 +1391,36 @@ export const getWebBlockingSettings = () => {
   };
 
   const integrationEnabled = getSetting('browser_integration_enabled');
+  const appMonitoring = getSetting('desktop_app_monitoring_enabled');
   const enabled = getSetting('web_blocking_enabled');
   const onlyFocus = getSetting('web_blocking_only_focus');
   const sites = getSetting('web_blocking_sites');
+  const managedSitesStr = getSetting('web_managed_sites');
+
+  const defaultSites = ['youtube.com/shorts', 'facebook.com', 'instagram.com', 'twitter.com', 'tiktok.com', 'onet.pl', 'lowcygier.pl'];
+  const managedSites = (managedSitesStr && managedSitesStr !== 'undefined') 
+    ? (() => { try { return JSON.parse(managedSitesStr); } catch(e) { return defaultSites; } })() 
+    : defaultSites;
 
   return {
     integrationEnabled: integrationEnabled ? integrationEnabled === 'true' : defaults.integrationEnabled,
+    appMonitoringEnabled: appMonitoring !== 'false',
     blockingEnabled: enabled ? enabled === 'true' : defaults.blockingEnabled,
     blockOnlyInFocus: onlyFocus ? onlyFocus === 'true' : defaults.blockOnlyInFocus,
-    blockedSites: sites ? JSON.parse(sites) : defaults.blockedSites
+    blockedSites: (sites && sites !== 'undefined') ? (() => {
+        try { return JSON.parse(sites); } catch(e) { return defaults.blockedSites; }
+    })() : defaults.blockedSites,
+    managedSites
   };
 };
 
 export const saveWebBlockingSettings = (settings: any) => {
   setSetting('browser_integration_enabled', String(settings.integrationEnabled));
+  setSetting('desktop_app_monitoring_enabled', String(settings.appMonitoringEnabled));
   setSetting('web_blocking_enabled', String(settings.blockingEnabled));
   setSetting('web_blocking_only_focus', String(settings.blockOnlyInFocus));
   setSetting('web_blocking_sites', JSON.stringify(settings.blockedSites));
+  setSetting('web_managed_sites', JSON.stringify(settings.managedSites));
 };
 
 export const getTodaysWebStats = () => {

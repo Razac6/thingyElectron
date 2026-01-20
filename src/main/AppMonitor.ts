@@ -1,7 +1,7 @@
 import { powerMonitor } from 'electron';
 import activeWin from 'active-win';
 import log from 'electron-log';
-import { logAppActivity } from './db';
+import { logAppActivity, getSetting } from './db';
 
 let interval: NodeJS.Timeout | null = null;
 const CHECK_INTERVAL = 30000; // 30 seconds
@@ -14,6 +14,10 @@ export const startAppMonitor = () => {
 
   interval = setInterval(async () => {
     try {
+      // 0. Check setting
+      const enabled = getSetting('desktop_app_monitoring_enabled');
+      if (enabled === 'false') return; // Enabled by default if not set, or set to 'false' to disable
+
       // 1. Check for system idle
       const idleTime = powerMonitor.getSystemIdleTime();
       if (idleTime > IDLE_THRESHOLD) {
