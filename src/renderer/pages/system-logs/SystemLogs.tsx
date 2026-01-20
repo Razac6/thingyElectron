@@ -30,6 +30,7 @@ function SystemLogs() {
         case 'DEBUG': return '#9e9e9e';    // Grey
         case 'GAMIFICATION': return '#ffca28'; // Amber/Gold
         case 'PRODUCTIVITY': return '#ab47bc'; // Purple
+        case 'WEB': return '#2196f3';      // Blue
         default: return '#ffeb3b'; // Default Yellow
     }
   };

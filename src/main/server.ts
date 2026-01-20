@@ -1,6 +1,6 @@
 import http from 'http';
 import log from 'electron-log';
-import { getSetting, logWebActivity, logWebActivityBulk, getWebBlockingSettings } from './db';
+import { getSetting, logWebActivity, logWebActivityBulk, getWebBlockingSettings, logSystemEvent } from './db';
 
 let server: http.Server | null = null;
 let currentPort = 3333;
@@ -79,6 +79,7 @@ const handleRequest = (req: http.IncomingMessage, res: http.ServerResponse) => {
         
         if (Array.isArray(data)) {
             logWebActivityBulk(data);
+            logSystemEvent(`Browser Sync: Received ${data.length} activity records.`, 'WEB');
         } else if (data.domain && data.duration) {
             logWebActivity(data);
         }

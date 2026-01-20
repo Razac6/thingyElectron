@@ -69,6 +69,7 @@ export const initDB = async () => {
   db.run(`CREATE TABLE IF NOT EXISTS habits (id INTEGER PRIMARY KEY, userId INTEGER, title TEXT NOT NULL, description TEXT, frequency TEXT NOT NULL, category TEXT, targetStreak INTEGER DEFAULT 0, reminderTime TEXT, createdAt TEXT, isFavorite INTEGER DEFAULT 0, FOREIGN KEY(userId) REFERENCES users(id))`);
   db.run(`CREATE TABLE IF NOT EXISTS habit_logs (id INTEGER PRIMARY KEY, habitId INTEGER, date TEXT NOT NULL, value INTEGER DEFAULT 1, notes TEXT, FOREIGN KEY(habitId) REFERENCES habits(id) ON DELETE CASCADE)`);
   db.run(`CREATE TABLE IF NOT EXISTS web_stats (id INTEGER PRIMARY KEY, domain TEXT, url TEXT, duration INTEGER, timestamp INTEGER)`);
+  db.run(`CREATE TABLE IF NOT EXISTS domain_categories (domain TEXT PRIMARY KEY, category TEXT)`);
 
 
   try {
@@ -1406,10 +1407,11 @@ export const getTodaysWebStats = () => {
 
   try {
     const stmt = db.prepare(`
-      SELECT domain, SUM(duration) as totalTime 
-      FROM web_stats 
-      WHERE timestamp >= :start
-      GROUP BY domain 
+      SELECT ws.domain, SUM(ws.duration) as totalTime, dc.category 
+      FROM web_stats ws
+      LEFT JOIN domain_categories dc ON ws.domain = dc.domain
+      WHERE ws.timestamp >= :start
+      GROUP BY ws.domain 
       ORDER BY totalTime DESC 
       LIMIT 10
     `);
@@ -1431,6 +1433,30 @@ export const getTodaysWebStats = () => {
     console.error('Failed to get web stats', e);
     return { topDomains: [], totalDuration: 0 };
   }
+};
+
+export const setDomainCategory = (domain: string, category: string) => {
+    if (!db) return;
+    try {
+        const stmt = db.prepare("INSERT OR REPLACE INTO domain_categories (domain, category) VALUES (?, ?)");
+        stmt.run([domain, category]);
+        stmt.free();
+        logSystemEvent(`Context Updated: Domain '${domain}' categorized as ${category}.`, 'LEARNING');
+    } catch (e) { console.error(e); }
+};
+
+export const getAllDomainCategories = () => {
+    if (!db) return {};
+    try {
+        const stmt = db.prepare("SELECT domain, category FROM domain_categories");
+        const categories: Record<string, string> = {};
+        while (stmt.step()) {
+            const row = stmt.getAsObject();
+            categories[row.domain as string] = row.category as string;
+        }
+        stmt.free();
+        return categories;
+    } catch (e) { return {}; }
 };
 
 export const closeDB = () => {

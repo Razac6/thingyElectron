@@ -1,14 +1,29 @@
 import React, { useEffect, useState } from 'react';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 import { Doughnut } from 'react-chartjs-2';
-import { Box, Typography, Paper, Grid, Table, TableBody, TableCell, TableContainer, TableHead, TableRow } from '@mui/material';
+import { Box, Typography, Paper, Grid, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Select, MenuItem } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
+const CATEGORIES = ['WORK', 'LEARNING', 'DISTRACTION', 'NEUTRAL', 'UNCATEGORIZED'];
+
 const WebAnalytics = () => {
   const theme = useTheme();
   const [stats, setStats] = useState<{ topDomains: any[], totalDuration: number } | null>(null);
+
+  const handleCategoryChange = async (domain: string, category: string) => {
+      try {
+          // @ts-ignore
+          await window.electron.database.setDomainCategory(domain, category);
+          // Refresh stats
+          // @ts-ignore
+          const data = await window.electron.database.getTodaysWebStats();
+          setStats(data);
+      } catch (e) {
+          console.error(e);
+      }
+  };
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -84,6 +99,7 @@ const WebAnalytics = () => {
                 <TableHead>
                   <TableRow>
                     <TableCell>Domain</TableCell>
+                    <TableCell>Category</TableCell>
                     <TableCell align="right">Time Spent</TableCell>
                   </TableRow>
                 </TableHead>
@@ -92,6 +108,20 @@ const WebAnalytics = () => {
                     <TableRow key={row.domain}>
                       <TableCell component="th" scope="row">
                         {row.domain}
+                      </TableCell>
+                      <TableCell>
+                        <Select
+                            value={row.category || 'UNCATEGORIZED'}
+                            size="small"
+                            onChange={(e) => handleCategoryChange(row.domain, e.target.value as string)}
+                            variant="standard"
+                            disableUnderline
+                            sx={{ fontSize: '0.875rem' }}
+                        >
+                            {CATEGORIES.map(cat => (
+                                <MenuItem key={cat} value={cat}>{cat}</MenuItem>
+                            ))}
+                        </Select>
                       </TableCell>
                       <TableCell align="right">{formatDuration(row.totalTime)}</TableCell>
                     </TableRow>

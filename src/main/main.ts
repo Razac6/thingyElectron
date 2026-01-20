@@ -59,7 +59,8 @@ import {
   getDailyStandupData,
   getWebBlockingSettings,
   saveWebBlockingSettings,
-  getTodaysWebStats
+  getTodaysWebStats,
+  setDomainCategory
 } from './db';
 import { autoScheduleTasks, getProposedSchedule } from './TaskScheduler';
 import { ProductivityAnalyst, AnalysisResult } from './ProductivityAnalysis';
@@ -549,6 +550,10 @@ ipcMain.handle('db:save-web-settings', (event, settings) => {
     return true;
 });
 ipcMain.handle('db:get-todays-web-stats', () => getTodaysWebStats());
+ipcMain.handle('db:set-domain-category', (event, domain, category) => {
+    setDomainCategory(domain, category);
+    return true;
+});
 ipcMain.handle('server:restart', () => {
     restartServer();
     return true;

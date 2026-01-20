@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Focus Mode Active</title>
+    <title>Focus Mode</title>
     <style>
         body {
             margin: 0;
@@ -11,102 +11,146 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
-            background-color: #023047; /* Thingy Dark Blue */
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            color: white;
-            text-align: center;
+            min-height: 100vh;
+            background-color: #fdfbf7; /* Warm White */
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            color: #2d3436;
         }
 
         .container {
-            max-width: 600px;
+            max-width: 500px;
+            text-align: center;
             padding: 40px;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 20px;
-            backdrop-filter: blur(10px);
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            animation: fadeIn 0.5s ease-out;
+            background: white;
+            border-radius: 24px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.04);
+            transition: transform 0.3s ease;
+        }
+
+        /* Image Container acts as a window/mask */
+        .illustration-window {
+            width: 200px;  /* Adjust based on your SVG size */
+            height: 200px; /* Adjust based on your SVG size */
+            margin: 0 auto 30px auto;
+            overflow: hidden;
+            border-radius: 100%; /* Circle shape */
+            background-color: #ffeaa7; /* Pastel Yellow fallback */
+            position: relative;
+        }
+
+        .illustration {
+            width: 400px; /* 2x window width (assuming 2 columns) */
+            height: 400px; /* 2x window height (assuming 2 rows) */
+            background-image: url('assets/image/vector.svg'); /* Path relative to dist/ */
+            background-size: 400px 400px;
+            background-repeat: no-repeat;
+            position: absolute;
+            top: 0;
+            left: 0;
+            transition: none; /* No animation */
         }
 
         h1 {
-            font-size: 3rem;
-            margin-bottom: 10px;
-            color: #8ecae6; /* Light Blue */
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 12px;
+            color: #2d3436;
         }
 
-        p {
-            font-size: 1.2rem;
-            line-height: 1.6;
+        p.quote {
+            font-size: 1.1rem;
+            line-height: 1.5;
+            color: #636e72;
             margin-bottom: 30px;
-            color: #aebbc2;
+            font-style: italic;
         }
 
-        .icon {
-            font-size: 80px;
-            margin-bottom: 20px;
-            display: inline-block;
-            animation: float 3s ease-in-out infinite;
+        .blocked-info {
+            font-size: 0.85rem;
+            color: #b2bec3;
+            margin-bottom: 30px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
         }
 
         .btn {
-            background-color: #fb8500; /* Orange */
+            background-color: #74b9ff; /* Pastel Blue */
             color: white;
             border: none;
-            padding: 15px 32px;
-            text-align: center;
-            text-decoration: none;
-            display: inline-block;
+            padding: 14px 32px;
             font-size: 16px;
-            border-radius: 50px;
+            border-radius: 12px;
             cursor: pointer;
-            transition: transform 0.2s, background-color 0.2s;
-            font-weight: bold;
-            box-shadow: 0 4px 15px rgba(251, 133, 0, 0.4);
+            font-weight: 600;
+            transition: background-color 0.2s, transform 0.1s;
+            box-shadow: 0 4px 12px rgba(116, 185, 255, 0.3);
         }
 
         .btn:hover {
-            background-color: #ffb703; /* Yellow/Gold */
-            transform: translateY(-2px);
+            background-color: #0984e3;
+            transform: translateY(-1px);
         }
 
-        @keyframes float {
-            0% { transform: translateY(0px); }
-            50% { transform: translateY(-15px); }
-            100% { transform: translateY(0px); }
+        .btn:active {
+            transform: translateY(1px);
         }
 
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .highlight {
-            color: #ffb703;
-            font-weight: bold;
-        }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="icon">🛡️</div>
-        <h1>Focus Mode Active</h1>
-        <p>
-            This site (<span id="site-name" class="highlight">...</span>) is blocked by <strong>Thingy</strong>.
-            <br>
-            You are currently in a Deep Work session. Don't break the flow!
-        </p>
+        <div class="illustration-window">
+            <div class="illustration" id="sprite"></div>
+        </div>
+        
+        <h1 id="title">Stay Focused</h1>
+        <p class="quote" id="quote">"..."</p>
+        <div class="blocked-info">Blocked by Thingy</div>
+
         <button class="btn" onclick="goBack()">Get Back to Work</button>
     </div>
 
     <script>
-        // Get the domain that was blocked from URL params if possible, 
-        // strictly speaking we can't easily pass it via declarativeNetRequest redirect
-        // without complex regex, so we'll keep it generic or check referrer.
-        document.getElementById('site-name').innerText = 'Distraction';
+        // --- Configuration ---
+        const quotes = [
+            "Focus is the key to all thinking.",
+            "Starve your distractions, feed your focus.",
+            "Productivity is being able to do things that you were never able to do before.",
+            "Your future is created by what you do today, not tomorrow.",
+            "Deep work is the ability to master hard things quickly.",
+            "Simplicity boils down to two steps: Identify the essential. Eliminate the rest.",
+            "It’s not that I’m so smart, it’s just that I stay with problems longer."
+        ];
+
+        // --- Randomizers ---
         
+        // 1. Random Quote
+        const randomQuote = quotes[Math.floor(Math.random() * quotes.length)];
+        document.getElementById('quote').innerText = `"${randomQuote}"`;
+
+        // 2. Random Sprite Position (1 of 4)
+        // Assuming 2x2 grid. Positions:
+        // 0: top-left (0,0), 1: top-right (-200px, 0), 
+        // 2: bottom-left (0, -200px), 3: bottom-right (-200px, -200px)
+        const quadrant = Math.floor(Math.random() * 4); 
+        const sprite = document.getElementById('sprite');
+        
+        const size = 200; // Window size
+        let x = 0;
+        let y = 0;
+
+        switch(quadrant) {
+            case 0: x = 0; y = 0; break;
+            case 1: x = -size; y = 0; break;
+            case 2: x = 0; y = -size; break;
+            case 3: x = -size; y = -size; break;
+        }
+
+        sprite.style.backgroundPosition = `${x}px ${y}px`;
+
+        // --- Logic ---
         function goBack() {
-            // Try to close tab if it was opened fresh, otherwise go back
             if (history.length > 1) {
                 history.back();
             } else {
