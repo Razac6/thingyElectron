@@ -1,91 +1,79 @@
 # Thingy - Intelligent Productivity Assistant
 
-**Thingy** is an advanced desktop productivity application (Electron + React) that goes far beyond standard "To-Do" lists. It features a built-in **Artificial Intelligence Engine (Neural Core)** and a suite of **Analytical Algorithms** that learn your work style, predict task duration, and optimize your daily schedule.
+**Thingy** is an advanced desktop productivity application (Electron + React) designed for developers and knowledge workers. It combines a powerful task manager with a local **Neural AI Core** to predict task durations, optimize schedules, and act as an interactive productivity companion.
 
-All data (including the AI model) is stored and processed **locally** on your device (SQLite + TensorFlow.js), ensuring 100% privacy.
+All data (including the AI model and activity logs) is stored and processed **locally** on your device (SQLite + TensorFlow.js), ensuring 100% privacy.
 
 ---
 
-## 🧠 The "Brain" of the App
+## 🧠 The "Brain": Neural Core 2.0
 
-The application relies on two pillars of intelligence:
+Thingy learns how you work using a custom TensorFlow.js model trained on your history.
 
-### 1. Neural Core (The AI)
-A custom machine learning model (TensorFlow.js) that trains on your work history.
-*   **Model Inputs:** Hour of day, Day of week, Task Priority, Sleep Score, Meeting Load.
-*   **Output:** Predicted *actual* duration of a task (in minutes).
-*   **"Reality Check" Feature:** A chart comparing your actual work vs. AI predictions. It helps detect "Flow" states (working faster than predicted) or hidden blockers/procrastination.
-*   **Maturity:** The model needs data. Below 50% maturity, it learns and observes. Above this threshold, it actively provides advice and visualizations.
-
-### 2. Analytical Algorithms (Productivity Analyst)
-A set of deterministic algorithms analyzing your biometric and logistical data:
-*   **Tag Difficulty Profile:** The system learns your velocity per tag. For example, it might learn that tasks tagged `#backend` typically take you 150% of your estimated time (Multiplier 1.5), while `#docs` take only 50% (Multiplier 0.5).
-*   **Peak Hours:** Identifies the specific hours of the day when you are most productive.
-*   **Fatigue Analysis:** Calculates your average session length and recommends optimal break times based on the standard deviation of your focus.
-*   **Deep Work Score:** Measures the percentage of time spent in uninterrupted work sessions (>20 min).
+### 8-Dimensional Prediction Model
+Unlike simple average calculators, Thingy considers 8 factors to predict task duration:
+1.  **Time of Day:** Are you a night owl or an early bird?
+2.  **Day of Week:** Do Mondays drag on?
+3.  **Task Priority:** How does urgency affect your speed?
+4.  **Sleep Score:** (From Daily Bio) Are you rested?
+5.  **Meeting Load:** Is your day fragmented by calls?
+6.  **Habit Discipline:** Are you maintaining your routines?
+7.  **Story Points:** (New!) How complex is the task? The AI learns your personal "Velocity".
+8.  **Focus Context:** (New!) Were you distracted (social media) or focused (IDE) before starting?
 
 ---
 
 ## ✨ Key Features
 
-### 📅 AI Auto-Planner & Scheduling
-*   **One-Click Auto-Schedule:** A magic wand feature that physically reorders your task list. It calculates an optimal "Score" for each task by combining:
-    *   **Neural Prediction:** How long will this take *you* today, given your sleep and meeting load?
-    *   **Tag Difficulty:** Are you historically fast or slow with this type of task?
-    *   **Sprint Pressure:** Is the deadline approaching?
-    *   **Priority:** High priority tasks get a base boost.
-*   **Result:** A list sorted to maximize your impact, with a "Quick Wins first" strategy within priority tiers.
-*   **AI Proposal:** Before applying changes, you see a modal explaining *why* the AI sorted tasks this way (e.g., "🔥 Priority + ⏳ Sprint Ending").
+### 🔥 Boost Mode (Deep Work Overlay)
+Toggle "Boost Mode" to enter a hyper-focused state.
+*   **Immersive Overlay:** When you start a timer, the entire interface is dimmed and blurred.
+*   **Liquid Timer:** A beautiful, animated liquid progress bar keeps you aware of time passing without numeric stress.
+*   **Visual Focus:** No distractions, just your current task and the flow.
 
-### ⏱️ Time & Context Tracking
-*   **Smart Timer:** Integrated stopwatch for tasks.
-*   **Smart Insights Widget:** A dashboard widget where you input context: **Sleep Score** and **Meeting Load**. These inputs directly feed into the Neural Core.
-*   **Idle Detection:** If you walk away, the system asks if you want to discard the idle time (unless it's a "Meeting" task, where it discreetly asks after the fact).
+### 🤖 AI Personality & Companion
+Your dashboard isn't static. A built-in AI bot observes your work style in real-time.
+*   **Context-Aware:** It cheers you on during high-focus streaks ("Grind Mode") and gently nudges you if you get distracted by social media.
+*   **Interactive Bubble:** Reacts to your "Daily Bio" state (e.g., suggests a break if you're fatigued).
+*   **Localized:** Fully supports Polish language interactions.
 
-### 🚀 Sprint Management
-*   **Full Lifecycle:** Create, Start, Complete, and Edit sprints.
-*   **Capacity Planning:** The system suggests a realistic capacity (in hours) for new sprints based on your historical velocity.
-*   **Drag & Drop:** Intuitive manual reordering with visual drop targets.
+### 🌐 Chrome Integration & Azure DevOps
+Thingy extends beyond the desktop with a companion Chrome Extension.
+*   **Quick Capture:** Right-click any task in **Azure DevOps**, Jira, or GitHub to instantly add it to Thingy.
+    *   Parses **ID**, **Title**, and **Story Points** automatically.
+*   **Focus Context:** The extension monitors (privately) if you are visiting distracting sites (FB, YT) vs. work sites, feeding this data to the Neural Core to adjust predictions.
 
-### 🔨 Habit Forge (Habit Tracker)
-*   **Weekly View:** A modern, bubble-based interface to track your habits for the current week.
-*   **Visual Streaks:** Automatic streak calculation with "active" status preservation (doesn't reset immediately in the morning).
-*   **Interactive Widget:** Toggle your favorite habit directly from the Dashboard.
-*   **Detailed Analytics:** Expand habit cards to see a line chart of your "Habit Strength" (7-day moving average).
+### 📅 AI Auto-Planner
+*   **One-Click Scheduling:** The AI reorders your daily to-do list based on predicted effort, deadlines, and your current energy level.
+*   **Smart Suggestions:** "You have a 30m gap before the next meeting. Here's a quick task you can finish."
 
 ### 🎮 Gamification
-*   **XP System & Levels:** Earn experience points for completing tasks and challenges.
-*   **Achievements:** Badges for specific behaviors (e.g., "Frog Eater" for tackling hard tasks first).
-*   **Daily Modes:** Set your mode: *Normal*, *Boost* (high performance), or *Recovery* (health focus). The system adapts challenges to your mode.
-
-### 📊 Reporting
-*   **AI Daily Report:** Generate a text summary on demand. The AI compares its predictions with your actuals, comments on your pace, and summarizes your logistical stats (meetings, deep work).
-*   **Statistics:** Charts for Productivity over Time, Hourly Distribution, Status Breakdown, and Neural Core Health.
+*   **XP System:** Earn experience for completing tasks, maintaining streaks, and working in "Deep Work" blocks.
+*   **Achievements:** Unlock badges for milestones (e.g., "Bug Squasher", "Marathon Runner").
+*   **Habit Forge:** Track daily habits with visual streaks and heatmaps.
 
 ---
 
 ## 🛠️ Tech Stack
 
-*   **Frontend:** React, Material UI (MUI), Recharts / Chart.js.
-*   **Backend (Main Process):** Electron, Node.js.
-*   **Database:** SQLite (via `sql.js` - embedded, zero-config).
-*   **AI/ML:** TensorFlow.js (running in the Node.js process).
-
----
-
-## 🎯 Who is this for?
-
-1.  **Freelancers & Developers:** Who need to self-manage and want to know the *real* cost of different task types.
-2.  **People with ADHD / Focus Issues:** The "AI Auto-Planner" removes the decision fatigue of "what to do next." The system simply highlights the best next step.
-3.  **Productivity Biohackers:** People who want to correlate their performance with sleep, time of day, and habits.
+*   **Frontend:** React, Material UI (MUI), Framer Motion / Lottie.
+*   **Backend:** Electron, Node.js.
+*   **Database:** SQLite (via `sql.js` - embedded).
+*   **AI:** TensorFlow.js (Linear Regression / Dense Layers).
+*   **Integration:** Chrome Extension API, Local HTTP Server.
 
 ---
 
 ## 🚀 Getting Started
 
-1.  **Launch** the app.
-2.  Create your first **Sprint**.
-3.  **Add tasks** (define Priority and Estimate). Use tags like `#css` or `#api` to let the system learn your context.
-4.  In **Smart Insights** (Dashboard), set your Sleep Score.
-5.  Click **Start** on a task.
-6.  Check **Statistics -> Neural Core AI** after a few days to see the model learning your patterns.
+1.  **Install:** Run `npm install`.
+2.  **Dev Mode:** Run `npm start`.
+3.  **Extension:** Load the `./chrome-extension` folder in Chrome (Developer Mode).
+4.  **Usage:**
+    *   Set your **Daily Bio** (Sleep/Mood).
+    *   Add tasks (optionally import from Azure via right-click).
+    *   Click **Boost** (🔥 icon) and start a timer to see the Liquid Overlay.
+    *   Watch the AI learn and adapt to your style!
+
+## 🔒 Privacy First
+Thingy is designed for privacy. It does **not** send your task data, browsing history, or AI model to the cloud. Everything lives in your `%AppData%/Thingy` folder.
