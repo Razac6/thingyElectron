@@ -44,6 +44,13 @@ const sendTaskToElectron = async (taskData: any) => {
     });
     if (res.ok) {
       console.log('Task draft sent to Thingy!');
+      chrome.notifications.create({
+          type: 'basic',
+          iconUrl: 'assets/128x128.png',
+          title: 'Thingy',
+          message: 'Task added successfully!',
+          priority: 1
+      });
     }
   } catch (e) {
     console.error('Failed to send task to Thingy', e);
@@ -98,15 +105,24 @@ const updateBlockingRules = async (settings: any, focusMode: boolean) => {
     return;
   }
 
-  const newRules: any[] = settings.blockedSites.map((site: string, index: number) => ({
-    id: index + 1,
-    priority: 1,
-    action: { 
-      type: 'redirect',
-      redirect: { extensionPath: '/blocked.html' }
-    },
-    condition: { urlFilter: site, resourceTypes: ['main_frame'] }
-  }));
+  const newRules: any[] = settings.blockedSites.map((site: string, index: number) => {
+    // Better filter formatting
+    let filter = site;
+    // If it doesn't look like a pattern already, assume domain/path start
+    if (!filter.startsWith('||') && !filter.startsWith('*') && !filter.startsWith('http')) {
+        filter = `||${filter}`;
+    }
+    
+    return {
+        id: index + 1,
+        priority: 1,
+        action: { 
+          type: 'redirect',
+          redirect: { extensionPath: '/blocked.html' }
+        },
+        condition: { urlFilter: filter, resourceTypes: ['main_frame'] }
+    };
+  });
 
   // Only update if rules changed (optimization) to avoid flickering
   // For now, naive implementation is fine as Chrome handles diffing reasonably well

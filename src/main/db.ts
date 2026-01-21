@@ -73,6 +73,11 @@ export const initDB = async () => {
   db.run(`CREATE TABLE IF NOT EXISTS app_activity (id INTEGER PRIMARY KEY, app_name TEXT, window_title TEXT, duration INTEGER, timestamp INTEGER)`);
   db.run(`CREATE TABLE IF NOT EXISTS app_categories (app_name TEXT PRIMARY KEY, category TEXT)`);
 
+  // Performance Indexes
+  db.run(`CREATE INDEX IF NOT EXISTS idx_web_stats_timestamp ON web_stats(timestamp)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_app_activity_timestamp ON app_activity(timestamp)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_system_logs_timestamp ON system_logs(timestamp)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_work_sessions_start ON work_sessions(startTime)`); // For analytics ranges
 
   try {
     const taskTableInfo = db.exec("PRAGMA table_info(tasks);");

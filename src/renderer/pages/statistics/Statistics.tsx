@@ -7,7 +7,6 @@ import { StatusEnum } from '../../../enums/status.enum';
 import { PriorityEnum } from '../../../enums/priority.enum';
 import ProductivityChart from '../../components/ProductivityChart';
 import HourlyProductivityChart from '../../components/HourlyProductivityChart';
-import TaskStats from '../../components/TaskStats';
 import { getTagAnalyticsWithNames, getHourlyProductivity, getAiStats } from '../../services/DatabaseService';
 import AiProductivityChart from '../../components/AiProductivityChart';
 
@@ -169,9 +168,6 @@ function Statistics() {
       {/* Tab 2: Neural Core AI */}
       <TabPanel value={tabValue} index={1}>
         <Grid container spacing={3}>
-          <Grid item xs={12}>
-            <TaskStats />
-          </Grid>
           <Grid item xs={12}>
               <AiProductivityChart />
           </Grid>
