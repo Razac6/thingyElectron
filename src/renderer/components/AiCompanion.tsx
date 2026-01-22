@@ -36,43 +36,10 @@ export const AiCompanion = () => {
     const [stretchingMinutes, setStretchingMinutes] = useState(0);
     const [promptType, setPromptType] = useState<'none' | 'water' | 'meditation' | 'stretching'>('none');
     const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-    const bubbleRef = useRef<HTMLDivElement>(null);
+    const messageTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     const opacity = Number(settings.ai_bubble_opacity) || 0.8;
     const isEnabled = settings.enable_ai_assistant !== 'false';
-
-    // Click Outside Handler
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (isMenuOpen && bubbleRef.current && !bubbleRef.current.contains(event.target as Node)) {
-                // Check if click is on the cat (managed separately)
-                // We assume cat click handles its own toggle, so we only care about "pure" outside clicks here
-                // However, since cat is part of the same parent Box but outside Paper, we need to be careful.
-                // Actually, the Cat Box has onClick logic.
-                
-                // Let's just close menu. If user clicked Cat, Cat's onClick will fire too.
-                // To avoid conflict, we can check if target is NOT within the companion container at all?
-                // But Companion container has pointer-events: none, except children.
-                
-                setIsMenuOpen(false);
-                setMessage(null);
-                setPromptType('none');
-                
-                // Start hide timer
-                if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
-                hideTimeoutRef.current = setTimeout(() => {
-                    setIsVisible(false);
-                }, 5000);
-            }
-        };
-
-        if (isMenuOpen) {
-            document.addEventListener('mousedown', handleClickOutside);
-        }
-        return () => {
-            document.removeEventListener('mousedown', handleClickOutside);
-        };
-    }, [isMenuOpen]);
 
     useEffect(() => {
         if (!isEnabled) return;
@@ -98,30 +65,120 @@ export const AiCompanion = () => {
             setPromptType('none');
             setMessage("Jestem! W czym pomóc?");
             
-            // Resetuj timer chowania
+            // Reset timers
             if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+            if (messageTimeoutRef.current) clearTimeout(messageTimeoutRef.current);
         };
 
         const handleShowMessage = (event: any, msg: string) => {
             setIsVisible(true);
             setMessage(msg);
             
-            // Wykryj typ promptu na podstawie treści (proste dopasowanie)
+            // Clear previous timers to prevent race conditions
+            if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+            if (messageTimeoutRef.current) clearTimeout(messageTimeoutRef.current);
+
+            // Detect prompt type
             if (msg.includes("nawodnieniu")) setPromptType('water');
             else if (msg.includes("ruch") || msg.includes("Wyprostuj")) setPromptType('stretching');
             else if (msg.includes("Mindfulness") || msg.includes("oddech")) setPromptType('meditation');
             else setPromptType('none');
             
-            if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+            // Set longer timeout for this interaction
             hideTimeoutRef.current = setTimeout(() => {
                 if (!isMenuOpen) {
                     setIsVisible(false);
                     setMessage(null);
                     setPromptType('none');
                 }
-            }, 15000); // Dłuższy czas dla powiadomień z akcją
+            }, 15000);
         };
 
+        window.addEventListener('summon-ai-companion', handleSummon);
+        window.electron.ipcRenderer.on('ai-companion:show-message', handleShowMessage);
+
+        return () => {
+            window.removeEventListener('summon-ai-companion', handleSummon);
+            // @ts-ignore
+            window.electron.ipcRenderer.removeListener('ai-companion:show-message', handleShowMessage);
+        };
+    }, [isEnabled]);
+
+    useEffect(() => {
+        if (!isEnabled) return;
+        const scheduleNextAppearance = () => {
+            // Random time: 15 to 45 minutes
+            const nextTime = Math.random() * (45 * 60 * 1000 - 15 * 60 * 1000) + 15 * 60 * 1000;
+            
+            return setTimeout(() => {
+                triggerAppearance();
+                scheduleNextAppearance();
+            }, nextTime);
+        };
+
+        const timer = scheduleNextAppearance();
+        return () => {
+            clearTimeout(timer);
+            if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+            if (messageTimeoutRef.current) clearTimeout(messageTimeoutRef.current);
+        };
+    }, [isEnabled]);
+
+    const triggerAppearance = async (forceMessage = false) => {
+        if (isVisible || !isEnabled) return;
+
+        let msg = null;
+        let type: 'none' | 'water' | 'meditation' | 'stretching' = 'none';
+        
+        const rand = Math.random();
+
+        if (settings.enable_water_reminders === 'true' && rand < 0.3) {
+            msg = "Pamiętasz o nawodnieniu? 💧";
+            type = 'water';
+        } else if (settings.enable_stretching_reminders === 'true' && rand < 0.45) {
+            msg = "Wyprostuj plecy i rozluźnij szyję! 🦒";
+            type = 'stretching';
+        } else if (settings.enable_meditation_reminders === 'true' && rand < 0.5) {
+            msg = "Może krótka chwila na oddech? 🧘‍♀️";
+            type = 'meditation';
+        } else {
+            const showMessage = forceMessage || Math.random() > 0.6;
+            if (showMessage) {
+                try {
+                    const userStr = localStorage.getItem('userId');
+                    const userId = userStr ? JSON.parse(userStr) : 1;
+                    // @ts-ignore
+                    const aiMsg = await window.electron.database.getAiMessage(userId);
+                    msg = aiMsg || MESSAGES[Math.floor(Math.random() * MESSAGES.length)];
+                } catch (e) {
+                    msg = MESSAGES[Math.floor(Math.random() * MESSAGES.length)];
+                }
+            }
+        }
+
+        setMessage(msg);
+        setIsVisible(true);
+        setPromptType(type);
+
+        const hideTime = type !== 'none' ? 15000 : (msg ? 8000 : 8000);
+        
+        // Handle message auto-hide separately (3s for normal messages)
+        if (msg && type === 'none') {
+             if (messageTimeoutRef.current) clearTimeout(messageTimeoutRef.current);
+             messageTimeoutRef.current = setTimeout(() => {
+                if (!isMenuOpen) setMessage(null);
+            }, 3000);
+        }
+
+        if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+        hideTimeoutRef.current = setTimeout(() => {
+            if (!isMenuOpen) {
+                setIsVisible(false);
+                setMessage(null);
+                setPromptType('none');
+            }
+        }, hideTime);
+    };
         window.addEventListener('summon-ai-companion', handleSummon);
         window.electron.ipcRenderer.on('ai-companion:show-message', handleShowMessage);
 
@@ -328,7 +385,7 @@ export const AiCompanion = () => {
                 position: 'fixed',
                 bottom: -40,
                 right: 0,
-                zIndex: 1200,
+                zIndex: 10000, // Wyższy niż BoostOverlay (9999), aby był widoczny w Focus Mode
                 pointerEvents: 'none',
                 display: 'flex',
                 flexDirection: 'column',
