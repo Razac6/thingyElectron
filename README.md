@@ -25,23 +25,30 @@ Unlike simple average calculators, Thingy considers 8 factors to predict task du
 
 ## ✨ Key Features
 
+### 🐾 AI Companion & Health Guardian
+A new interactive companion (the Cat) lives on your desktop to support your well-being and focus.
+*   **Animated Companion:** A Lottie-animated cat that appears subtly to offer support or advice.
+*   **Health Reminders:** Configurable reminders for:
+    *   💧 **Hydration:** Random nudges to drink water.
+    *   🏃 **Stretching:** Interval-based alerts to correct posture (smart idle detection - won't nag if you're AFK).
+    *   🧘‍♀️ **Mindfulness:** Scheduled daily meditation reminder.
+*   **Smart Notifications:** A unified notification system. Clicking a system notification (e.g., "Fragmented Focus") summons the Cat with an interactive bubble to address the issue immediately.
+*   **Glassmorphism UI:** Modern, translucent UI for the companion's bubble.
+
 ### 🔥 Boost Mode (Deep Work Overlay)
 Toggle "Boost Mode" to enter a hyper-focused state.
 *   **Immersive Overlay:** When you start a timer, the entire interface is dimmed and blurred.
 *   **Liquid Timer:** A beautiful, animated liquid progress bar keeps you aware of time passing without numeric stress.
-*   **Visual Focus:** No distractions, just your current task and the flow.
+*   **Subtasks:** Manage granular checklists directly within the Boost overlay without leaving your flow.
 
-### 🤖 AI Personality & Companion
-Your dashboard isn't static. A built-in AI bot observes your work style in real-time.
-*   **Context-Aware:** It cheers you on during high-focus streaks ("Grind Mode") and gently nudges you if you get distracted by social media.
-*   **Interactive Bubble:** Reacts to your "Daily Bio" state (e.g., suggests a break if you're fatigued).
-*   **Localized:** Fully supports Polish language interactions.
+### 🛡️ Advanced Distraction Blocking
+*   **Chrome Integration:** Syncs with a companion extension to block distracting sites.
+*   **"Always Block" Mode:** New option to permanently block specific URLs (like `youtube.com/shorts`) regardless of whether the timer is running, while leaving the main domain accessible.
+*   **Focus-Only Block:** Standard mode blocks distractions only while you are working.
 
-### 🌐 Chrome Integration & Azure DevOps
-Thingy extends beyond the desktop with a companion Chrome Extension.
-*   **Quick Capture:** Right-click any task in **Azure DevOps**, Jira, or GitHub to instantly add it to Thingy.
-    *   Parses **ID**, **Title**, and **Story Points** automatically.
-*   **Focus Context:** The extension monitors (privately) if you are visiting distracting sites (FB, YT) vs. work sites, feeding this data to the Neural Core to adjust predictions.
+### 📊 Daily Reports & Insights
+*   **Daily Standup/Report:** Get a comprehensive summary of your day: completed tasks, focus time, and an AI-generated trend analysis (Improving/Stable/Declining).
+*   **Distraction Analysis:** See exactly what diverted your attention (Top 3 distractions) directly in the Assistant's menu.
 
 ### 📅 AI Auto-Planner
 *   **One-Click Scheduling:** The AI reorders your daily to-do list based on predicted effort, deadlines, and your current energy level.
@@ -60,7 +67,7 @@ Thingy extends beyond the desktop with a companion Chrome Extension.
 *   **Backend:** Electron, Node.js.
 *   **Database:** SQLite (via `sql.js` - embedded).
 *   **AI:** TensorFlow.js (Linear Regression / Dense Layers).
-*   **Integration:** Chrome Extension API, Local HTTP Server.
+*   **Integration:** Chrome Extension API (DeclarativeNetRequest), Local HTTP Server.
 
 ---
 
@@ -70,8 +77,8 @@ Thingy extends beyond the desktop with a companion Chrome Extension.
 2.  **Dev Mode:** Run `npm start`.
 3.  **Extension:** Load the `./chrome-extension` folder in Chrome (Developer Mode).
 4.  **Usage:**
-    *   Set your **Daily Bio** (Sleep/Mood).
-    *   Add tasks (optionally import from Azure via right-click).
+    *   Go to **Settings** to configure your AI Companion and Health goals.
+    *   Add tasks (optionally import from Azure/Jira via right-click).
     *   Click **Boost** (🔥 icon) and start a timer to see the Liquid Overlay.
     *   Watch the AI learn and adapt to your style!
 
