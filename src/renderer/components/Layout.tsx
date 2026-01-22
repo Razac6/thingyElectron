@@ -46,6 +46,7 @@ import SearchOverlay from './SearchOverlay';
 import IdlePromptModal from './IdlePromptModal';
 import BoostOverlay from './BoostOverlay';
 import { useSettings } from '../context/SettingsContext';
+import { AiCompanion } from './AiCompanion';
 
 const animationMap = {
   cat_movement: catMovement,
@@ -203,6 +204,7 @@ export default function Layout({ children }: LayoutProps) {
     <Box sx={{ display: 'flex' }}>
       <CssBaseline />
       <BoostOverlay open={isBoostMode} onClose={() => toggleBoostMode(false)} />
+      <AiCompanion />
       {currentAnimationData && (
         <Box sx={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', zIndex: 9999, pointerEvents: 'none' }}>
           <Lottie

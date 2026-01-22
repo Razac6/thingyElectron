@@ -57,11 +57,12 @@ import {
   getTopHabit,
   toggleHabitFavorite,
   getDailyStandupData,
+  getDailyReportData,
   getWebBlockingSettings,
   saveWebBlockingSettings,
-  getTodaysWebStats,
+  getWebStats,
   setDomainCategory,
-  getTodaysAppStats,
+  getAppStats,
   setAppCategory
 } from './db';
 import { autoScheduleTasks, getProposedSchedule } from './TaskScheduler';
@@ -90,6 +91,25 @@ let cachedInsights: AnalysisResult | null = null;
 let hasSentFatigueWarning = false;
 let lastPeakHourNotificationDate: string | null = null;
 
+const sendAiNotification = (title: string, body: string) => {
+    const notification = new Notification({
+        title,
+        body,
+        icon: getAssetPath('icon.png')
+    });
+
+    notification.on('click', () => {
+        if (mainWindow) {
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            mainWindow.show();
+            mainWindow.focus();
+            mainWindow.webContents.send('ai-companion:show-message', body);
+        }
+    });
+
+    notification.show();
+};
+
 // --- Listen for Extension Events ---
 serverEvents.on('task-draft', (draft) => {
   if (mainWindow) {
@@ -99,12 +119,8 @@ serverEvents.on('task-draft', (draft) => {
     // Send to renderer
     mainWindow.webContents.send('task:draft-received', draft);
     
-    // Optional: Show a quick notification
-    new Notification({
-        title: 'Task Draft Received',
-        body: `From: ${draft.title.substring(0, 30)}...`,
-        icon: getAssetPath('icon.png')
-    }).show();
+    // Use unified notification
+    sendAiNotification('Task Draft Received', `From: ${draft.title.substring(0, 30)}...`);
   }
 });
 
@@ -251,6 +267,15 @@ const updateTrayTitle = () => {
         }
       });
 
+      notification.on('click', () => {
+          if (mainWindow) {
+              if (mainWindow.isMinimized()) mainWindow.restore();
+              mainWindow.show();
+              mainWindow.focus();
+              mainWindow.webContents.send('ai-companion:show-message', "Zrobiłeś sobie przerwę? ☕");
+          }
+      });
+
       notification.show();
       hasSentFatigueWarning = true;
     }
@@ -295,11 +320,7 @@ const checkHabitReminders = () => {
       if (currentTimeMin >= thresholdMin) {
           const key = `${habit.id}-${today}`;
           if (!notifiedHabits.has(key)) {
-              new Notification({
-                  title: '🎗 Habit Reminder',
-                  body: `Don't break the chain! You haven't marked "${habit.title}" as done yet.`,
-                  icon: getAssetPath('icon.png')
-              }).show();
+              sendAiNotification('🎗 Habit Reminder', `Nie zapomnij o nawyku: ${habit.title}!`);
               notifiedHabits.add(key);
               logSystemEvent(`Sent reminder for habit: ${habit.title}`, 'HABIT');
           }
@@ -360,11 +381,7 @@ ipcMain.handle('db:log-work-session', async (event, session) => {
        updateDailyChallengeProgress(challenge.id, newProgress, status);
 
        if (status === 'COMPLETED') {
-         new Notification({
-            title: '🎉 Challenge Completed!',
-            body: `You completed: ${challenge.description} (+${challenge.xpReward} XP)`,
-            icon: getAssetPath('icon.png'),
-         }).show();
+         sendAiNotification('🎉 Challenge Completed!', `Ukończyłeś: ${challenge.description} (+${challenge.xpReward} XP)`);
        }
      }
   }
@@ -402,11 +419,7 @@ ipcMain.handle('db:update-task', (event, task) => {
               const status = newProgress >= challenge.target ? 'COMPLETED' : 'ACTIVE';
               updateDailyChallengeProgress(challenge.id, newProgress, status);
               if (status === 'COMPLETED') {
-                  new Notification({
-                      title: '🎉 Challenge Completed!',
-                      body: `You completed: ${challenge.description} (+${challenge.xpReward} XP)`,
-                      icon: getAssetPath('icon.png'),
-                  }).show();
+                  sendAiNotification('🎉 Challenge Completed!', `Ukończyłeś: ${challenge.description} (+${challenge.xpReward} XP)`);
                   const profile = getProfile(task.userId);
                   if (profile) updateProfile({ ...profile, xp: profile.xp + challenge.xpReward });
               }
@@ -584,16 +597,14 @@ ipcMain.handle('db:get-daily-standup', (event, userId) => {
   };
 });
 
+ipcMain.handle('db:get-daily-report-data', (event, userId) => getDailyReportData(userId));
+
 ipcMain.handle('gamification:reward-fatigue-compliance', (event, userId) => {
   const profile = getProfile(userId);
   if (profile) {
     updateProfile({ ...profile, xp: profile.xp + 15 });
     logSystemEvent('Fatigue Model Validated: User accepted warning. (+15 XP)', 'LEARNING');
-    new Notification({
-       title: 'Mindful Rest Reward',
-       body: 'Good job listening to your body! +15 XP',
-       icon: getAssetPath('icon.png')
-    }).show();
+    sendAiNotification('Mindful Rest Reward', 'Dobrze, że słuchasz swojego organizmu! +15 XP');
   }
 });
 
@@ -603,12 +614,12 @@ ipcMain.handle('db:save-web-settings', (event, settings) => {
     saveWebBlockingSettings(settings);
     return true;
 });
-ipcMain.handle('db:get-todays-web-stats', () => getTodaysWebStats());
+ipcMain.handle('db:get-web-stats', (event, days) => getWebStats(days));
 ipcMain.handle('db:set-domain-category', (event, domain, category) => {
     setDomainCategory(domain, category);
     return true;
 });
-ipcMain.handle('db:get-todays-app-stats', () => getTodaysAppStats());
+ipcMain.handle('db:get-app-stats', (event, days) => getAppStats(days));
 ipcMain.handle('db:set-app-category', (event, appName, category) => {
     setAppCategory(appName, category);
     return true;
@@ -621,6 +632,16 @@ ipcMain.handle('server:restart', () => {
 ipcMain.handle('server:request-sync', () => {
     requestSync();
     return true;
+});
+
+ipcMain.handle('app:open-devtools', () => {
+  mainWindow?.webContents.openDevTools();
+});
+
+ipcMain.handle('app:set-window-opacity', (event, opacity) => {
+    if (mainWindow) {
+        mainWindow.setOpacity(opacity);
+    }
 });
 
 // --- Tray IPC Handlers ---
@@ -669,9 +690,126 @@ ipcMain.on('electron-shell-open-external', (event, url) => {
 });
 
 let lastFragmentationNotificationTime = 0;
+let lastStretchingTime = Date.now();
+let lastMeditationDate: string | null = null;
+
+// Smart Notification States
+let sentMorningNudge = false;
+let sentEveningNudge = false;
+let lastStaleTaskCheck = 0;
+let currentDayString = new Date().toDateString();
 
 setInterval(() => {
   const now = Date.now();
+  const currentDate = new Date();
+  const currentHour = currentDate.getHours();
+  const currentMinute = currentDate.getMinutes();
+  const dateString = currentDate.toDateString();
+
+  // Reset daily flags at midnight
+  if (dateString !== currentDayString) {
+      sentMorningNudge = false;
+      sentEveningNudge = false;
+      lastMeditationDate = null;
+      currentDayString = dateString;
+  }
+
+  // --- Health Reminders ---
+  const aiEnabled = getSetting('enable_ai_assistant') !== 'false';
+  
+  if (aiEnabled) {
+      // 1. Stretching (Interval based, only during work hours)
+      const stretchingEnabled = getSetting('enable_stretching_reminders') === 'true';
+      if (stretchingEnabled) {
+          const workStart = getSetting('workDayStart') || '09:00';
+          const workEnd = getSetting('workDayEnd') || '17:00';
+          const [startH, startM] = workStart.split(':').map(Number);
+          const [endH, endM] = workEnd.split(':').map(Number);
+          
+          const nowMinutes = currentHour * 60 + currentMinute;
+          const startMinutes = startH * 60 + startM;
+          const endMinutes = endH * 60 + endM;
+
+          if (nowMinutes >= startMinutes && nowMinutes <= endMinutes) {
+              const interval = Number(getSetting('stretching_interval') || 60) * 60 * 1000;
+              if (now - lastStretchingTime > interval) {
+                  // Sprawdź czy użytkownik nie jest idle (nie ma sensu przypominać jak go nie ma)
+                  const idleTime = powerMonitor.getSystemIdleTime();
+                  if (idleTime < 60) { // Mniej niż minuta idle
+                      sendAiNotification('🏃 Czas na ruch!', 'Wyprostuj plecy i rozluźnij szyję. Zrobione?');
+                      lastStretchingTime = now;
+                  } else {
+                      // Jeśli idle, przesuń sprawdzanie (żeby odpaliło jak wróci)
+                      lastStretchingTime = now - interval + (5 * 60 * 1000); 
+                  }
+              }
+          }
+      }
+
+      // 2. Meditation (Time based)
+      const meditationEnabled = getSetting('enable_meditation_reminders') === 'true';
+      if (meditationEnabled && lastMeditationDate !== dateString) {
+          const targetTime = getSetting('meditation_time') || '09:00';
+          const [targetH, targetM] = targetTime.split(':').map(Number);
+          
+          const nowMins = currentHour * 60 + currentMinute;
+          const targetMins = targetH * 60 + targetM;
+          
+          // Check if we passed the target time (with a tolerance window, e.g., within the last 15 mins to avoid spam on startup if missed)
+          if (nowMins >= targetMins && nowMins < targetMins + 60) {
+               sendAiNotification('🧘‍♀️ Czas na Mindfulness', 'Może krótka chwila na oddech?');
+               lastMeditationDate = dateString;
+          }
+      }
+
+      // --- Advanced Productivity Algorithms ---
+      
+      const workStart = getSetting('workDayStart') || '09:00';
+      const workEnd = getSetting('workDayEnd') || '17:00';
+      const [startH, startM] = workStart.split(':').map(Number);
+      const [endH, endM] = workEnd.split(':').map(Number);
+      const currentMinutes = currentHour * 60 + currentMinute;
+      const startMinutes = startH * 60 + startM;
+      const endMinutes = endH * 60 + endM;
+
+      // 3. Morning Nudge (Anti-Procrastination)
+      // If 1 hour passed since work start, and NO work logged yet
+      if (!sentMorningNudge && currentMinutes > startMinutes + 60 && currentMinutes < endMinutes) {
+          const userId = activeTaskInfo?.userId || 1; // Default or active
+          const todayStats = getDailyProductivity(userId).find((d:any) => d.date === new Date().toISOString().split('T')[0]);
+          
+          if (!todayStats || todayStats.totalDuration === 0) {
+              sendAiNotification('☕ Trudny poranek?', 'Minęła godzina pracy, a licznik stoi. Zacznij od czegoś małego (5 min)!');
+              sentMorningNudge = true;
+          }
+      }
+
+      // 4. Evening Wrap-up
+      // 30 mins before end of day
+      if (!sentEveningNudge && currentMinutes >= endMinutes - 30 && currentMinutes < endMinutes) {
+          sendAiNotification('🏁 Ostatnia prosta', 'Koniec dnia blisko. Czas na podsumowanie i plan na jutro!');
+          sentEveningNudge = true;
+      }
+
+      // 5. "Eat the Frog" (Stale High Priority Tasks) - Check every 2 hours
+      if (now - lastStaleTaskCheck > 2 * 60 * 60 * 1000) {
+          const userId = activeTaskInfo?.userId || 1;
+          const tasks = getTasks(userId);
+          const twoDaysAgo = new Date();
+          twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+
+          const frog = tasks.find((t: any) => 
+              t.priority === 'High' && 
+              t.status !== 'Completed' && 
+              new Date(t.createdAt) < twoDaysAgo
+          );
+
+          if (frog) {
+              sendAiNotification('🐸 Zjedz tę żabę!', `Zadanie "${frog.title}" czeka już długo. Może zajmiemy się tym teraz?`);
+          }
+          lastStaleTaskCheck = now;
+      }
+  }
 
   if (cachedInsights) {
     const currentHour = new Date().getHours();
@@ -680,11 +818,7 @@ setInterval(() => {
     if (lastPeakHourNotificationDate !== dateString) {
       if (cachedInsights.peakHours.includes(currentHour)) {
         logSystemEvent(`Golden Hour Detected: It's ${currentHour}:00 - your peak productivity time.`, 'PRODUCTIVITY');
-        new Notification({
-          title: '🚀 Golden Hour',
-          body: `It's ${currentHour}:00! Statistics show this is your most productive time of day. Focus on High Priority tasks.`,
-          icon: getAssetPath('icon.png'),
-        }).show();
+        sendAiNotification('🚀 Golden Hour', `It's ${currentHour}:00! To Twój czas najwyższej produktywności.`);
         lastPeakHourNotificationDate = dateString;
       }
     }
@@ -703,11 +837,7 @@ setInterval(() => {
           if (recentShortSessions.length >= 5) {
               logSystemEvent(`High Fragmentation Detected: ${recentShortSessions.length} short sessions (<10m) in the last hour.`, 'PRODUCTIVITY');
 
-              new Notification({
-                  title: '⚠️ Fragmented Focus',
-                  body: 'You are switching contexts rapidly. Consider sticking to one task for at least 20 minutes.',
-                  icon: getAssetPath('icon.png')
-              }).show();
+              sendAiNotification('⚠️ Fragmented Focus', 'Skaczesz między zadaniami. Może czas skupić się na jednym?');
 
               lastFragmentationNotificationTime = now;
           }
@@ -761,6 +891,7 @@ const createWindow = async () => {
       preload: app.isPackaged ? path.join(__dirname, 'preload.js') : path.join(__dirname, '../../.erb/dll/preload.js'),
       devTools: true,
     },
+    opacity: Number(getSetting('window_opacity')) || 1.0
   });
 
   mainWindow.loadURL(resolveHtmlPath('index.html'));
@@ -816,6 +947,10 @@ app.whenReady().then(async () => {
 
   globalShortcut.register('CommandOrControl+K', () => {
     mainWindow?.webContents.send('open-search');
+  });
+
+  globalShortcut.register('CommandOrControl+Shift+T', () => {
+    sendAiNotification('Testowe Powiadomienie', 'To jest wiadomość testowa od Twojego Kota! 🐾');
   });
 
 }).catch((error) => {

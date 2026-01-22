@@ -77,17 +77,19 @@ contextBridge.exposeInMainWorld('electron', {
     getProductivityInsights: (userId: number) => ipcRenderer.invoke('db:get-productivity-insights', userId),
     getAiMessage: (userId: number) => ipcRenderer.invoke('db:get-ai-message', userId),
     getDailyStandup: (userId: number) => ipcRenderer.invoke('db:get-daily-standup', userId),
+    getDailyReportData: (userId: number) => ipcRenderer.invoke('db:get-daily-report-data', userId),
     // Web Integration
     getWebSettings: () => ipcRenderer.invoke('db:get-web-settings'),
     saveWebSettings: (settings: any) => ipcRenderer.invoke('db:save-web-settings', settings),
-    getTodaysWebStats: () => ipcRenderer.invoke('db:get-todays-web-stats'),
+    getWebStats: (days: number) => ipcRenderer.invoke('db:get-web-stats', days),
     setDomainCategory: (domain: string, category: string) => ipcRenderer.invoke('db:set-domain-category', domain, category),
-    getTodaysAppStats: () => ipcRenderer.invoke('db:get-todays-app-stats'),
+    getAppStats: (days: number) => ipcRenderer.invoke('db:get-app-stats', days),
     setAppCategory: (appName: string, category: string) => ipcRenderer.invoke('db:set-app-category', appName, category),
     requestSync: () => ipcRenderer.invoke('server:request-sync'),
   },
   app: {
     openDevTools: () => ipcRenderer.invoke('app:open-devtools'),
+    setWindowOpacity: (opacity: number) => ipcRenderer.invoke('app:set-window-opacity', opacity),
   },
   ipcRenderer: {
     on(channel: string, func: (...args: unknown[]) => void) {

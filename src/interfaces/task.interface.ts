@@ -14,4 +14,11 @@ export interface Task {
   startTimer: string | null;
   type: TaskTypeEnum;
   storyPoints?: number;
+  subtasks?: string; // JSON string of Subtask[]
+}
+
+export interface Subtask {
+  id: string;
+  title: string;
+  completed: boolean;
 }

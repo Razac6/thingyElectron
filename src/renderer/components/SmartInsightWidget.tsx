@@ -14,6 +14,7 @@ import GroupsIcon from '@mui/icons-material/Groups';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import FlagIcon from '@mui/icons-material/Flag';
 import AssignmentIcon from '@mui/icons-material/Assignment';
+import PetsIcon from '@mui/icons-material/Pets';
 import { useTimer } from '../context/TimerContext';
 import { useSettings } from '../context/SettingsContext';
 import { getDailyBio, updateDailyBio } from '../services/DatabaseService';
@@ -25,11 +26,6 @@ const SmartInsightWidget = () => {
   const [anchorEl, setAnchorEl] = useState<HTMLButtonElement | null>(null);
   const [meetingAnchorEl, setMeetingAnchorEl] = useState<HTMLButtonElement | null>(null);
   const [sprintAnalysis, setSprintAnalysis] = useState<any>(null);
-
-  // AI Personality State
-  const [aiMessage, setAiMessage] = useState('');
-  const [showAiBubble, setShowAiBubble] = useState(false);
-  const bubbleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     const userStr = localStorage.getItem('userId');
@@ -47,36 +43,6 @@ const SmartInsightWidget = () => {
     fetchMode();
     fetchSprint();
   }, []);
-
-  // AI Bubble Loop
-  useEffect(() => {
-      const fetchMessage = async () => {
-          if (showAiBubble) return;
-
-          try {
-              const userStr = localStorage.getItem('userId');
-              const userId = userStr ? JSON.parse(userStr) : 1;
-              const msg = await window.electron.database.getAiMessage(userId);
-              
-              if (msg && msg.length > 0) {
-                  setAiMessage(msg);
-                  setShowAiBubble(true);
-                  
-                  if (bubbleTimeoutRef.current) clearTimeout(bubbleTimeoutRef.current);
-                  bubbleTimeoutRef.current = setTimeout(() => setShowAiBubble(false), 12000);
-              }
-          } catch (e) { console.error(e); }
-      };
-
-      const loop = setInterval(fetchMessage, 30000);
-      const initialTimer = setTimeout(fetchMessage, 4000);
-
-      return () => {
-          clearTimeout(initialTimer);
-          clearInterval(loop);
-          if (bubbleTimeoutRef.current) clearTimeout(bubbleTimeoutRef.current);
-      };
-  }, [showAiBubble]);
 
   const handleModeChange = async (mode: string) => {
     const today = new Date().toISOString().split('T')[0];
@@ -207,61 +173,11 @@ const SmartInsightWidget = () => {
                       <GroupsIcon fontSize="small" />
                   </IconButton>
                   
-                  <Tooltip title="Daily Briefing" arrow placement="left">
-                      <IconButton color="primary" size="small" onClick={() => window.dispatchEvent(new CustomEvent('open-daily-briefing'))}>
-                          <AssignmentIcon fontSize="small" />
+                  <Tooltip title="Przywołaj asystenta" arrow placement="left">
+                      <IconButton color="primary" size="small" onClick={() => window.dispatchEvent(new CustomEvent('summon-ai-companion'))}>
+                          <PetsIcon fontSize="small" />
                       </IconButton>
                   </Tooltip>
-
-                  {/* AI Robot with Fade Animation */}
-                  <Box position="relative">
-                      <Fade in={showAiBubble} unmountOnExit timeout={500}>
-                          <Paper 
-                              onClick={() => setShowAiBubble(false)}
-                              sx={{
-                                  position: 'absolute',
-                                  bottom: '42px',
-                                  right: '-8px',
-                                  zIndex: 1300,
-                                  bgcolor: 'rgba(255, 255, 255, 0.75)',
-                                  backdropFilter: 'blur(16px)',
-                                  border: '1px solid rgba(255, 255, 255, 0.4)',
-                                  color: '#023047',
-                                  p: 1.5,
-                                  borderRadius: '16px',
-                                  borderBottomRightRadius: '4px',
-                                  width: 'max-content',
-                                  maxWidth: '220px',
-                                  boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
-                                  cursor: 'pointer',
-                                  '&::after': {
-                                      content: '""',
-                                      position: 'absolute',
-                                      bottom: '-8px',
-                                      right: '12px',
-                                      borderStyle: 'solid',
-                                      borderWidth: '8px 8px 0 0',
-                                      borderColor: 'rgba(255, 255, 255, 0.5) transparent transparent transparent',
-                                  },
-                                  '&:hover': {
-                                      bgcolor: 'rgba(255, 255, 255, 0.85)',
-                                  }
-                              }}
-                          >
-                              <Typography variant="caption" sx={{ lineHeight: 1.4, fontWeight: 600, fontSize: '0.75rem', display: 'block' }}>
-                                  {aiMessage}
-                              </Typography>
-                          </Paper>
-                      </Fade>
-                      <IconButton 
-                        color={getAiColor(insights.dailyTipCategory)} 
-                        size="small"
-                        disableRipple
-                        sx={{ cursor: 'default' }}
-                      >
-                          <SmartToyIcon fontSize="small" />
-                      </IconButton>
-                  </Box>
               </Box>
            </Box>
        </Box>

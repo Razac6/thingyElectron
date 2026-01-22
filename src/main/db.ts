@@ -93,6 +93,9 @@ export const initDB = async () => {
         if (!columns.some(row => row[1] === 'storyPoints')) {
           db.run("ALTER TABLE tasks ADD COLUMN storyPoints INTEGER DEFAULT 0");
         }
+        if (!columns.some(row => row[1] === 'subtasks')) {
+          db.run("ALTER TABLE tasks ADD COLUMN subtasks TEXT DEFAULT '[]'");
+        }
     }
     
     // Habit migration
@@ -126,6 +129,15 @@ export const initDB = async () => {
         if (!bioCols.some(row => row[1] === 'meetingTime')) {
             db.run('ALTER TABLE daily_energy_logs ADD COLUMN meetingTime INTEGER DEFAULT 0');
         }
+        if (!bioCols.some(row => row[1] === 'waterIntake')) {
+            db.run('ALTER TABLE daily_energy_logs ADD COLUMN waterIntake INTEGER DEFAULT 0');
+        }
+        if (!bioCols.some(row => row[1] === 'meditationMinutes')) {
+            db.run('ALTER TABLE daily_energy_logs ADD COLUMN meditationMinutes INTEGER DEFAULT 0');
+        }
+        if (!bioCols.some(row => row[1] === 'stretchingMinutes')) {
+            db.run('ALTER TABLE daily_energy_logs ADD COLUMN stretchingMinutes INTEGER DEFAULT 0');
+        }
     }
     
     // Fix Status Casing
@@ -142,6 +154,8 @@ export const initDB = async () => {
       { key: 'idleTimeout', value: '600' }, // Default 10 minutes
       { key: 'aiEngine', value: 'local' },
       { key: 'geminiApiKey', value: '' },
+      { key: 'meditation_time', value: '09:00' },
+      { key: 'stretching_interval', value: '60' }
   ];
   const settingStmt = db.prepare('INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)');
   defaultSettings.forEach(s => settingStmt.run([s.key, s.value]));
@@ -721,6 +735,11 @@ export const getTasks = (userId: number, includeMeetings: boolean = false) => {
   while (stmt.step()) {
     const task = stmt.getAsObject();
     task.tags = task.tags ? (task.tags as string).split(',') : [];
+    try {
+        task.subtasks = task.subtasks ? JSON.parse(task.subtasks as string) : [];
+    } catch (e) {
+        task.subtasks = [];
+    }
     tasks.push(task);
   }
   stmt.free();
@@ -749,11 +768,12 @@ export const createTask = (task: any, userId: number) => {
       userId: userId,
       sprintId: task.sprintId || null,
       displayOrder: newOrder,
-      storyPoints: task.storyPoints || 0
+      storyPoints: task.storyPoints || 0,
+      subtasks: task.subtasks ? JSON.stringify(task.subtasks) : '[]'
   };
 
-  const stmt = db.prepare(`INSERT INTO tasks (title, description, status, updateStatusDate, estimate, priority, link, createdAt, spendTime, startTimer, type, userId, sprintId, displayOrder, storyPoints) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-  stmt.run([newTask.title, newTask.description, newTask.status, newTask.updateStatusDate, newTask.estimate, newTask.priority, newTask.link, newTask.createdAt, newTask.spendTime, newTask.startTimer, newTask.type, newTask.userId, newTask.sprintId, newTask.displayOrder, newTask.storyPoints]);
+  const stmt = db.prepare(`INSERT INTO tasks (title, description, status, updateStatusDate, estimate, priority, link, createdAt, spendTime, startTimer, type, userId, sprintId, displayOrder, storyPoints, subtasks) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  stmt.run([newTask.title, newTask.description, newTask.status, newTask.updateStatusDate, newTask.estimate, newTask.priority, newTask.link, newTask.createdAt, newTask.spendTime, newTask.startTimer, newTask.type, newTask.userId, newTask.sprintId, newTask.displayOrder, newTask.storyPoints, newTask.subtasks]);
   stmt.free();
 
   const id = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
@@ -784,7 +804,10 @@ export const updateTask = (task: any) => {
   if (task.tags && Array.isArray(task.tags)) {
     setTaskTags(task.id, task.tags);
   }
-  db.run(`UPDATE tasks SET title = ?, description = ?, status = ?, updateStatusDate = ?, estimate = ?, priority = ?, link = ?, spendTime = ?, startTimer = ?, sprintId = ?, type = ?, storyPoints = ? WHERE id = ?`, [task.title, task.description, task.status, updateDate, task.estimate, task.priority, task.link, task.spendTime, task.startTimer, task.sprintId, task.type || 'TASK', task.storyPoints || 0, task.id]);
+  
+  const subtasksStr = task.subtasks ? (typeof task.subtasks === 'string' ? task.subtasks : JSON.stringify(task.subtasks)) : '[]';
+
+  db.run(`UPDATE tasks SET title = ?, description = ?, status = ?, updateStatusDate = ?, estimate = ?, priority = ?, link = ?, spendTime = ?, startTimer = ?, sprintId = ?, type = ?, storyPoints = ?, subtasks = ? WHERE id = ?`, [task.title, task.description, task.status, updateDate, task.estimate, task.priority, task.link, task.spendTime, task.startTimer, task.sprintId, task.type || 'TASK', task.storyPoints || 0, subtasksStr, task.id]);
 
   if (oldStatus !== 'Completed' && task.status === 'Completed') {
     const tagIdsStmt = db.prepare('SELECT tagId FROM task_tags WHERE taskId = ?');
@@ -1111,19 +1134,30 @@ export const getDailyBio = (date: string) => {
       result = stmt.getAsObject();
   }
   stmt.free();
-  if (!result || !result.date) return { mode: 'normal', sleepScore: null, meetingTime: 30 }; // Default 30 min
-  return { mode: result.mode || 'normal', sleepScore: result.sleepScore, meetingTime: result.meetingTime !== null ? result.meetingTime : 30 };
+  if (!result || !result.date) return { mode: 'normal', sleepScore: null, meetingTime: 30, waterIntake: 0 }; 
+  return { 
+      mode: result.mode || 'normal', 
+      sleepScore: result.sleepScore, 
+      meetingTime: result.meetingTime !== null ? result.meetingTime : 30,
+      waterIntake: result.waterIntake || 0,
+      meditationMinutes: result.meditationMinutes || 0,
+      stretchingMinutes: result.stretchingMinutes || 0
+  };
 };
 
-export const updateDailyBio = (date: string, data: { mode?: string, sleepScore?: number, meetingTime?: number }) => {
+export const updateDailyBio = (date: string, data: { mode?: string, sleepScore?: number, meetingTime?: number, waterIntake?: number, meditationMinutes?: number, stretchingMinutes?: number }) => {
   if (!db) throw new Error('DB not initialized');
   
   const current = getDailyBio(date);
   const newMode = data.mode !== undefined ? data.mode : current.mode;
   const newSleep = data.sleepScore !== undefined ? data.sleepScore : current.sleepScore;
   const newMeetingTime = data.meetingTime !== undefined ? data.meetingTime : current.meetingTime;
+  const newWater = data.waterIntake !== undefined ? data.waterIntake : (current.waterIntake || 0);
+  const newMeditation = data.meditationMinutes !== undefined ? data.meditationMinutes : (current.meditationMinutes || 0);
+  const newStretching = data.stretchingMinutes !== undefined ? data.stretchingMinutes : (current.stretchingMinutes || 0);
 
-  db.run('INSERT OR REPLACE INTO daily_energy_logs (date, mode, sleepScore, meetingTime) VALUES (?, ?, ?, ?)', [date, newMode, newSleep, newMeetingTime]);
+  db.run('INSERT OR REPLACE INTO daily_energy_logs (date, mode, sleepScore, meetingTime, waterIntake, meditationMinutes, stretchingMinutes) VALUES (?, ?, ?, ?, ?, ?, ?)', 
+    [date, newMode, newSleep, newMeetingTime, newWater, newMeditation, newStretching]);
   
   if (newMode === 'boost' || newMode === 'BOOST') {
       const currentWeb = getWebBlockingSettings();
@@ -1351,6 +1385,73 @@ export const getDailyStandupData = (userId: number) => {
     };
 };
 
+export const getDailyReportData = (userId: number) => {
+    if (!db) return null;
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    
+    // 1. Stats Today
+    const timeStmt = db.prepare(`
+        SELECT SUM(ws.duration) as totalTime 
+        FROM work_sessions ws
+        JOIN tasks t ON ws.taskId = t.id
+        WHERE t.userId = :userId AND ws.startTime LIKE :datePattern
+    `);
+    const timeResult = timeStmt.getAsObject({ ':userId': userId, ':datePattern': `${todayStr}%` });
+    timeStmt.free();
+
+    const completedStmt = db.prepare(`
+        SELECT COUNT(*) as count 
+        FROM tasks 
+        WHERE userId = :userId AND status = 'Completed' AND updateStatusDate LIKE :datePattern
+    `);
+    const completedResult = completedStmt.getAsObject({ ':userId': userId, ':datePattern': `${todayStr}%` });
+    completedStmt.free();
+
+    // 2. Distractions (Top 3)
+    const webStats = getWebStats(1);
+    const topDistractions = webStats.topDomains.slice(0, 3).map((d: any) => ({
+        name: d.domain,
+        duration: d.totalTime
+    }));
+
+    // 3. Top Tasks Worked On Today
+    const topTasksStmt = db.prepare(`
+        SELECT t.title, SUM(ws.duration) as duration
+        FROM work_sessions ws
+        JOIN tasks t ON ws.taskId = t.id
+        WHERE t.userId = :userId AND ws.startTime LIKE :datePattern
+        GROUP BY t.id
+        ORDER BY duration DESC
+        LIMIT 3
+    `);
+    topTasksStmt.bind({ ':userId': userId, ':datePattern': `${todayStr}%` });
+    const topTasks: any[] = [];
+    while(topTasksStmt.step()) {
+        topTasks.push(topTasksStmt.getAsObject());
+    }
+    topTasksStmt.free();
+
+    // 4. Trend Analysis (Simple)
+    const productivity = getDailyProductivity(userId);
+    let trend = 'stable';
+    if (productivity.length >= 2) {
+        const last = productivity[productivity.length - 1].totalDuration as number;
+        const prev = productivity[productivity.length - 2].totalDuration as number;
+        if (last > prev * 1.1) trend = 'increasing';
+        else if (last < prev * 0.9) trend = 'decreasing';
+    }
+
+    return {
+        totalTimeMs: timeResult.totalTime || 0,
+        completedCount: completedResult.count || 0,
+        topDistractions,
+        topTasks,
+        trend,
+        productivityData: productivity.slice(-7) // Last 7 days for chart
+    };
+};
+
 // --- Web Integration ---
 
 export const logWebActivity = (data: { domain: string, url: string, duration: number, timestamp: number }) => {
@@ -1404,6 +1505,7 @@ export const getWebBlockingSettings = () => {
   const enabled = getSetting('web_blocking_enabled');
   const onlyFocus = getSetting('web_blocking_only_focus');
   const sites = getSetting('web_blocking_sites');
+  const alwaysSites = getSetting('web_blocking_always_sites');
   const managedSitesStr = getSetting('web_managed_sites');
 
   const defaultSites = ['youtube.com/shorts', 'facebook.com', 'instagram.com', 'twitter.com', 'tiktok.com', 'onet.pl', 'lowcygier.pl'];
@@ -1419,6 +1521,9 @@ export const getWebBlockingSettings = () => {
     blockedSites: (sites && sites !== 'undefined') ? (() => {
         try { return JSON.parse(sites); } catch(e) { return defaults.blockedSites; }
     })() : defaults.blockedSites,
+    alwaysBlockedSites: (alwaysSites && alwaysSites !== 'undefined') ? (() => {
+        try { return JSON.parse(alwaysSites); } catch(e) { return []; }
+    })() : [],
     managedSites
   };
 };
@@ -1429,16 +1534,18 @@ export const saveWebBlockingSettings = (settings: any) => {
   setSetting('web_blocking_enabled', String(settings.blockingEnabled));
   setSetting('web_blocking_only_focus', String(settings.blockOnlyInFocus));
   setSetting('web_blocking_sites', JSON.stringify(settings.blockedSites));
+  setSetting('web_blocking_always_sites', JSON.stringify(settings.alwaysBlockedSites || []));
   setSetting('web_managed_sites', JSON.stringify(settings.managedSites));
 };
 
-export const getTodaysWebStats = () => {
+export const getWebStats = (days: number = 1) => {
   if (!db) return { topDomains: [], totalDuration: 0 };
   
-  // Get start of today in timestamp (ms)
-  const today = new Date();
-  today.setHours(0,0,0,0);
-  const startTimestamp = today.getTime();
+  // Get start timestamp
+  const start = new Date();
+  start.setHours(0,0,0,0);
+  start.setDate(start.getDate() - (days - 1)); // if days=1, today. if days=7, 6 days ago.
+  const startTimestamp = start.getTime();
 
   try {
     const stmt = db.prepare(`
@@ -1520,11 +1627,12 @@ export const setAppCategory = (appName: string, category: string) => {
     } catch (e) { console.error(e); }
 };
 
-export const getTodaysAppStats = () => {
+export const getAppStats = (days: number = 1) => {
   if (!db) return [];
-  const today = new Date();
-  today.setHours(0,0,0,0);
-  const start = today.getTime();
+  const start = new Date();
+  start.setHours(0,0,0,0);
+  start.setDate(start.getDate() - (days - 1));
+  const startTimestamp = start.getTime();
 
   try {
     const stmt = db.prepare(`
@@ -1536,7 +1644,7 @@ export const getTodaysAppStats = () => {
       ORDER BY totalTime DESC 
       LIMIT 10
     `);
-    stmt.bind({ ':start': start });
+    stmt.bind({ ':start': startTimestamp });
     const rows = [];
     while(stmt.step()) rows.push(stmt.getAsObject());
     stmt.free();

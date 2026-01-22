@@ -91,12 +91,26 @@ const flushData = async (force: boolean = false) => {
 };
 
 const updateBlockingRules = async (settings: any, focusMode: boolean) => {
-  const shouldBlock = settings.blockingEnabled && (!settings.blockOnlyInFocus || focusMode);
+  let sitesToBlock: string[] = [];
+
+  // 1. Always Blocked Sites
+  if (settings.alwaysBlockedSites && Array.isArray(settings.alwaysBlockedSites)) {
+      sitesToBlock.push(...settings.alwaysBlockedSites);
+  }
+
+  // 2. Focus Mode Blocked Sites
+  const shouldBlockFocus = settings.blockingEnabled && (!settings.blockOnlyInFocus || focusMode);
+  if (shouldBlockFocus && settings.blockedSites && Array.isArray(settings.blockedSites)) {
+      sitesToBlock.push(...settings.blockedSites);
+  }
+
+  // Deduplicate
+  sitesToBlock = [...new Set(sitesToBlock)];
   
   const oldRules = await chrome.declarativeNetRequest.getDynamicRules();
   const oldRuleIds = oldRules.map((r: any) => r.id);
   
-  if (!shouldBlock) {
+  if (sitesToBlock.length === 0) {
     if (oldRuleIds.length > 0) {
       await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldRuleIds });
       console.log('Blocking disabled - rules cleared.');
@@ -105,10 +119,13 @@ const updateBlockingRules = async (settings: any, focusMode: boolean) => {
     return;
   }
 
-  const newRules: any[] = settings.blockedSites.map((site: string, index: number) => {
+  const newRules: any[] = sitesToBlock.map((site: string, index: number) => {
     // Better filter formatting
     let filter = site;
-    // If it doesn't look like a pattern already, assume domain/path start
+    
+    // If it's a specific path like "youtube.com/shorts", verify format
+    // ||youtube.com/shorts matches http://youtube.com/shorts*
+    
     if (!filter.startsWith('||') && !filter.startsWith('*') && !filter.startsWith('http')) {
         filter = `||${filter}`;
     }
@@ -120,7 +137,7 @@ const updateBlockingRules = async (settings: any, focusMode: boolean) => {
           type: 'redirect',
           redirect: { extensionPath: '/blocked.html' }
         },
-        condition: { urlFilter: filter, resourceTypes: ['main_frame'] }
+        condition: { urlFilter: filter, resourceTypes: ['main_frame', 'xmlhttprequest'] }
     };
   });
 
@@ -131,7 +148,10 @@ const updateBlockingRules = async (settings: any, focusMode: boolean) => {
     addRules: newRules
   });
   
-  console.log('Blocking enabled for:', settings.blockedSites);
+  // Set Icon to Red if blocking is active
+  chrome.action.setIcon({ path: "assets/128x128.png" }); 
+  
+  console.log('Blocking enabled for:', sitesToBlock);
 };
 
 const checkStatus = async () => {

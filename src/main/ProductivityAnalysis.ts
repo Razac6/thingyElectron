@@ -452,9 +452,9 @@ export class ProductivityAnalyst {
           projectedEffort = estimate * multiplier;
       }
       
-      // Subtract points for effort (e.g. 5h task = -100 pts). 
+      // Subtract points for effort (e.g. 5h task = -25 pts). 
       // This ensures that among High priority tasks, the quicker ones are done first.
-      score -= (projectedEffort * 20);
+      score -= (projectedEffort * 5);
 
       // 3. Sprint Pressure (Deadline factor)
       if (sprintEndDate) {

@@ -351,13 +351,14 @@ function List() {
         sortable: false,
         renderCell: (params: GridRenderCellParams<any, Task>) => (
             <div
-                draggable
+                draggable={!isColumnSortActive}
                 onDragStart={(e) => handleDragStart(e, params.row.id)}
                 onDragEnter={(e) => handleDragEnter(e, params.row.id)}
                 onDragOver={handleDragOver}
                 onDragEnd={handleDragEnd}
                 onDrop={(e) => handleDrop(e, params.row.id)}
-                style={{ cursor: 'grab', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', width: '100%' }}
+                style={{ cursor: isColumnSortActive ? 'default' : 'grab', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', width: '100%', opacity: isColumnSortActive ? 0.3 : 1 }}
+                title={isColumnSortActive ? "Clear sort to reorder" : "Drag to reorder"}
             >
                 <DragIndicatorIcon color={params.row.id === dragTargetTaskId ? "primary" : "action"} />
             </div>

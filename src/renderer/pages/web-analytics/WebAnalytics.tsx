@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 import { Doughnut } from 'react-chartjs-2';
-import { Box, Typography, Paper, Grid, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Select, MenuItem } from '@mui/material';
+import { Box, Typography, Paper, Grid, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Select, MenuItem, FormControl, InputLabel } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
@@ -13,6 +13,7 @@ const WebAnalytics = () => {
   const [stats, setStats] = useState<{ topDomains: any[], totalDuration: number } | null>(null);
   const [appStats, setAppStats] = useState<any[]>([]);
   const [settings, setSettings] = useState<any>({ integrationEnabled: true, appMonitoringEnabled: true });
+  const [days, setDays] = useState(1);
 
   const handleCategoryChange = async (domain: string, category: string) => {
       try {
@@ -20,7 +21,7 @@ const WebAnalytics = () => {
           await window.electron.database.setDomainCategory(domain, category);
           // Refresh stats
           // @ts-ignore
-          const data = await window.electron.database.getTodaysWebStats();
+          const data = await window.electron.database.getWebStats(days);
           setStats(data);
       } catch (e) {
           console.error(e);
@@ -33,7 +34,7 @@ const WebAnalytics = () => {
           await window.electron.database.setAppCategory(appName, category);
           // Refresh stats
           // @ts-ignore
-          const appData = await window.electron.database.getTodaysAppStats();
+          const appData = await window.electron.database.getAppStats(days);
           setAppStats(appData);
       } catch (e) {
           console.error(e);
@@ -44,11 +45,11 @@ const WebAnalytics = () => {
     const fetchStats = async () => {
       try {
         // @ts-ignore
-        const data = await window.electron.database.getTodaysWebStats();
+        const data = await window.electron.database.getWebStats(days);
         setStats(data);
         
         // @ts-ignore
-        const appData = await window.electron.database.getTodaysAppStats();
+        const appData = await window.electron.database.getAppStats(days);
         setAppStats(appData);
 
         // @ts-ignore
@@ -64,7 +65,7 @@ const WebAnalytics = () => {
     // Refresh every minute
     const interval = setInterval(fetchStats, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [days]); // Re-fetch when days changes
 
   if (!stats) return <Typography>Loading analytics...</Typography>;
 
@@ -97,14 +98,29 @@ const WebAnalytics = () => {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Typography variant="h4" gutterBottom sx={{ color: theme.palette.text.primary, mb: 4 }}>
-        📊 Monitoring Activity
-      </Typography>
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={4}>
+          <Typography variant="h4" sx={{ color: theme.palette.text.primary }}>
+            📊 Monitoring Activity
+          </Typography>
+          
+          <FormControl sx={{ minWidth: 120 }} size="small">
+              <InputLabel>Time Range</InputLabel>
+              <Select
+                  value={days}
+                  label="Time Range"
+                  onChange={(e) => setDays(Number(e.target.value))}
+              >
+                  <MenuItem value={1}>Today</MenuItem>
+                  <MenuItem value={7}>Last 7 Days</MenuItem>
+                  <MenuItem value={30}>Last 30 Days</MenuItem>
+              </Select>
+          </FormControl>
+      </Box>
 
       {settings.integrationEnabled && (
       <>
       <Typography variant="h5" gutterBottom sx={{ mt: 2, mb: 3 }}>
-        🌐 Web Activity (Today)
+        🌐 Web Activity
       </Typography>
       <Grid container spacing={3}>
         <Grid item xs={12} md={6}>
@@ -121,7 +137,7 @@ const WebAnalytics = () => {
         </Grid>
         <Grid item xs={12} md={6}>
           <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>Top 10 Domains (Today)</Typography>
+            <Typography variant="h6" gutterBottom>Top 10 Domains</Typography>
             <TableContainer>
               <Table>
                 <TableHead>
@@ -171,7 +187,7 @@ const WebAnalytics = () => {
       {settings.appMonitoringEnabled && (
       <>
       <Typography variant="h5" gutterBottom sx={{ color: theme.palette.text.primary, mb: 3, mt: 6 }}>
-        🖥️ Desktop Apps (Today)
+        🖥️ Desktop Apps
       </Typography>
 
       <Grid container spacing={3}>
@@ -197,7 +213,7 @@ const WebAnalytics = () => {
         </Grid>
         <Grid item xs={12} md={6}>
           <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>Top 10 Applications (Today)</Typography>
+            <Typography variant="h6" gutterBottom>Top 10 Applications</Typography>
             <TableContainer>
               <Table>
                 <TableHead>

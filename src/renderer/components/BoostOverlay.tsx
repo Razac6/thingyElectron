@@ -1,8 +1,29 @@
-import React, { useEffect, useState } from 'react';
-import { Box, Typography, Button, Fade } from '@mui/material';
+import React, { useState, useEffect } from 'react';
+import { 
+    Box, 
+    Typography, 
+    Button, 
+    Fade, 
+    Dialog, 
+    DialogTitle, 
+    DialogContent, 
+    DialogActions, 
+    List, 
+    ListItem, 
+    ListItemText, 
+    ListItemIcon, 
+    Checkbox, 
+    TextField, 
+    IconButton,
+    Fab
+} from '@mui/material';
 import StopIcon from '@mui/icons-material/Stop';
+import PlaylistAddCheckIcon from '@mui/icons-material/PlaylistAddCheck';
+import AddIcon from '@mui/icons-material/Add';
+import DeleteIcon from '@mui/icons-material/Delete';
 import { keyframes } from '@emotion/react';
 import { useTimer } from '../context/TimerContext';
+import { Subtask } from '../../interfaces/task.interface';
 
 // --- Animations ---
 const wave = keyframes`
@@ -33,12 +54,16 @@ interface BoostOverlayProps {
 }
 
 const BoostOverlay = ({ open, onClose }: BoostOverlayProps) => {
-  const { tasks, stopTimer } = useTimer();
+  const { tasks, stopTimer, updateTask } = useTimer();
   const activeTask = tasks.find(t => t.startTimer !== null);
   const [progress, setProgress] = useState(0);
   const [visualProgress, setVisualProgress] = useState(0); // Clamped to 100 for liquid height
   const [timeLeftStr, setTimeLeftStr] = useState('00:00');
   const [isOvertime, setIsOvertime] = useState(false);
+  
+  // Checklist State
+  const [isChecklistOpen, setIsChecklistOpen] = useState(false);
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
 
   useEffect(() => {
     if (!open || !activeTask) return;
@@ -73,10 +98,44 @@ const BoostOverlay = ({ open, onClose }: BoostOverlayProps) => {
     return () => clearInterval(interval);
   }, [open, activeTask]);
 
+  const handleAddSubtask = async () => {
+      if (!newSubtaskTitle.trim() || !activeTask) return;
+      const subtasks: Subtask[] = activeTask.subtasks ? (Array.isArray(activeTask.subtasks) ? activeTask.subtasks : JSON.parse(activeTask.subtasks as any)) : [];
+      
+      const newSubtask: Subtask = {
+          id: Date.now().toString(),
+          title: newSubtaskTitle,
+          completed: false
+      };
+      
+      await updateTask({ ...activeTask, subtasks: [...subtasks, newSubtask] });
+      setNewSubtaskTitle('');
+  };
+
+  const handleToggleSubtask = async (subtaskId: string) => {
+      if (!activeTask) return;
+      const subtasks: Subtask[] = activeTask.subtasks ? (Array.isArray(activeTask.subtasks) ? activeTask.subtasks : JSON.parse(activeTask.subtasks as any)) : [];
+      
+      const updated = subtasks.map(s => s.id === subtaskId ? { ...s, completed: !s.completed } : s);
+      await updateTask({ ...activeTask, subtasks: updated });
+  };
+  
+  const handleDeleteSubtask = async (subtaskId: string) => {
+      if (!activeTask) return;
+      const subtasks: Subtask[] = activeTask.subtasks ? (Array.isArray(activeTask.subtasks) ? activeTask.subtasks : JSON.parse(activeTask.subtasks as any)) : [];
+      const updated = subtasks.filter(s => s.id !== subtaskId);
+      await updateTask({ ...activeTask, subtasks: updated });
+  };
+
   if (!open) return null;
 
   const waveColor = isOvertime ? '#ef5350' : '#2196f3'; 
   const waveColorLight = isOvertime ? '#e57373' : '#64b5f6';
+  
+  // Safe Parse Subtasks for Render
+  const currentSubtasks: Subtask[] = activeTask?.subtasks 
+      ? (Array.isArray(activeTask.subtasks) ? activeTask.subtasks : []) 
+      : [];
 
   return (
     <Fade in={open} timeout={800}>
@@ -97,6 +156,16 @@ const BoostOverlay = ({ open, onClose }: BoostOverlayProps) => {
             color: 'white',
         }}
         >
+        {/* FAB for Checklist */}
+        <Fab 
+            color="primary" 
+            aria-label="checklist" 
+            sx={{ position: 'absolute', top: 32, right: 32 }}
+            onClick={() => setIsChecklistOpen(true)}
+        >
+            <PlaylistAddCheckIcon />
+        </Fab>
+
         {/* Liquid Timer Container */}
         <Box
             sx={{
@@ -189,6 +258,61 @@ const BoostOverlay = ({ open, onClose }: BoostOverlayProps) => {
                 Stop Timer
             </Button>
         </Box>
+
+        {/* Checklist Modal */}
+        <Dialog open={isChecklistOpen} onClose={() => setIsChecklistOpen(false)} fullWidth maxWidth="sm">
+            <DialogTitle>Subtasks</DialogTitle>
+            <DialogContent dividers>
+                <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+                    <TextField 
+                        fullWidth 
+                        size="small" 
+                        placeholder="Add subtask..." 
+                        value={newSubtaskTitle}
+                        onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                        onKeyPress={(e) => e.key === 'Enter' && handleAddSubtask()}
+                    />
+                    <Button variant="contained" onClick={handleAddSubtask} disabled={!newSubtaskTitle.trim()}>
+                        <AddIcon />
+                    </Button>
+                </Box>
+                <List>
+                    {currentSubtasks.map((subtask) => (
+                        <ListItem 
+                            key={subtask.id}
+                            secondaryAction={
+                                <IconButton edge="end" aria-label="delete" onClick={() => handleDeleteSubtask(subtask.id)}>
+                                    <DeleteIcon />
+                                </IconButton>
+                            }
+                            disablePadding
+                        >
+                            <ListItemIcon>
+                                <Checkbox
+                                    edge="start"
+                                    checked={subtask.completed}
+                                    onChange={() => handleToggleSubtask(subtask.id)}
+                                    tabIndex={-1}
+                                    disableRipple
+                                />
+                            </ListItemIcon>
+                            <ListItemText 
+                                primary={subtask.title} 
+                                sx={{ textDecoration: subtask.completed ? 'line-through' : 'none', color: subtask.completed ? 'text.disabled' : 'text.primary' }}
+                            />
+                        </ListItem>
+                    ))}
+                    {currentSubtasks.length === 0 && (
+                        <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 2 }}>
+                            No subtasks yet. Break it down!
+                        </Typography>
+                    )}
+                </List>
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={() => setIsChecklistOpen(false)}>Close</Button>
+            </DialogActions>
+        </Dialog>
         </Box>
     </Fade>
   );

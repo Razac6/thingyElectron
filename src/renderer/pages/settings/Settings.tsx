@@ -66,6 +66,24 @@ function Settings() {
       handleWebSettingChange('blockedSites', newSites);
   };
 
+  const toggleAlwaysBlock = (site: string) => {
+      const currentAlways = webSettings.alwaysBlockedSites || [];
+      const newAlways = currentAlways.includes(site)
+        ? currentAlways.filter((s: string) => s !== site)
+        : [...currentAlways, site];
+    
+      // Ensure it is also in 'blockedSites' list if enabling always block
+      let currentBlocked = webSettings.blockedSites || [];
+      if (!currentAlways.includes(site) && !currentBlocked.includes(site)) {
+          currentBlocked = [...currentBlocked, site];
+      }
+      
+      const newSettings = { ...webSettings, alwaysBlockedSites: newAlways, blockedSites: currentBlocked };
+      setWebSettings(newSettings);
+      // @ts-ignore
+      window.electron.database.saveWebSettings(newSettings);
+  };
+
   const handleDeleteSite = (site: string) => {
       const currentManaged = webSettings.managedSites || [];
       const currentBlocked = webSettings.blockedSites || [];
@@ -327,9 +345,18 @@ function Settings() {
                             <ListItem
                                 key={site}
                                 secondaryAction={
-                                    <IconButton edge="end" aria-label="delete" onClick={() => handleDeleteSite(site)} disabled={!webSettings.blockingEnabled}>
-                                        <DeleteIcon />
-                                    </IconButton>
+                                    <Box>
+                                        <Checkbox
+                                            checked={webSettings.alwaysBlockedSites?.includes(site)}
+                                            onChange={() => toggleAlwaysBlock(site)}
+                                            color="error"
+                                            size="small"
+                                            title="Always Block (Ignore Timer)"
+                                        />
+                                        <IconButton edge="end" aria-label="delete" onClick={() => handleDeleteSite(site)} disabled={!webSettings.blockingEnabled}>
+                                            <DeleteIcon />
+                                        </IconButton>
+                                    </Box>
                                 }
                             >
                                 <ListItemIcon>
@@ -340,9 +367,13 @@ function Settings() {
                                         disableRipple
                                         onChange={() => toggleBlockedSite(site)}
                                         disabled={!webSettings.blockingEnabled}
+                                        title="Block in Focus Mode"
                                     />
                                 </ListItemIcon>
-                                <ListItemText primary={site} />
+                                <ListItemText 
+                                    primary={site} 
+                                    secondary={webSettings.alwaysBlockedSites?.includes(site) ? "Blocked Always" : (webSettings.blockedSites.includes(site) ? "Blocked in Focus" : "Allowed")} 
+                                />
                             </ListItem>
                         ))}
                     </List>
@@ -434,6 +465,130 @@ function Settings() {
                     }
                     label="Enable Reward Animations (Confetti/Lottie)"
                 />
+            </Grid>
+
+            <Grid item xs={12}>
+                <Typography gutterBottom>Global Window Opacity</Typography>
+                <Typography variant="body2" color="text.secondary">
+                    Adjust the transparency of the entire application window.
+                </Typography>
+                <Box sx={{ px: 2, mt: 2 }}>
+                    <Slider
+                        value={Number(settings.window_opacity) || 1.0}
+                        min={0.2}
+                        max={1.0}
+                        step={0.05}
+                        marks
+                        valueLabelDisplay="auto"
+                        onChange={(_, value) => {
+                            updateSetting('window_opacity', String(value));
+                            // @ts-ignore
+                            window.electron.app.setWindowOpacity(Number(value));
+                        }}
+                    />
+                </Box>
+            </Grid>
+        </Grid>
+      </Paper>
+
+      <Paper sx={{ p: 3 }}>
+        <Typography variant="h6" gutterBottom>Asystent AI & Zdrowie</Typography>
+        <Divider sx={{ mb: 3 }} />
+        
+        <Grid container spacing={3}>
+            <Grid item xs={12}>
+                <FormControlLabel
+                    control={
+                        <Switch 
+                            checked={settings.enable_ai_assistant !== 'false'} 
+                            onChange={(e) => updateSetting('enable_ai_assistant', String(e.target.checked))} 
+                        />
+                    }
+                    label="Włącz Asystenta (Kot)"
+                />
+            </Grid>
+
+            <Grid item xs={12}>
+                <FormControlLabel
+                    disabled={settings.enable_ai_assistant === 'false'}
+                    control={
+                        <Switch 
+                            checked={settings.enable_water_reminders === 'true'} 
+                            onChange={(e) => updateSetting('enable_water_reminders', String(e.target.checked))} 
+                        />
+                    }
+                    label="Przypomnienia o piciu wody"
+                />
+            </Grid>
+
+            <Grid item xs={12}>
+                <Box display="flex" alignItems="center" justifyContent="space-between">
+                    <FormControlLabel
+                        disabled={settings.enable_ai_assistant === 'false'}
+                        control={
+                            <Switch 
+                                checked={settings.enable_meditation_reminders === 'true'} 
+                                onChange={(e) => updateSetting('enable_meditation_reminders', String(e.target.checked))} 
+                            />
+                        }
+                        label="Przypomnienia o medytacji"
+                    />
+                    {settings.enable_meditation_reminders === 'true' && (
+                        <TextField
+                            label="Godzina"
+                            type="time"
+                            size="small"
+                            InputLabelProps={{ shrink: true }}
+                            value={settings.meditation_time || '09:00'}
+                            onChange={(e) => updateSetting('meditation_time', e.target.value)}
+                            sx={{ width: 120 }}
+                        />
+                    )}
+                </Box>
+            </Grid>
+
+            <Grid item xs={12}>
+                <FormControlLabel
+                    disabled={settings.enable_ai_assistant === 'false'}
+                    control={
+                        <Switch 
+                            checked={settings.enable_stretching_reminders === 'true'} 
+                            onChange={(e) => updateSetting('enable_stretching_reminders', String(e.target.checked))} 
+                        />
+                    }
+                    label="Przypomnienia o ćwiczeniach (w godzinach pracy)"
+                />
+                {settings.enable_stretching_reminders === 'true' && (
+                    <Box sx={{ px: 4, mt: 1 }}>
+                        <Typography variant="caption" color="text.secondary">Co ile minut:</Typography>
+                        <Slider
+                            value={Number(settings.stretching_interval) || 60}
+                            min={30}
+                            max={180}
+                            step={15}
+                            marks
+                            valueLabelDisplay="auto"
+                            valueLabelFormat={(v) => `${v}m`}
+                            onChange={(_, value) => updateSetting('stretching_interval', String(value))}
+                        />
+                    </Box>
+                )}
+            </Grid>
+
+            <Grid item xs={12}>
+                <Typography gutterBottom>Przezroczystość dymka Asystenta</Typography>
+                <Box sx={{ px: 2, mt: 2 }}>
+                    <Slider
+                        disabled={settings.enable_ai_assistant === 'false'}
+                        value={Number(settings.ai_bubble_opacity) || 0.8}
+                        min={0.1}
+                        max={1.0}
+                        step={0.1}
+                        marks
+                        valueLabelDisplay="auto"
+                        onChange={(_, value) => updateSetting('ai_bubble_opacity', String(value))}
+                    />
+                </Box>
             </Grid>
         </Grid>
       </Paper>
