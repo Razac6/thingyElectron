@@ -35,12 +35,15 @@ export const AiCompanion = () => {
     const [meditationMinutes, setMeditationMinutes] = useState(0);
     const [stretchingMinutes, setStretchingMinutes] = useState(0);
     const [promptType, setPromptType] = useState<'none' | 'water' | 'meditation' | 'stretching'>('none');
+    
     const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const messageTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const bubbleRef = useRef<HTMLDivElement>(null);
 
     const opacity = Number(settings.ai_bubble_opacity) || 0.8;
     const isEnabled = settings.enable_ai_assistant !== 'false';
 
+    // Fetch initial stats
     useEffect(() => {
         if (!isEnabled) return;
         const fetchStats = async () => {
@@ -56,6 +59,30 @@ export const AiCompanion = () => {
         fetchStats();
     }, [isEnabled]);
 
+    // Handle Click Outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (isMenuOpen && bubbleRef.current && !bubbleRef.current.contains(event.target as Node)) {
+                setIsMenuOpen(false);
+                setMessage(null);
+                setPromptType('none');
+                
+                if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+                hideTimeoutRef.current = setTimeout(() => {
+                    setIsVisible(false);
+                }, 5000);
+            }
+        };
+
+        if (isMenuOpen) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [isMenuOpen]);
+
+    // IPC Listeners
     useEffect(() => {
         if (!isEnabled) return;
         const handleSummon = () => {
@@ -65,7 +92,6 @@ export const AiCompanion = () => {
             setPromptType('none');
             setMessage("Jestem! W czym pomóc?");
             
-            // Reset timers
             if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
             if (messageTimeoutRef.current) clearTimeout(messageTimeoutRef.current);
         };
@@ -74,7 +100,6 @@ export const AiCompanion = () => {
             setIsVisible(true);
             setMessage(msg);
             
-            // Clear previous timers to prevent race conditions
             if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
             if (messageTimeoutRef.current) clearTimeout(messageTimeoutRef.current);
 
@@ -84,7 +109,6 @@ export const AiCompanion = () => {
             else if (msg.includes("Mindfulness") || msg.includes("oddech")) setPromptType('meditation');
             else setPromptType('none');
             
-            // Set longer timeout for this interaction
             hideTimeoutRef.current = setTimeout(() => {
                 if (!isMenuOpen) {
                     setIsVisible(false);
@@ -104,12 +128,11 @@ export const AiCompanion = () => {
         };
     }, [isEnabled]);
 
+    // Random Appearance Loop
     useEffect(() => {
         if (!isEnabled) return;
         const scheduleNextAppearance = () => {
-            // Random time: 15 to 45 minutes
             const nextTime = Math.random() * (45 * 60 * 1000 - 15 * 60 * 1000) + 15 * 60 * 1000;
-            
             return setTimeout(() => {
                 triggerAppearance();
                 scheduleNextAppearance();
@@ -117,8 +140,13 @@ export const AiCompanion = () => {
         };
 
         const timer = scheduleNextAppearance();
+        const initialTimer = setTimeout(() => {
+            triggerAppearance(true);
+        }, 30000);
+
         return () => {
             clearTimeout(timer);
+            clearTimeout(initialTimer);
             if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
             if (messageTimeoutRef.current) clearTimeout(messageTimeoutRef.current);
         };
@@ -162,7 +190,6 @@ export const AiCompanion = () => {
 
         const hideTime = type !== 'none' ? 15000 : (msg ? 8000 : 8000);
         
-        // Handle message auto-hide separately (3s for normal messages)
         if (msg && type === 'none') {
              if (messageTimeoutRef.current) clearTimeout(messageTimeoutRef.current);
              messageTimeoutRef.current = setTimeout(() => {
@@ -171,93 +198,6 @@ export const AiCompanion = () => {
         }
 
         if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
-        hideTimeoutRef.current = setTimeout(() => {
-            if (!isMenuOpen) {
-                setIsVisible(false);
-                setMessage(null);
-                setPromptType('none');
-            }
-        }, hideTime);
-    };
-        window.addEventListener('summon-ai-companion', handleSummon);
-        window.electron.ipcRenderer.on('ai-companion:show-message', handleShowMessage);
-
-        return () => {
-            window.removeEventListener('summon-ai-companion', handleSummon);
-            // @ts-ignore
-            window.electron.ipcRenderer.removeListener('ai-companion:show-message', handleShowMessage);
-        };
-    }, [isEnabled]);
-
-    useEffect(() => {
-        if (!isEnabled) return;
-        const scheduleNextAppearance = () => {
-            // Losowy czas: od 15 do 45 minut
-            const nextTime = Math.random() * (45 * 60 * 1000 - 15 * 60 * 1000) + 15 * 60 * 1000;
-            
-            return setTimeout(() => {
-                triggerAppearance();
-                scheduleNextAppearance();
-            }, nextTime);
-        };
-
-        const timer = scheduleNextAppearance();
-        return () => {
-            clearTimeout(timer);
-            if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
-        };
-    }, [isEnabled]);
-
-    const triggerAppearance = async (forceMessage = false) => {
-        if (isVisible || !isEnabled) return;
-
-        let msg = null;
-        let type: 'none' | 'water' | 'meditation' | 'stretching' = 'none';
-        
-        const rand = Math.random();
-
-        // Priorytety losowania:
-        // 1. Woda (30% szans)
-        // 2. Ćwiczenia (15% szans)
-        // 3. Medytacja (5% szans)
-        // Reszta to zwykłe wiadomości lub cisza
-
-        if (settings.enable_water_reminders === 'true' && rand < 0.3) {
-            msg = "Pamiętasz o nawodnieniu? 💧";
-            type = 'water';
-        } else if (settings.enable_stretching_reminders === 'true' && rand < 0.45) {
-            msg = "Wyprostuj plecy i rozluźnij szyję! 🦒";
-            type = 'stretching';
-        } else if (settings.enable_meditation_reminders === 'true' && rand < 0.5) {
-            msg = "Może krótka chwila na oddech? 🧘‍♀️";
-            type = 'meditation';
-        } else {
-            const showMessage = forceMessage || Math.random() > 0.6;
-            if (showMessage) {
-                try {
-                    const userStr = localStorage.getItem('userId');
-                    const userId = userStr ? JSON.parse(userStr) : 1;
-                    // @ts-ignore
-                    const aiMsg = await window.electron.database.getAiMessage(userId);
-                    msg = aiMsg || MESSAGES[Math.floor(Math.random() * MESSAGES.length)];
-                } catch (e) {
-                    msg = MESSAGES[Math.floor(Math.random() * MESSAGES.length)];
-                }
-            }
-        }
-
-        setMessage(msg);
-        setIsVisible(true);
-        setPromptType(type);
-
-        const hideTime = type !== 'none' ? 15000 : (msg ? 8000 : 8000);
-        
-        if (msg && type === 'none') {
-             setTimeout(() => {
-                if (!isMenuOpen) setMessage(null);
-            }, 3000);
-        }
-
         hideTimeoutRef.current = setTimeout(() => {
             if (!isMenuOpen) {
                 setIsVisible(false);
@@ -292,6 +232,32 @@ export const AiCompanion = () => {
         }
     };
 
+    const getUser = () => {
+        const userStr = localStorage.getItem('userId');
+        return userStr ? JSON.parse(userStr) : 1;
+    };
+
+    const addWater = async () => {
+        const today = new Date().toISOString().split('T')[0];
+        const newVal = waterIntake + 1;
+        setWaterIntake(newVal);
+        try {
+            // @ts-ignore
+            await window.electron.database.updateDailyBio(today, { waterIntake: newVal });
+        } catch(e) {}
+        
+        if (isWaterPrompt) {
+            setMessage("Super! Tak trzymaj. 🌊");
+            setIsWaterPrompt(false);
+            setTimeout(() => {
+                if (!isMenuOpen) {
+                    setIsVisible(false);
+                    setMessage(null);
+                }
+            }, 3000);
+        }
+    };
+
     const handleLogActivity = async (activity: 'water' | 'meditation' | 'stretching') => {
         const today = new Date().toISOString().split('T')[0];
         try {
@@ -302,13 +268,13 @@ export const AiCompanion = () => {
                 await window.electron.database.updateDailyBio(today, { waterIntake: newVal });
                 setMessage("Super! Tak trzymaj. 🌊");
             } else if (activity === 'meditation') {
-                const newVal = meditationMinutes + 5; // Zakładamy 5 min sesję
+                const newVal = meditationMinutes + 5; 
                 setMeditationMinutes(newVal);
                 // @ts-ignore
                 await window.electron.database.updateDailyBio(today, { meditationMinutes: newVal });
                 setMessage("Umysł oczyszczony. 🍃");
             } else if (activity === 'stretching') {
-                const newVal = stretchingMinutes + 2; // Zakładamy 2 min ćwiczeń
+                const newVal = stretchingMinutes + 2; 
                 setStretchingMinutes(newVal);
                 // @ts-ignore
                 await window.electron.database.updateDailyBio(today, { stretchingMinutes: newVal });
@@ -326,8 +292,7 @@ export const AiCompanion = () => {
     };
 
     const handleAction = async (action: string) => {
-        const userStr = localStorage.getItem('userId');
-        const userId = userStr ? JSON.parse(userStr) : 1;
+        const userId = getUser();
 
         switch(action) {
             case 'report':
@@ -385,7 +350,7 @@ export const AiCompanion = () => {
                 position: 'fixed',
                 bottom: -40,
                 right: 0,
-                zIndex: 10000, // Wyższy niż BoostOverlay (9999), aby był widoczny w Focus Mode
+                zIndex: 10000,
                 pointerEvents: 'none',
                 display: 'flex',
                 flexDirection: 'column',
@@ -434,7 +399,7 @@ export const AiCompanion = () => {
                                     <Typography variant="caption" color="text.secondary">Woda dzisiaj:</Typography>
                                     <Box display="flex" alignItems="center" gap={1}>
                                         <Typography variant="caption" fontWeight="bold">{waterIntake} 🥛</Typography>
-                                        <Button size="small" sx={{ minWidth: 30, p: 0, height: 20 }} onClick={() => handleLogActivity('water')}>+</Button>
+                                        <Button size="small" sx={{ minWidth: 30, p: 0, height: 20 }} onClick={addWater}>+</Button>
                                     </Box>
                                 </Box>
                             )}
@@ -564,7 +529,7 @@ export const AiCompanion = () => {
                         filter: 'drop-shadow(0px 5px 10px rgba(0,0,0,0.15))'
                     }}
                     onClick={(e) => {
-                        e.stopPropagation(); // Zapobiegnij natychmiastowemu zamknięciu przez click-outside
+                        e.stopPropagation();
                         handleCatClick();
                     }}
                 >
