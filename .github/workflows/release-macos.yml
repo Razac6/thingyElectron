@@ -5,8 +5,8 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g., v0.1.1)'
-        required: true
+        description: 'Release version (e.g., v1.0.0). Leave empty to use package.json version.'
+        required: false
 
 jobs:
   release:
@@ -25,24 +25,35 @@ jobs:
           node-version: '18.x'
           cache: 'npm'
 
+      - name: Determine Version
+        id: get_version
+        run: |
+          if [ -z "${{ github.event.inputs.version }}" ]; then
+            PACKAGE_VERSION=$(node -p "require('./package.json').version")
+            echo "VERSION=v${PACKAGE_VERSION}" >> $GITHUB_ENV
+            echo "Using version from package.json: v${PACKAGE_VERSION}"
+          else
+            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_ENV
+            echo "Using provided version: ${{ github.event.inputs.version }}"
+          fi
+
       - name: Clean npm cache
         run: npm cache clean --force
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Update package version
-        run: npm version ${{ github.event.inputs.version }} --no-git-tag-version --allow-same-version
+      # Removed explicit npm version bump as we assume package.json is source of truth
 
       - name: Build and package macOS application (unsigned)
-        run: npm run package -- --config.mac.hardenedRuntime=false --config.mac.gatekeeperAssess=false # Removed --publish always
+        run: npm run package -- --config.mac.hardenedRuntime=false --config.mac.gatekeeperAssess=false
 
       - name: Create/Update GitHub Release and upload artifact
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.event.inputs.version }}
-          name: Release ${{ github.event.inputs.version }}
-          body: "Automated macOS release for version ${{ github.event.inputs.version }}. Note: This is an unsigned build."
+          tag_name: ${{ env.VERSION }}
+          name: Release ${{ env.VERSION }}
+          body: "Automated macOS release for version ${{ env.VERSION }}. Note: This is an unsigned build."
           files: |
             release/build/*.dmg
             release/build/*.zip

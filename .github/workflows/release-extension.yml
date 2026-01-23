@@ -5,9 +5,8 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Extension Version (e.g., ext-v1.0.0)'
-        required: true
-        default: 'ext-v1.0.0'
+        description: 'Extension Version (e.g., ext-v1.0.0). Leave empty to use manifest.json version.'
+        required: false
 
 jobs:
   release-extension:
@@ -18,6 +17,18 @@ jobs:
     steps:
       - name: Check out Git repository
         uses: actions/checkout@v3
+
+      - name: Determine Version
+        id: get_version
+        run: |
+          if [ -z "${{ github.event.inputs.version }}" ]; then
+            MANIFEST_VERSION=$(jq -r .version chrome-extension/manifest.json)
+            echo "VERSION=ext-v${MANIFEST_VERSION}" >> $GITHUB_ENV
+            echo "Using version from manifest.json: ext-v${MANIFEST_VERSION}"
+          else
+            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_ENV
+            echo "Using provided version: ${{ github.event.inputs.version }}"
+          fi
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
@@ -39,8 +50,8 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.event.inputs.version }}
-          name: Extension Release ${{ github.event.inputs.version }}
+          tag_name: ${{ env.VERSION }}
+          name: Extension Release ${{ env.VERSION }}
           files: thingy-companion.zip
           draft: false
           prerelease: false
