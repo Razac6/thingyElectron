@@ -104,9 +104,12 @@ export const AiCompanion = () => {
             setMessage("Jestem! W czym pomóc?");
         };
 
-        const handleShowMessage = (_: any, msg: string) => {
+        const handleShowMessage = (msg: any) => {
             console.log("[AiCompanion] Received IPC Message:", msg);
             
+            // Safe string conversion
+            const safeMsg = (typeof msg === 'string') ? msg : String(msg || '');
+
             // 1. Clear everything
             if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
             if (messageTimeoutRef.current) clearTimeout(messageTimeoutRef.current);
@@ -115,10 +118,10 @@ export const AiCompanion = () => {
             setIsPriorityMessage(true);
             setIsMenuOpen(false);
             setIsVisible(true);
-            setMessage(msg);
+            setMessage(safeMsg);
 
-            // 3. Detect prompt type (matching labels from main.ts)
-            const lowMsg = msg.toLowerCase();
+            // 3. Detect prompt type
+            const lowMsg = safeMsg.toLowerCase();
             if (lowMsg.includes("nawodnieniu") || lowMsg.includes("wody")) setPromptType('water');
             else if (lowMsg.includes("ruch") || lowMsg.includes("wyprostuj") || lowMsg.includes("szyję")) setPromptType('stretching');
             else if (lowMsg.includes("mindfulness") || lowMsg.includes("oddech") || lowMsg.includes("medytacji")) setPromptType('meditation');
