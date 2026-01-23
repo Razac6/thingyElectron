@@ -77,68 +77,31 @@ export const initDB = async () => {
   db.run(`CREATE INDEX IF NOT EXISTS idx_web_stats_timestamp ON web_stats(timestamp)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_app_activity_timestamp ON app_activity(timestamp)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_system_logs_timestamp ON system_logs(timestamp)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_work_sessions_start ON work_sessions(startTime)`); // For analytics ranges
+  db.run(`CREATE INDEX IF NOT EXISTS idx_work_sessions_start ON work_sessions(startTime)`); 
 
+  // Robust Migrations
   try {
-    const taskTableInfo = db.exec("PRAGMA table_info(tasks);");
-    if (taskTableInfo.length > 0 && taskTableInfo[0].values) {
-        const columns = taskTableInfo[0].values;
-        if (!columns.some(row => row[1] === 'displayOrder')) {
-          db.run('ALTER TABLE tasks ADD COLUMN displayOrder INTEGER');
-          db.run('UPDATE tasks SET displayOrder = id WHERE displayOrder IS NULL');
-        }
-        if (!columns.some(row => row[1] === 'type')) {
-          db.run("ALTER TABLE tasks ADD COLUMN type TEXT DEFAULT 'TASK'");
-        }
-        if (!columns.some(row => row[1] === 'storyPoints')) {
-          db.run("ALTER TABLE tasks ADD COLUMN storyPoints INTEGER DEFAULT 0");
-        }
-        if (!columns.some(row => row[1] === 'subtasks')) {
-          db.run("ALTER TABLE tasks ADD COLUMN subtasks TEXT DEFAULT '[]'");
-        }
-    }
-    
+    try { db.run('ALTER TABLE tasks ADD COLUMN displayOrder INTEGER'); } catch(e) {}
+    try { db.run('UPDATE tasks SET displayOrder = id WHERE displayOrder IS NULL'); } catch(e) {}
+    try { db.run("ALTER TABLE tasks ADD COLUMN type TEXT DEFAULT 'TASK'"); } catch(e) {}
+    try { db.run("ALTER TABLE tasks ADD COLUMN storyPoints INTEGER DEFAULT 0"); } catch(e) {}
+    try { db.run("ALTER TABLE tasks ADD COLUMN subtasks TEXT DEFAULT '[]'"); } catch(e) {}
+    try { db.run("ALTER TABLE tasks ADD COLUMN pomodoroCount INTEGER DEFAULT 0"); } catch(e) {}
+    try { db.run("ALTER TABLE tasks ADD COLUMN timerMode TEXT"); } catch(e) {}
+
     // Habit migration
-    const habitTableInfo = db.exec("PRAGMA table_info(habits);");
-    if (habitTableInfo.length > 0 && habitTableInfo[0].values) {
-        const habitCols = habitTableInfo[0].values;
-        if (!habitCols.some(row => row[1] === 'isFavorite')) {
-            db.run('ALTER TABLE habits ADD COLUMN isFavorite INTEGER DEFAULT 0');
-        }
-    }
+    try { db.run('ALTER TABLE habits ADD COLUMN isFavorite INTEGER DEFAULT 0'); } catch(e) {}
 
     // Sprints migration
-    const sprintTableInfo = db.exec("PRAGMA table_info(sprints);");
-    if (sprintTableInfo.length > 0 && sprintTableInfo[0].values) {
-        const sprintCols = sprintTableInfo[0].values;
-        if (!sprintCols.some(row => row[1] === 'capacity')) {
-            db.run('ALTER TABLE sprints ADD COLUMN capacity INTEGER DEFAULT 0');
-        }
-        if (!sprintCols.some(row => row[1] === 'excludedDates')) {
-            db.run("ALTER TABLE sprints ADD COLUMN excludedDates TEXT DEFAULT '[]'");
-        }
-    }
+    try { db.run('ALTER TABLE sprints ADD COLUMN capacity INTEGER DEFAULT 0'); } catch(e) {}
+    try { db.run("ALTER TABLE sprints ADD COLUMN excludedDates TEXT DEFAULT '[]'"); } catch(e) {}
 
     // Bio logs migration
-    const bioTableInfo = db.exec("PRAGMA table_info(daily_energy_logs);");
-    if (bioTableInfo.length > 0 && bioTableInfo[0].values) {
-        const bioCols = bioTableInfo[0].values;
-        if (!bioCols.some(row => row[1] === 'sleepScore')) {
-            db.run('ALTER TABLE daily_energy_logs ADD COLUMN sleepScore INTEGER');
-        }
-        if (!bioCols.some(row => row[1] === 'meetingTime')) {
-            db.run('ALTER TABLE daily_energy_logs ADD COLUMN meetingTime INTEGER DEFAULT 0');
-        }
-        if (!bioCols.some(row => row[1] === 'waterIntake')) {
-            db.run('ALTER TABLE daily_energy_logs ADD COLUMN waterIntake INTEGER DEFAULT 0');
-        }
-        if (!bioCols.some(row => row[1] === 'meditationMinutes')) {
-            db.run('ALTER TABLE daily_energy_logs ADD COLUMN meditationMinutes INTEGER DEFAULT 0');
-        }
-        if (!bioCols.some(row => row[1] === 'stretchingMinutes')) {
-            db.run('ALTER TABLE daily_energy_logs ADD COLUMN stretchingMinutes INTEGER DEFAULT 0');
-        }
-    }
+    try { db.run('ALTER TABLE daily_energy_logs ADD COLUMN sleepScore INTEGER'); } catch(e) {}
+    try { db.run('ALTER TABLE daily_energy_logs ADD COLUMN meetingTime INTEGER DEFAULT 0'); } catch(e) {}
+    try { db.run('ALTER TABLE daily_energy_logs ADD COLUMN waterIntake INTEGER DEFAULT 0'); } catch(e) {}
+    try { db.run('ALTER TABLE daily_energy_logs ADD COLUMN meditationMinutes INTEGER DEFAULT 0'); } catch(e) {}
+    try { db.run('ALTER TABLE daily_energy_logs ADD COLUMN stretchingMinutes INTEGER DEFAULT 0'); } catch(e) {}
     
     // Fix Status Casing
     db.run("UPDATE tasks SET status = 'Completed' WHERE status = 'COMPLETED'");
@@ -151,14 +114,15 @@ export const initDB = async () => {
       { key: 'enableFatigueWarnings', value: 'true' },
       { key: 'workDayStart', value: '09:00' },
       { key: 'workDayEnd', value: '17:00' },
-      { key: 'idleTimeout', value: '600' }, // Default 10 minutes
+      { key: 'idleTimeout', value: '600' },
       { key: 'aiEngine', value: 'local' },
       { key: 'geminiApiKey', value: '' },
       { key: 'meditation_time', value: '09:00' },
       { key: 'stretching_interval', value: '60' },
       { key: 'water_interval', value: '90' },
       { key: 'water_goal', value: '8' },
-      { key: 'meditation_duration', value: '10' }
+      { key: 'meditation_duration', value: '10' },
+      { key: 'pomodoro_duration', value: '25' }
   ];
   const settingStmt = db.prepare('INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)');
   defaultSettings.forEach(s => settingStmt.run([s.key, s.value]));
@@ -172,6 +136,10 @@ export const initDB = async () => {
     { id: 'BUG_SQUASHER', name: 'Bug Squasher', description: 'Complete your first bug task.', xp: 20 },
     { id: 'THE_PLANNER', name: 'The Planner', description: 'Create your first sprint.', xp: 25 },
     { id: 'DEEP_DIVE', name: 'Deep Dive', description: 'Spend over 2 hours on a single task.', xp: 50 },
+    { id: 'POMODORO_MASTER', name: 'Pomodoro Master', description: 'Complete your first Pomodoro session.', xp: 30 },
+    { id: 'ZEN_MASTER', name: 'Zen Master', description: 'Complete 5 meditation sessions.', xp: 40 },
+    { id: 'HYDRO_HOMIE', name: 'Hydro Homie', description: 'Log water intake 10 times.', xp: 25 },
+    { id: 'FLEXIBLE', name: 'Flexible', description: 'Complete 5 stretching sessions.', xp: 30 },
   ];
   const stmt = db.prepare('INSERT OR IGNORE INTO achievements (id, name, description, xp) VALUES (?, ?, ?, ?)');
   achievementsToSeed.forEach(ach => stmt.run([ach.id, ach.name, ach.description, ach.xp]));
@@ -772,11 +740,12 @@ export const createTask = (task: any, userId: number) => {
       sprintId: task.sprintId || null,
       displayOrder: newOrder,
       storyPoints: task.storyPoints || 0,
-      subtasks: task.subtasks ? JSON.stringify(task.subtasks) : '[]'
+      subtasks: task.subtasks ? JSON.stringify(task.subtasks) : '[]',
+      timerMode: task.timerMode || null
   };
 
-  const stmt = db.prepare(`INSERT INTO tasks (title, description, status, updateStatusDate, estimate, priority, link, createdAt, spendTime, startTimer, type, userId, sprintId, displayOrder, storyPoints, subtasks) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-  stmt.run([newTask.title, newTask.description, newTask.status, newTask.updateStatusDate, newTask.estimate, newTask.priority, newTask.link, newTask.createdAt, newTask.spendTime, newTask.startTimer, newTask.type, newTask.userId, newTask.sprintId, newTask.displayOrder, newTask.storyPoints, newTask.subtasks]);
+  const stmt = db.prepare(`INSERT INTO tasks (title, description, status, updateStatusDate, estimate, priority, link, createdAt, spendTime, startTimer, type, userId, sprintId, displayOrder, storyPoints, subtasks, timerMode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  stmt.run([newTask.title, newTask.description, newTask.status, newTask.updateStatusDate, newTask.estimate, newTask.priority, newTask.link, newTask.createdAt, newTask.spendTime, newTask.startTimer, newTask.type, newTask.userId, newTask.sprintId, newTask.displayOrder, newTask.storyPoints, newTask.subtasks, newTask.timerMode]);
   stmt.free();
 
   const id = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
@@ -810,7 +779,7 @@ export const updateTask = (task: any) => {
   
   const subtasksStr = task.subtasks ? (typeof task.subtasks === 'string' ? task.subtasks : JSON.stringify(task.subtasks)) : '[]';
 
-  db.run(`UPDATE tasks SET title = ?, description = ?, status = ?, updateStatusDate = ?, estimate = ?, priority = ?, link = ?, spendTime = ?, startTimer = ?, sprintId = ?, type = ?, storyPoints = ?, subtasks = ? WHERE id = ?`, [task.title, task.description, task.status, updateDate, task.estimate, task.priority, task.link, task.spendTime, task.startTimer, task.sprintId, task.type || 'TASK', task.storyPoints || 0, subtasksStr, task.id]);
+  db.run(`UPDATE tasks SET title = ?, description = ?, status = ?, updateStatusDate = ?, estimate = ?, priority = ?, link = ?, spendTime = ?, startTimer = ?, sprintId = ?, type = ?, storyPoints = ?, subtasks = ?, timerMode = ? WHERE id = ?`, [task.title, task.description, task.status, updateDate, task.estimate, task.priority, task.link, task.spendTime, task.startTimer, task.sprintId, task.type || 'TASK', task.storyPoints || 0, subtasksStr, task.timerMode || null, task.id]);
 
   if (oldStatus !== 'Completed' && task.status === 'Completed') {
     const tagIdsStmt = db.prepare('SELECT tagId FROM task_tags WHERE taskId = ?');
@@ -1388,6 +1357,35 @@ export const getDailyStandupData = (userId: number) => {
     };
 };
 
+export const getLifetimeStats = (userId: number) => {
+    if (!db) return { water: 0, meditationSessions: 0, stretchingSessions: 0, pomodoros: 0 };
+    
+    // Water (sum of all waterIntake)
+    const waterStmt = db.prepare('SELECT SUM(waterIntake) as total FROM daily_energy_logs');
+    const waterTotal = waterStmt.get()[0] as number || 0;
+    waterStmt.free();
+
+    // Meditation (count sessions from system_logs - reliable)
+    const medStmt = db.prepare("SELECT COUNT(*) FROM system_logs WHERE message LIKE 'Meditation Session%'");
+    const medCount = medStmt.get()[0] as number || 0;
+    medStmt.free();
+
+    // Stretching (count from system_logs)
+    const stretchStmt = db.prepare("SELECT COUNT(*) FROM system_logs WHERE message LIKE '%Czas na ruch%' OR message LIKE '%Stretching%'"); // Adjust pattern based on exact log message
+    // Actually, we log "Sent reminder for habit" or generic system logs. 
+    // Let's rely on daily_energy_logs for stretching minutes > 0 count
+    const stretchDaysStmt = db.prepare("SELECT COUNT(*) FROM daily_energy_logs WHERE stretchingMinutes > 0");
+    const stretchCount = stretchDaysStmt.get()[0] as number || 0;
+    stretchDaysStmt.free();
+
+    // Pomodoro (count from system_logs)
+    const pomStmt = db.prepare("SELECT COUNT(*) FROM system_logs WHERE message LIKE 'Pomodoro Completed%'");
+    const pomCount = pomStmt.get()[0] as number || 0;
+    pomStmt.free();
+
+    return { water: waterTotal, meditationSessions: medCount, stretchingSessions: stretchCount, pomodoros: pomCount };
+};
+
 export const getDailyReportData = (userId: number) => {
     if (!db) return null;
 
@@ -1445,9 +1443,19 @@ export const getDailyReportData = (userId: number) => {
         else if (last < prev * 0.9) trend = 'decreasing';
     }
 
+    // 5. Pomodoro Count Today
+    const pomodoroStmt = db.prepare(`
+        SELECT COUNT(*) as count 
+        FROM system_logs 
+        WHERE message LIKE 'Pomodoro Completed%' AND timestamp LIKE :datePattern
+    `);
+    const pomodoroResult = pomodoroStmt.getAsObject({ ':datePattern': `${todayStr}%` });
+    pomodoroStmt.free();
+
     return {
         totalTimeMs: timeResult.totalTime || 0,
         completedCount: completedResult.count || 0,
+        pomodoroCount: pomodoroResult.count || 0,
         topDistractions,
         topTasks,
         trend,

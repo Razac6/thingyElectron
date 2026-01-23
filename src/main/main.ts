@@ -63,7 +63,8 @@ import {
   getWebStats,
   setDomainCategory,
   getAppStats,
-  setAppCategory
+  setAppCategory,
+  getLifetimeStats
 } from './db';
 import { autoScheduleTasks, getProposedSchedule } from './TaskScheduler';
 import { ProductivityAnalyst, AnalysisResult } from './ProductivityAnalysis';
@@ -91,7 +92,12 @@ let cachedInsights: AnalysisResult | null = null;
 let hasSentFatigueWarning = false;
 let lastPeakHourNotificationDate: string | null = null;
 
+let isMeditating = false;
+
 const sendAiNotification = (title: string, body: string) => {
+    if (isMeditating) return; // Mute notifications during meditation
+
+    console.log(`[Notification] Sending: ${title} - ${body}`);
     const notification = new Notification({
         title,
         body,
@@ -416,6 +422,11 @@ ipcMain.handle('db:update-task', (event, task) => {
           } else if (challenge.type === 'BACKLOG_CLEANER') {
               newProgress += 1;
               shouldUpdate = true;
+          } else if (challenge.type === 'TASK_SPRINTER') {
+              if ((task.estimate || 0) < 1) { // Small task (< 1h)
+                  newProgress += 1;
+                  shouldUpdate = true;
+              }
           }
 
           if (shouldUpdate) {
@@ -506,7 +517,30 @@ ipcMain.handle('db:delete-checklist-item', (event, itemId) => deleteChecklistIte
 
 // Daily Bio Handlers
 ipcMain.handle('db:get-daily-bio', (event, date) => getDailyBio(date));
-ipcMain.handle('db:update-daily-bio', (event, date, data) => updateDailyBio(date, data));
+ipcMain.handle('db:update-daily-bio', (event, date, data) => {
+    const result = updateDailyBio(date, data);
+    
+    // Check Hydration Challenge
+    if (data.waterIntake !== undefined) {
+        // We need userId, assuming 1 for single user setup or context
+        const userId = 1; 
+        const challenge: any = getDailyChallenge(userId, date);
+        if (challenge && challenge.status === 'ACTIVE' && challenge.type === 'HYDRATION_HERO') {
+             // waterIntake in DB is the total count, so update progress directly
+             const newProgress = data.waterIntake; 
+             const status = newProgress >= challenge.target ? 'COMPLETED' : 'ACTIVE';
+             updateDailyChallengeProgress(challenge.id, newProgress, status);
+             
+             if (status === 'COMPLETED') {
+                 sendAiNotification('🎉 Challenge Completed!', `Ukończyłeś: ${challenge.description} (+${challenge.xpReward} XP)`);
+                 const profile = getProfile(userId);
+                 if (profile) updateProfile({ ...profile, xp: profile.xp + challenge.xpReward });
+             }
+        }
+    }
+    
+    return result;
+});
 
 // Habit Tracker Handlers
 ipcMain.handle('db:get-habits', (event, userId) => getHabits(userId));
@@ -576,10 +610,12 @@ ipcMain.handle('db:get-productivity-insights', async (event, userId) => {
   return cachedInsights;
 });
 
-ipcMain.handle('db:get-daily-standup', (event, userId) => {
+  ipcMain.handle('db:get-daily-standup', (event, userId) => {
   const stats = getDailyStandupData(userId);
   const schedule = getProposedSchedule(userId);
   const topTask = schedule.length > 0 ? schedule[0] : null;
+  const today = new Date().toISOString().split('T')[0];
+  const challenge = getDailyChallenge(userId, today);
 
   let suggestion = null;
   if (topTask) {
@@ -596,6 +632,7 @@ ipcMain.handle('db:get-daily-standup', (event, userId) => {
   return {
       ...stats,
       topSuggestion: suggestion,
+      challenge: challenge,
       isPeakHour: cachedInsights?.peakHours?.includes(new Date().getHours()) || false
   };
 });
@@ -623,6 +660,7 @@ ipcMain.handle('db:set-domain-category', (event, domain, category) => {
     return true;
 });
 ipcMain.handle('db:get-app-stats', (event, days) => getAppStats(days));
+ipcMain.handle('db:get-lifetime-stats', (event, userId) => getLifetimeStats(userId));
 ipcMain.handle('db:set-app-category', (event, appName, category) => {
     setAppCategory(appName, category);
     return true;
@@ -653,7 +691,24 @@ ipcMain.handle('app:test-meditation-notif', () => {
     }, 3000);
 });
 
+ipcMain.handle('app:test-daily-standup', () => {
+    if (mainWindow) {
+        mainWindow.webContents.send('ai-companion:show-message', 'STANDUP_TRIGGER');
+    }
+});
+
+ipcMain.handle('app:meditation-started', () => {
+    isMeditating = true;
+});
+
+ipcMain.handle('app:meditation-cancelled', () => {
+    isMeditating = false;
+});
+
 ipcMain.handle('app:meditation-completed', (event, userId, minutes) => {
+    isMeditating = false;
+    shell.beep(); // Play sound notification
+
     const today = new Date().toISOString().split('T')[0];
     const current = getDailyBio(today);
     const newVal = (current.meditationMinutes || 0) + minutes;
@@ -663,15 +718,60 @@ ipcMain.handle('app:meditation-completed', (event, userId, minutes) => {
     logSystemEvent(`Meditation Session: ${minutes} min`, 'HEALTH');
     lastMeditationDate = new Date().toDateString();
 
+    // Challenge Check
+    const challenge: any = getDailyChallenge(userId, today);
+    if (challenge && challenge.status === 'ACTIVE' && challenge.type === 'MINDFULNESS_MOMENT') {
+         const newProgress = challenge.progress + minutes;
+         const status = newProgress >= challenge.target ? 'COMPLETED' : 'ACTIVE';
+         updateDailyChallengeProgress(challenge.id, newProgress, status);
+         if (status === 'COMPLETED') {
+             sendAiNotification('🎉 Challenge Completed!', `Ukończyłeś: ${challenge.description} (+${challenge.xpReward} XP)`);
+             const profile = getProfile(userId);
+             if (profile) updateProfile({ ...profile, xp: profile.xp + challenge.xpReward });
+         }
+    }
+
     // Show Cat with Congratulations
     if (mainWindow) {
         mainWindow.webContents.send('ai-companion:show-message', `Wspaniale! 🧘‍♀️ Zaliczono ${minutes} min. Jak się czujesz?`);
+        mainWindow.webContents.send('gamification:check', 'HEALTH_ACTION');
     }
 });
 
 ipcMain.handle('app:skip-meditation', () => {
     lastMeditationDate = new Date().toDateString();
     logSystemEvent('Meditation skipped for today', 'HEALTH');
+});
+
+ipcMain.handle('app:complete-pomodoro', (event, taskId) => {
+    const task = getTasks(1).find(t => t.id === taskId); // Basic lookup
+    if (task) {
+        const newCount = (task.pomodoroCount || 0) + 1;
+        updateTask({ ...task, pomodoroCount: newCount });
+        
+        shell.beep();
+        sendAiNotification('🍅 Pomodoro Ukończone!', `Zadanie "${task.title}" ma już ${newCount} pomidorów.`);
+        logSystemEvent(`Pomodoro Completed for task: ${task.title}`, 'PRODUCTIVITY');
+        
+        // Challenge Check
+        const today = new Date().toISOString().split('T')[0];
+        const challenge: any = getDailyChallenge(task.userId || 1, today);
+        if (challenge && challenge.status === 'ACTIVE' && challenge.type === 'POMODORO_MARATHON') {
+             const newProgress = challenge.progress + 1;
+             const status = newProgress >= challenge.target ? 'COMPLETED' : 'ACTIVE';
+             updateDailyChallengeProgress(challenge.id, newProgress, status);
+             if (status === 'COMPLETED') {
+                 sendAiNotification('🎉 Challenge Completed!', `Ukończyłeś: ${challenge.description} (+${challenge.xpReward} XP)`);
+                 const profile = getProfile(task.userId || 1);
+                 if (profile) updateProfile({ ...profile, xp: profile.xp + challenge.xpReward });
+             }
+        }
+        
+        if (mainWindow) {
+            mainWindow.webContents.send('ai-companion:show-message', `Świetna sesja! 🍅 Zasłużyłeś na 5 min przerwy. Rozpocząć timer przerwy?`);
+            mainWindow.webContents.send('gamification:check', 'POMODORO_COMPLETED');
+        }
+    }
 });
 
 // --- Tray IPC Handlers ---

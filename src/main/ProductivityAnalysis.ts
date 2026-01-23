@@ -30,7 +30,7 @@ export interface AnalysisResult {
 }
 
 export interface ChallengeConfig {
-  type: 'TOTAL_DURATION' | 'DEEP_WORK' | 'FOCUS_SCORE' | 'FROG_EATER' | 'BACKLOG_CLEANER';
+  type: 'TOTAL_DURATION' | 'DEEP_WORK' | 'FOCUS_SCORE' | 'FROG_EATER' | 'BACKLOG_CLEANER' | 'POMODORO_MARATHON' | 'HYDRATION_HERO' | 'MINDFULNESS_MOMENT' | 'TASK_SPRINTER';
   target: number;
   description: string;
   xpReward: number;
@@ -70,17 +70,22 @@ export class ProductivityAnalyst {
 
     // 3. Normal Mode -> Context dependent
     
-    // Scenario 1: Slump -> Backlog Cleaning (Momentum builder)
+    // Scenario 1: Slump -> Backlog Cleaning (Momentum builder) or Task Sprinter
     if (trend.direction === 'decreasing') {
-      return {
+      return Math.random() > 0.5 ? {
         type: 'BACKLOG_CLEANER',
         target: 3, // 3 tasks
         description: 'Momentum Builder: Complete 3 tasks to get back on track.',
         xpReward: 100
+      } : {
+        type: 'TASK_SPRINTER',
+        target: 3, // 3 quick tasks
+        description: 'Task Sprinter: Complete 3 small tasks (estimate < 1h).',
+        xpReward: 120
       };
     }
 
-    // Scenario 2: Increasing/Stable -> Beast Mode (Challenge)
+    // Scenario 2: Increasing/Stable -> Beast Mode (Challenge) or Health/Deep Focus
     if (trend.direction === 'increasing') {
       const hardTarget = Math.max(120, Math.round(fatigue.averageSession * 6));
       return {
@@ -91,7 +96,32 @@ export class ProductivityAnalyst {
       };
     }
 
-    // Default
+    // Default: Random Mix of Focus and Health Challenges
+    const rand = Math.random();
+    if (rand < 0.25) {
+        return {
+            type: 'POMODORO_MARATHON',
+            target: 4, // 4 pomodoros
+            description: 'Pomodoro Marathon: Complete 4 Pomodoro sessions today.',
+            xpReward: 150
+        };
+    } else if (rand < 0.4) {
+        return {
+            type: 'HYDRATION_HERO',
+            target: 6, // 6 glasses
+            description: 'Hydration Hero: Log 6 glasses of water today.',
+            xpReward: 100
+        };
+    } else if (rand < 0.55) {
+        return {
+            type: 'MINDFULNESS_MOMENT',
+            target: 10, // 10 minutes
+            description: 'Mindful Day: Complete 10 minutes of meditation.',
+            xpReward: 120
+        };
+    }
+
+    // Default fallback
     return {
       type: 'DEEP_WORK',
       target: 60, // 1 hour of deep work

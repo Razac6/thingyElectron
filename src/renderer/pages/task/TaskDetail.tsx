@@ -411,6 +411,7 @@ function TaskDetail() {
             <Grid item><Chip label={`Priority: ${task.priority}`} /></Grid>
             <Grid item><Chip label={`Sprint: ${sprints.find(s => s.id === task.sprintId)?.name || 'Backlog'}`} /></Grid>
             <Grid item><Chip label={`Estimate: ${task.estimate}h`} /></Grid>
+            <Grid item><Chip label={`🍅 ${task.pomodoroCount || 0}`} title="Completed Pomodoro Sessions" /></Grid>
           </Grid>
           {task.tags && task.tags.length > 0 && (
             <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>

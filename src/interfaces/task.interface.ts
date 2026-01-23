@@ -12,6 +12,7 @@ export interface Task {
   createdAt: string;
   spendTime: number;
   startTimer: string | null;
+  timerMode?: 'normal' | 'pomodoro';
   type: TaskTypeEnum;
   storyPoints?: number;
   subtasks?: string; // JSON string of Subtask[]

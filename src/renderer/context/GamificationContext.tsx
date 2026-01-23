@@ -157,8 +157,57 @@ export const GamificationProvider = ({ children }: { children: ReactNode }) => {
         }
     }
 
+    if (action === 'HEALTH_ACTION' || action === 'POMODORO_COMPLETED') {
+        // Fetch fresh stats
+        // @ts-ignore
+        const stats = await window.electron.database.getLifetimeStats(userId);
+        
+        if (stats.pomodoros >= 1 && !earnedAchievements.includes('POMODORO_MASTER')) {
+            await window.electron.database.grantAchievement(userId, 'POMODORO_MASTER');
+            setEarnedAchievements(prev => [...prev, 'POMODORO_MASTER']);
+            addXp(30);
+            earned = true;
+        }
+
+        if (stats.meditationSessions >= 5 && !earnedAchievements.includes('ZEN_MASTER')) {
+            await window.electron.database.grantAchievement(userId, 'ZEN_MASTER');
+            setEarnedAchievements(prev => [...prev, 'ZEN_MASTER']);
+            addXp(40);
+            earned = true;
+        }
+
+        if (stats.water >= 10 && !earnedAchievements.includes('HYDRO_HOMIE')) {
+            await window.electron.database.grantAchievement(userId, 'HYDRO_HOMIE');
+            setEarnedAchievements(prev => [...prev, 'HYDRO_HOMIE']);
+            addXp(25);
+            earned = true;
+        }
+
+        if (stats.stretchingSessions >= 5 && !earnedAchievements.includes('FLEXIBLE')) {
+            await window.electron.database.grantAchievement(userId, 'FLEXIBLE');
+            setEarnedAchievements(prev => [...prev, 'FLEXIBLE']);
+            addXp(30);
+            earned = true;
+        }
+    }
+
     return earned;
   }, [addXp, earnedAchievements, userId]);
+
+  useEffect(() => {
+    const handleCheck = async (event: any, action: string) => {
+        const earned = await checkForAchievements(action);
+        if (earned) triggerRewardAnimation('achievement');
+    };
+    
+    // @ts-ignore
+    window.electron.ipcRenderer.on('gamification:check', handleCheck);
+    
+    return () => {
+        // @ts-ignore
+        window.electron.ipcRenderer.removeListener('gamification:check', handleCheck);
+    };
+  }, [checkForAchievements]);
 
   if (isLoading) {
     return null;

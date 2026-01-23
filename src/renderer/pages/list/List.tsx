@@ -45,6 +45,7 @@ import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
+import TimerIcon from '@mui/icons-material/Timer';
 import { StatusEnum } from '../../../enums/status.enum';
 import { PriorityEnum } from '../../../enums/priority.enum';
 import { TaskTypeEnum } from '../../../enums/TaskTypeEnum';
@@ -534,6 +535,10 @@ function List() {
         open={Boolean(menuAnchorEl)}
         onClose={handleMenuClose}
       >
+        <MenuItem onClick={() => { handleMenuClose(); startTimer(currentMenuTaskId!, 'pomodoro'); }} disabled={anyTimerRunning}>
+          <ListItemIcon><TimerIcon fontSize="small" color="error" /></ListItemIcon>
+          <ListItemText>Start Pomodoro</ListItemText>
+        </MenuItem>
         <MenuItem onClick={() => handleMoveTask(currentMenuTaskId!, 'up')} disabled={isColumnSortActive || currentTaskIndex === 0}>
           <ListItemIcon><ArrowUpwardIcon fontSize="small" /></ListItemIcon>
           <ListItemText>Move Up</ListItemText>

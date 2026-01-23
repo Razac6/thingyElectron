@@ -10,6 +10,10 @@ const allAchievements = [
   { id: 'TEN_TASKS', name: 'Journeyman', description: 'Complete 10 tasks.' },
   { id: 'THE_PLANNER', name: 'The Planner', description: 'Create your first sprint.' },
   { id: 'DEEP_DIVE', name: 'Deep Dive', description: 'Complete a work session over 2 hours.' },
+  { id: 'POMODORO_MASTER', name: 'Pomodoro Master', description: 'Complete your first Pomodoro session.' },
+  { id: 'ZEN_MASTER', name: 'Zen Master', description: 'Complete 5 meditation sessions.' },
+  { id: 'HYDRO_HOMIE', name: 'Hydro Homie', description: 'Log water intake 10 times.' },
+  { id: 'FLEXIBLE', name: 'Flexible', description: 'Complete 5 stretching sessions.' },
 ];
 
 function Profile() {
@@ -46,8 +50,10 @@ function Profile() {
         </Grid>
 
         {/* Daily Challenge */}
-        <Grid item xs={12} md={6}>
-            <DailyChallengeWidget />
+        <Grid item xs={12} md={6} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Box>
+                <DailyChallengeWidget />
+            </Box>
         </Grid>
 
         {/* Achievements Card */}

@@ -194,6 +194,12 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
     };
     window.electron.ipcRenderer.on('timer:stop-requested', handleStopRequest);
 
+    // Refresh data on gamification events (e.g. daily challenge progress update)
+    const handleGamificationUpdate = () => {
+        fetchAllData();
+    };
+    window.electron.ipcRenderer.on('gamification:check', handleGamificationUpdate);
+
     // Cleanup (optional for singleton, but good practice if we had a working removeListener)
     return () => {
        // window.electron.ipcRenderer.removeListener('activity:idle-detected', handleIdle);
@@ -293,10 +299,21 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
     await fetchAllData();
   };
 
-  const startTimer = async (taskId: number) => {
+  const startTimer = async (taskId: number, mode: 'normal' | 'pomodoro' = 'normal') => {
     const taskToUpdate = tasks.find((t) => t.id === taskId);
     if (!taskToUpdate) return;
-    const updatedTask = { ...taskToUpdate, startTimer: Date.now() };
+    
+    const updatedTask = { 
+        ...taskToUpdate, 
+        startTimer: Date.now().toString(),
+        timerMode: mode 
+    };
+    
+    // Auto-enable Boost Mode for Pomodoro
+    if (mode === 'pomodoro') {
+        setIsBoostMode(true);
+    }
+
     await updateTask(updatedTask);
   };
 

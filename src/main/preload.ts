@@ -78,6 +78,7 @@ contextBridge.exposeInMainWorld('electron', {
     getAiMessage: (userId: number) => ipcRenderer.invoke('db:get-ai-message', userId),
     getDailyStandup: (userId: number) => ipcRenderer.invoke('db:get-daily-standup', userId),
     getDailyReportData: (userId: number) => ipcRenderer.invoke('db:get-daily-report-data', userId),
+    getLifetimeStats: (userId: number) => ipcRenderer.invoke('db:get-lifetime-stats', userId),
     // Web Integration
     getWebSettings: () => ipcRenderer.invoke('db:get-web-settings'),
     saveWebSettings: (settings: any) => ipcRenderer.invoke('db:save-web-settings', settings),
@@ -91,8 +92,12 @@ contextBridge.exposeInMainWorld('electron', {
     openDevTools: () => ipcRenderer.invoke('app:open-devtools'),
     setWindowOpacity: (opacity: number) => ipcRenderer.invoke('app:set-window-opacity', opacity),
     testMeditationNotif: () => ipcRenderer.invoke('app:test-meditation-notif'),
+    testDailyStandup: () => ipcRenderer.invoke('app:test-daily-standup'),
+    startMeditation: () => ipcRenderer.invoke('app:meditation-started'),
+    cancelMeditation: () => ipcRenderer.invoke('app:meditation-cancelled'),
     completeMeditation: (userId: number, minutes: number) => ipcRenderer.invoke('app:meditation-completed', userId, minutes),
     skipMeditation: () => ipcRenderer.invoke('app:skip-meditation'),
+    completePomodoro: (taskId: number) => ipcRenderer.invoke('app:complete-pomodoro', taskId),
   },
   ipcRenderer: {
     on(channel: string, func: (...args: unknown[]) => void) {

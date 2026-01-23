@@ -583,35 +583,21 @@ function Settings() {
             </Grid>
 
             <Grid item xs={12}>
-                <FormControlLabel
-                    disabled={settings.enable_ai_assistant === 'false'}
-                    control={
-                        <Switch 
-                            checked={settings.enable_stretching_reminders === 'true'} 
-                            onChange={(e) => updateSetting('enable_stretching_reminders', String(e.target.checked))} 
-                        />
-                    }
-                    label="Przypomnienia o ćwiczeniach (w godzinach pracy)"
-                />
-                {settings.enable_stretching_reminders === 'true' && (
-                    <Box sx={{ px: 4, mt: 1 }}>
-                        <Typography variant="caption" color="text.secondary">Co ile minut:</Typography>
-                        <Slider
-                            value={Number(settings.stretching_interval) || 60}
-                            min={30}
-                            max={180}
-                            step={15}
-                            marks
-                            valueLabelDisplay="auto"
-                            valueLabelFormat={(v) => `${v}m`}
-                            onChange={(_, value) => updateSetting('stretching_interval', String(value))}
-                        />
-                    </Box>
-                )}
+                <Typography gutterBottom>Pomodoro</Typography>
+                <Box sx={{ px: 4, mt: 1 }}>
+                    <TextField
+                        label="Czas trwania sesji (min)"
+                        type="number"
+                        fullWidth
+                        value={settings.pomodoro_duration || 25}
+                        onChange={(e) => updateSetting('pomodoro_duration', e.target.value)}
+                    />
+                </Box>
             </Grid>
 
             <Grid item xs={12}>
                 <Typography gutterBottom>Przezroczystość dymka Asystenta</Typography>
+
                 <Box sx={{ px: 2, mt: 2 }}>
                     <Slider
                         disabled={settings.enable_ai_assistant === 'false'}
@@ -637,6 +623,18 @@ function Settings() {
                     }}
                 >
                     Testuj powiadomienie medytacji (3s opóźnienia)
+                </Button>
+                <Button 
+                    variant="outlined" 
+                    fullWidth 
+                    sx={{ mt: 1 }}
+                    disabled={settings.enable_ai_assistant === 'false'}
+                    onClick={() => {
+                        // @ts-ignore
+                        window.electron.app.testDailyStandup();
+                    }}
+                >
+                    Testuj Daily Standup
                 </Button>
             </Grid>
         </Grid>

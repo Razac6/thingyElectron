@@ -30,13 +30,22 @@ const MeditationPage = () => {
     const progress = (timeLeft / (durationMin * 60)) * 100;
 
     const formatTime = (seconds: number) => {
-        const m = Math.floor(seconds / 60);
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
         const s = seconds % 60;
-        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        
+        const mStr = m.toString().padStart(2, '0');
+        const sStr = s.toString().padStart(2, '0');
+        
+        if (h > 0) return `${h}:${mStr}:${sStr}`;
+        return `${mStr}:${sStr}`;
     };
 
     const handleStart = () => {
         setIsActive(true);
+        // @ts-ignore
+        window.electron.app.startMeditation();
+        
         intervalRef.current = setInterval(() => {
             setTimeLeft((prev) => {
                 if (prev <= 1) {
@@ -52,6 +61,8 @@ const MeditationPage = () => {
         if (intervalRef.current) clearInterval(intervalRef.current);
         setIsActive(false);
         setTimeLeft(durationMin * 60);
+        // @ts-ignore
+        window.electron.app.cancelMeditation();
     };
 
     const finishSession = async () => {
