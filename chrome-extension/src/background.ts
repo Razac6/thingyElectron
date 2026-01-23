@@ -33,6 +33,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'TASK_PARSED') {
     sendTaskToElectron(message.data);
   }
+
+  // Handle Manual Block Update from Popup
+  if (message.type === 'UPDATE_RULES') {
+      checkStatus(); // Force refresh rules
+  }
 });
 
 const sendTaskToElectron = async (taskData: any) => {
@@ -93,15 +98,23 @@ const flushData = async (force: boolean = false) => {
 const updateBlockingRules = async (settings: any, focusMode: boolean) => {
   let sitesToBlock: string[] = [];
 
-  // 1. Always Blocked Sites
-  if (settings.alwaysBlockedSites && Array.isArray(settings.alwaysBlockedSites)) {
+  // 0. Local Extension Blocks (Force Block)
+  const { localBlockedSites } = await chrome.storage.local.get(['localBlockedSites']);
+  if (localBlockedSites && Array.isArray(localBlockedSites)) {
+      sitesToBlock.push(...localBlockedSites);
+  }
+
+  // 1. Always Blocked Sites (From Desktop)
+  if (settings && settings.alwaysBlockedSites && Array.isArray(settings.alwaysBlockedSites)) {
       sitesToBlock.push(...settings.alwaysBlockedSites);
   }
 
-  // 2. Focus Mode Blocked Sites
-  const shouldBlockFocus = settings.blockingEnabled && (!settings.blockOnlyInFocus || focusMode);
-  if (shouldBlockFocus && settings.blockedSites && Array.isArray(settings.blockedSites)) {
-      sitesToBlock.push(...settings.blockedSites);
+  // 2. Focus Mode Blocked Sites (From Desktop)
+  if (settings) {
+      const shouldBlockFocus = settings.blockingEnabled && (!settings.blockOnlyInFocus || focusMode);
+      if (shouldBlockFocus && settings.blockedSites && Array.isArray(settings.blockedSites)) {
+          sitesToBlock.push(...settings.blockedSites);
+      }
   }
 
   // Deduplicate
@@ -151,6 +164,9 @@ const updateBlockingRules = async (settings: any, focusMode: boolean) => {
   // Set Icon to Red if blocking is active
   chrome.action.setIcon({ path: "assets/128x128.png" }); 
   
+  // Save rules to storage for Content Script (SPA handling)
+  await chrome.storage.local.set({ blockedPatterns: sitesToBlock });
+
   console.log('Blocking enabled for:', sitesToBlock);
 };
 

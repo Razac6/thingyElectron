@@ -35,6 +35,7 @@ export const AiCompanion = () => {
     const [meditationMinutes, setMeditationMinutes] = useState(0);
     const [stretchingMinutes, setStretchingMinutes] = useState(0);
     const [promptType, setPromptType] = useState<'none' | 'water' | 'meditation' | 'stretching'>('none');
+    const [isPriorityMessage, setIsPriorityMessage] = useState(false);
     
     const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const messageTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -43,49 +44,15 @@ export const AiCompanion = () => {
     const opacity = Number(settings.ai_bubble_opacity) || 0.8;
     const isEnabled = settings.enable_ai_assistant !== 'false';
 
-    // Fetch initial stats
+    // ... (rest of imports and setup)
+
+    // IPC Listeners (Notifications)
     useEffect(() => {
         if (!isEnabled) return;
-        const fetchStats = async () => {
-            const today = new Date().toISOString().split('T')[0];
-            try {
-                // @ts-ignore
-                const bio = await window.electron.database.getDailyBio(today);
-                setWaterIntake(bio.waterIntake || 0);
-                setMeditationMinutes(bio.meditationMinutes || 0);
-                setStretchingMinutes(bio.stretchingMinutes || 0);
-            } catch (e) {}
-        };
-        fetchStats();
-    }, [isEnabled]);
-
-    // Handle Click Outside
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (isMenuOpen && bubbleRef.current && !bubbleRef.current.contains(event.target as Node)) {
-                setIsMenuOpen(false);
-                setMessage(null);
-                setPromptType('none');
-                
-                if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
-                hideTimeoutRef.current = setTimeout(() => {
-                    setIsVisible(false);
-                }, 5000);
-            }
-        };
-
-        if (isMenuOpen) {
-            document.addEventListener('mousedown', handleClickOutside);
-        }
-        return () => {
-            document.removeEventListener('mousedown', handleClickOutside);
-        };
-    }, [isMenuOpen]);
-
-    // IPC Listeners
-    useEffect(() => {
-        if (!isEnabled) return;
+        
         const handleSummon = () => {
+            // Manual summon resets priority to allow interaction
+            setIsPriorityMessage(false);
             setIsVisible(true);
             setIsMenuOpen(true);
             setMenuView('main');
@@ -97,9 +64,13 @@ export const AiCompanion = () => {
         };
 
         const handleShowMessage = (event: any, msg: string) => {
+            // FORCE show cat and message
             setIsVisible(true);
             setMessage(msg);
+            setIsMenuOpen(false); // Close menu if open to show message clearly
+            setIsPriorityMessage(true); // Lock auto-hide logic
             
+            // Clear any existing timers
             if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
             if (messageTimeoutRef.current) clearTimeout(messageTimeoutRef.current);
 
@@ -109,11 +80,14 @@ export const AiCompanion = () => {
             else if (msg.includes("Mindfulness") || msg.includes("oddech")) setPromptType('meditation');
             else setPromptType('none');
             
+            // Auto-hide after 15s (longer for priority messages)
             hideTimeoutRef.current = setTimeout(() => {
+                // Only hide if user hasn't opened menu in the meantime
                 if (!isMenuOpen) {
                     setIsVisible(false);
                     setMessage(null);
                     setPromptType('none');
+                    setIsPriorityMessage(false);
                 }
             }, 15000);
         };
@@ -126,22 +100,30 @@ export const AiCompanion = () => {
             // @ts-ignore
             window.electron.ipcRenderer.removeListener('ai-companion:show-message', handleShowMessage);
         };
-    }, [isEnabled]);
+    }, [isEnabled, isMenuOpen]); // Add isMenuOpen dependency to be safe
 
     // Random Appearance Loop
     useEffect(() => {
         if (!isEnabled) return;
+        
         const scheduleNextAppearance = () => {
+            // Random time: 15 to 45 minutes
             const nextTime = Math.random() * (45 * 60 * 1000 - 15 * 60 * 1000) + 15 * 60 * 1000;
+            
             return setTimeout(() => {
-                triggerAppearance();
-                scheduleNextAppearance();
+                // Only trigger if NOT currently showing a priority message
+                if (!isPriorityMessage) {
+                    triggerAppearance();
+                }
+                scheduleNextAppearance(); // Re-schedule recursively
             }, nextTime);
         };
 
         const timer = scheduleNextAppearance();
+        
+        // Initial greeting
         const initialTimer = setTimeout(() => {
-            triggerAppearance(true);
+            if (!isPriorityMessage) triggerAppearance(true);
         }, 30000);
 
         return () => {
@@ -150,14 +132,16 @@ export const AiCompanion = () => {
             if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
             if (messageTimeoutRef.current) clearTimeout(messageTimeoutRef.current);
         };
-    }, [isEnabled]);
+    }, [isEnabled, isPriorityMessage]); // Re-run if priority state changes
 
     const triggerAppearance = async (forceMessage = false) => {
-        if (isVisible || !isEnabled) return;
+        // If cat is already visible or processing priority msg, skip random event
+        if (isVisible || isPriorityMessage || !isEnabled) return;
 
         let msg = null;
         let type: 'none' | 'water' | 'meditation' | 'stretching' = 'none';
         
+        // ... (rest of logic: random selection) ...
         const rand = Math.random();
 
         if (settings.enable_water_reminders === 'true' && rand < 0.3) {
@@ -188,18 +172,19 @@ export const AiCompanion = () => {
         setIsVisible(true);
         setPromptType(type);
 
+        // Hide logic for standard/random appearances
         const hideTime = type !== 'none' ? 15000 : (msg ? 8000 : 8000);
         
         if (msg && type === 'none') {
              if (messageTimeoutRef.current) clearTimeout(messageTimeoutRef.current);
              messageTimeoutRef.current = setTimeout(() => {
-                if (!isMenuOpen) setMessage(null);
+                if (!isMenuOpen && !isPriorityMessage) setMessage(null);
             }, 3000);
         }
 
         if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
         hideTimeoutRef.current = setTimeout(() => {
-            if (!isMenuOpen) {
+            if (!isMenuOpen && !isPriorityMessage) {
                 setIsVisible(false);
                 setMessage(null);
                 setPromptType('none');

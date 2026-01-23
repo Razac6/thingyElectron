@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Thingy Companion",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "description": "Companion extension for Thingy app. Syncs Focus Mode and blocks distractions.",
   "permissions": [
     "storage",
@@ -14,6 +14,16 @@
     "http://127.0.0.1:3333/*",
     "<all_urls>"
   ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "assets/16x16.png",
+      "32": "assets/32x32.png",
+      "48": "assets/48x48.png",
+      "64": "assets/64x64.png",
+      "128": "assets/128x128.png"
+    }
+  },
   "background": {
     "service_worker": "background.js",
     "type": "module"
@@ -27,7 +37,9 @@
   ],
   "icons": {
     "16": "assets/16x16.png",
+    "32": "assets/32x32.png",
     "48": "assets/48x48.png",
+    "64": "assets/64x64.png",
     "128": "assets/128x128.png"
   }
 }

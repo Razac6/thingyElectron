@@ -120,3 +120,51 @@ setInterval(() => {
 window.addEventListener('beforeunload', () => {
     if (isActive) syncActivity();
 });
+
+// --- Client-Side SPA Blocking ---
+let lastUrl = location.href;
+const checkBlocking = async () => {
+    const currentUrl = location.href;
+    const { blockedPatterns } = await chrome.storage.local.get(['blockedPatterns']);
+    
+    if (!blockedPatterns || !Array.isArray(blockedPatterns)) return;
+
+    for (const pattern of blockedPatterns) {
+        // Simple pattern matching
+        // Remove || from start if exists
+        const cleanPattern = pattern.replace(/^\|\|/, '');
+        
+        // Check if URL contains the pattern (e.g. "youtube.com/shorts")
+        if (currentUrl.includes(cleanPattern)) {
+            // BLOCK!
+            document.body.innerHTML = `
+                <div style="
+                    position: fixed; 
+                    top: 0; left: 0; width: 100%; height: 100%; 
+                    background: #f8f9fa; color: #333; 
+                    display: flex; flex-direction: column; align-items: center; justify-content: center; 
+                    z-index: 999999; font-family: sans-serif;
+                ">
+                    <h1 style="font-size: 2rem; margin-bottom: 1rem;">🚫 Access Restricted</h1>
+                    <p>This page is blocked by Thingy Focus Mode.</p>
+                    <p style="margin-top: 2rem; color: #666;">Get back to work!</p>
+                </div>
+            `;
+            // Stop media playback
+            document.querySelectorAll('video, audio').forEach((el: any) => el.pause());
+            return;
+        }
+    }
+};
+
+// Check on load
+checkBlocking();
+
+// Check on URL change (SPA)
+new MutationObserver(() => {
+  const url = location.href;
+  if (url !== lastUrl) {
+    lastUrl = url;
+    checkBlocking();
+  }
+}).observe(document, { subtree: true, childList: true });

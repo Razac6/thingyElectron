@@ -95,7 +95,7 @@ const sendAiNotification = (title: string, body: string) => {
     const notification = new Notification({
         title,
         body,
-        icon: getAssetPath('icon.png')
+        icon: appIconPath
     });
 
     notification.on('click', () => {
@@ -212,7 +212,8 @@ const getAssetPath = (...paths: string[]): string => {
   return path.join(RESOURCES_PATH, ...paths);
 };
 
-const trayIconPath = getAssetPath('icon.png');
+const trayIconPath = getAssetPath('icons', 'tray-icon.png');
+const appIconPath = getAssetPath('icons', 'icon.png');
 
 let trayTimerInterval: NodeJS.Timeout | null = null;
 let activeTaskInfo: { title: string; startTime: number; estimate: number; initialSpendTime: number; userId?: number } | null = null;
