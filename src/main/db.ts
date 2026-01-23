@@ -155,7 +155,10 @@ export const initDB = async () => {
       { key: 'aiEngine', value: 'local' },
       { key: 'geminiApiKey', value: '' },
       { key: 'meditation_time', value: '09:00' },
-      { key: 'stretching_interval', value: '60' }
+      { key: 'stretching_interval', value: '60' },
+      { key: 'water_interval', value: '90' },
+      { key: 'water_goal', value: '8' },
+      { key: 'meditation_duration', value: '10' }
   ];
   const settingStmt = db.prepare('INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)');
   defaultSettings.forEach(s => settingStmt.run([s.key, s.value]));

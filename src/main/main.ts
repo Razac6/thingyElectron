@@ -653,6 +653,22 @@ ipcMain.handle('app:test-meditation-notif', () => {
     }, 3000);
 });
 
+ipcMain.handle('app:meditation-completed', (event, userId, minutes) => {
+    const today = new Date().toISOString().split('T')[0];
+    const current = getDailyBio(today);
+    const newVal = (current.meditationMinutes || 0) + minutes;
+    updateDailyBio(today, { meditationMinutes: newVal });
+    
+    sendAiNotification('Umysł oczyszczony 🍃', `Zaliczono ${minutes} min medytacji.`);
+    logSystemEvent(`Meditation Session: ${minutes} min`, 'HEALTH');
+    lastMeditationDate = new Date().toDateString(); // Ensure we don't prompt again today
+});
+
+ipcMain.handle('app:skip-meditation', () => {
+    lastMeditationDate = new Date().toDateString();
+    logSystemEvent('Meditation skipped for today', 'HEALTH');
+});
+
 // --- Tray IPC Handlers ---
 ipcMain.on('tray:create', createTray);
 ipcMain.on('tray:destroy', destroyTray);
@@ -728,11 +744,12 @@ setInterval(() => {
   const aiEnabled = getSetting('enable_ai_assistant') !== 'false';
   
   if (aiEnabled) {
-      // 1. Water (Random interval ~60-90 min)
+      // 1. Water (Random interval based on config)
       if (getSetting('enable_water_reminders') === 'true') {
-          // Check if at least 60 mins passed
-          if (now - lastWaterTime > 60 * 60 * 1000) {
-              // 30% chance every 5 mins check after 1h (effectively random within 1-1.5h range usually)
+          const interval = Number(getSetting('water_interval') || 90) * 60 * 1000;
+          
+          if (now - lastWaterTime > interval) {
+              // 30% chance every check, effectively randomizing slightly
               if (Math.random() < 0.3) {
                   sendAiNotification('💧 Nawodnienie', 'Pamiętasz o piciu wody?');
                   lastWaterTime = now;

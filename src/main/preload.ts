@@ -91,6 +91,8 @@ contextBridge.exposeInMainWorld('electron', {
     openDevTools: () => ipcRenderer.invoke('app:open-devtools'),
     setWindowOpacity: (opacity: number) => ipcRenderer.invoke('app:set-window-opacity', opacity),
     testMeditationNotif: () => ipcRenderer.invoke('app:test-meditation-notif'),
+    completeMeditation: (userId: number, minutes: number) => ipcRenderer.invoke('app:meditation-completed', userId, minutes),
+    skipMeditation: () => ipcRenderer.invoke('app:skip-meditation'),
   },
   ipcRenderer: {
     on(channel: string, func: (...args: unknown[]) => void) {

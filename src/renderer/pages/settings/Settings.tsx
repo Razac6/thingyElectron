@@ -519,6 +519,31 @@ function Settings() {
                     }
                     label="Przypomnienia o piciu wody"
                 />
+                {settings.enable_water_reminders === 'true' && (
+                    <Box sx={{ px: 4, mt: 1, display: 'flex', gap: 4 }}>
+                        <Box sx={{ flex: 1 }}>
+                            <Typography variant="caption" color="text.secondary">Co ile minut:</Typography>
+                            <Slider
+                                value={Number(settings.water_interval) || 90}
+                                min={30}
+                                max={180}
+                                step={15}
+                                marks
+                                valueLabelDisplay="auto"
+                                onChange={(_, value) => updateSetting('water_interval', String(value))}
+                            />
+                        </Box>
+                        <Box sx={{ width: 100 }}>
+                            <TextField
+                                label="Cel (szklanki)"
+                                type="number"
+                                size="small"
+                                value={settings.water_goal || 8}
+                                onChange={(e) => updateSetting('water_goal', e.target.value)}
+                            />
+                        </Box>
+                    </Box>
+                )}
             </Grid>
 
             <Grid item xs={12}>
@@ -534,15 +559,25 @@ function Settings() {
                         label="Przypomnienia o medytacji"
                     />
                     {settings.enable_meditation_reminders === 'true' && (
-                        <TextField
-                            label="Godzina"
-                            type="time"
-                            size="small"
-                            InputLabelProps={{ shrink: true }}
-                            value={settings.meditation_time || '09:00'}
-                            onChange={(e) => updateSetting('meditation_time', e.target.value)}
-                            sx={{ width: 120 }}
-                        />
+                        <Box display="flex" gap={2}>
+                            <TextField
+                                label="Godzina"
+                                type="time"
+                                size="small"
+                                InputLabelProps={{ shrink: true }}
+                                value={settings.meditation_time || '09:00'}
+                                onChange={(e) => updateSetting('meditation_time', e.target.value)}
+                                sx={{ width: 120 }}
+                            />
+                            <TextField
+                                label="Czas (min)"
+                                type="number"
+                                size="small"
+                                value={settings.meditation_duration || 10}
+                                onChange={(e) => updateSetting('meditation_duration', e.target.value)}
+                                sx={{ width: 100 }}
+                            />
+                        </Box>
                     )}
                 </Box>
             </Grid>

@@ -13,6 +13,7 @@ import SprintsPage from './pages/sprints/Sprints';
 import SprintDetail from './pages/sprints/SprintDetail';
 import TaskDetail from './pages/task/TaskDetail';
 import WebAnalytics from './pages/web-analytics/WebAnalytics';
+import MeditationPage from './pages/meditation/MeditationPage';
 import { TimerProvider } from './context/TimerContext';
 import { GamificationProvider } from './context/GamificationContext';
 import { SettingsProvider } from './context/SettingsContext';
@@ -36,6 +37,7 @@ export default function App() {
                   <Route path="/statistics" element={<Statistics />} />
                   <Route path="/web-activity" element={<WebAnalytics />} />
                   <Route path="/profile" element={<Profile />} />
+                  <Route path="/meditation" element={<MeditationPage />} />
 
                                   <Route path="/logs" element={<SystemLogs />} />
                                   <Route path="/settings" element={<Settings />} />
