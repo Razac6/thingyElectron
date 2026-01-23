@@ -57,17 +57,35 @@ const BoostOverlay = ({ open, onClose }: BoostOverlayProps) => {
   const { tasks, stopTimer, updateTask } = useTimer();
   const activeTask = tasks.find(t => t.startTimer !== null);
   const [progress, setProgress] = useState(0);
-  const [visualProgress, setVisualProgress] = useState(0); // Clamped to 100 for liquid height
+  const [visualProgress, setVisualProgress] = useState(0);
   const [timeLeftStr, setTimeLeftStr] = useState('00:00');
   const [isOvertime, setIsOvertime] = useState(false);
   
-  // Checklist State
+  // Checklist State (Global Sync)
   const [isChecklistOpen, setIsChecklistOpen] = useState(false);
+  const [checklistItems, setChecklistItems] = useState<any[]>([]);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
+
+  // Fetch checklist from DB
+  const refreshChecklist = async () => {
+      if (!activeTask) return;
+      try {
+          const items = await window.electron.database.getChecklistItems(activeTask.id);
+          setChecklistItems(items || []);
+      } catch (e) {
+          console.error("Failed to fetch checklist", e);
+      }
+  };
+
+  useEffect(() => {
+      if (isChecklistOpen && activeTask) {
+          refreshChecklist();
+      }
+  }, [isChecklistOpen, activeTask?.id]);
 
   useEffect(() => {
     if (!open || !activeTask) return;
-
+    // ... (timer interval logic)
     const interval = setInterval(() => {
         const now = Date.now();
         const start = parseInt(activeTask.startTimer || '0', 10);
@@ -76,7 +94,7 @@ const BoostOverlay = ({ open, onClose }: BoostOverlayProps) => {
         
         let p = (elapsed / estimateMs) * 100;
         setProgress(p);
-        setVisualProgress(Math.min(p, 100)); // Cap visual fill at 100%
+        setVisualProgress(Math.min(p, 100));
 
         const overtime = elapsed > estimateMs;
         setIsOvertime(overtime);
@@ -100,42 +118,31 @@ const BoostOverlay = ({ open, onClose }: BoostOverlayProps) => {
 
   const handleAddSubtask = async () => {
       if (!newSubtaskTitle.trim() || !activeTask) return;
-      const subtasks: Subtask[] = activeTask.subtasks ? (Array.isArray(activeTask.subtasks) ? activeTask.subtasks : JSON.parse(activeTask.subtasks as any)) : [];
-      
-      const newSubtask: Subtask = {
-          id: Date.now().toString(),
-          title: newSubtaskTitle,
-          completed: false
-      };
-      
-      await updateTask({ ...activeTask, subtasks: [...subtasks, newSubtask] });
-      setNewSubtaskTitle('');
+      try {
+          await window.electron.database.addChecklistItem(activeTask.id, newSubtaskTitle);
+          setNewSubtaskTitle('');
+          refreshChecklist();
+      } catch (e) { console.error(e); }
   };
 
-  const handleToggleSubtask = async (subtaskId: string) => {
-      if (!activeTask) return;
-      const subtasks: Subtask[] = activeTask.subtasks ? (Array.isArray(activeTask.subtasks) ? activeTask.subtasks : JSON.parse(activeTask.subtasks as any)) : [];
-      
-      const updated = subtasks.map(s => s.id === subtaskId ? { ...s, completed: !s.completed } : s);
-      await updateTask({ ...activeTask, subtasks: updated });
+  const handleToggleSubtask = async (itemId: number, currentStatus: boolean) => {
+      try {
+          await window.electron.database.toggleChecklistItem(itemId, !currentStatus);
+          refreshChecklist();
+      } catch (e) { console.error(e); }
   };
   
-  const handleDeleteSubtask = async (subtaskId: string) => {
-      if (!activeTask) return;
-      const subtasks: Subtask[] = activeTask.subtasks ? (Array.isArray(activeTask.subtasks) ? activeTask.subtasks : JSON.parse(activeTask.subtasks as any)) : [];
-      const updated = subtasks.filter(s => s.id !== subtaskId);
-      await updateTask({ ...activeTask, subtasks: updated });
+  const handleDeleteSubtask = async (itemId: number) => {
+      try {
+          await window.electron.database.deleteChecklistItem(itemId);
+          refreshChecklist();
+      } catch (e) { console.error(e); }
   };
 
   if (!open) return null;
 
   const waveColor = isOvertime ? '#ef5350' : '#2196f3'; 
   const waveColorLight = isOvertime ? '#e57373' : '#64b5f6';
-  
-  // Safe Parse Subtasks for Render
-  const currentSubtasks: Subtask[] = activeTask?.subtasks 
-      ? (Array.isArray(activeTask.subtasks) ? activeTask.subtasks : []) 
-      : [];
 
   return (
     <Fade in={open} timeout={800}>
@@ -245,7 +252,6 @@ const BoostOverlay = ({ open, onClose }: BoostOverlayProps) => {
                 startIcon={<StopIcon />}
                 onClick={() => {
                     if (activeTask) stopTimer(activeTask.id);
-                    // onClose(); // Let state handle close
                 }}
                 sx={{ 
                     borderRadius: 8, 
@@ -260,7 +266,13 @@ const BoostOverlay = ({ open, onClose }: BoostOverlayProps) => {
         </Box>
 
         {/* Checklist Modal */}
-        <Dialog open={isChecklistOpen} onClose={() => setIsChecklistOpen(false)} fullWidth maxWidth="sm">
+        <Dialog 
+            open={isChecklistOpen} 
+            onClose={() => setIsChecklistOpen(false)} 
+            fullWidth 
+            maxWidth="sm"
+            sx={{ zIndex: 10001 }}
+        >
             <DialogTitle>Subtasks</DialogTitle>
             <DialogContent dividers>
                 <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
@@ -277,11 +289,11 @@ const BoostOverlay = ({ open, onClose }: BoostOverlayProps) => {
                     </Button>
                 </Box>
                 <List>
-                    {currentSubtasks.map((subtask) => (
+                    {checklistItems.map((item) => (
                         <ListItem 
-                            key={subtask.id}
+                            key={item.id}
                             secondaryAction={
-                                <IconButton edge="end" aria-label="delete" onClick={() => handleDeleteSubtask(subtask.id)}>
+                                <IconButton edge="end" aria-label="delete" onClick={() => handleDeleteSubtask(item.id)}>
                                     <DeleteIcon />
                                 </IconButton>
                             }
@@ -290,19 +302,19 @@ const BoostOverlay = ({ open, onClose }: BoostOverlayProps) => {
                             <ListItemIcon>
                                 <Checkbox
                                     edge="start"
-                                    checked={subtask.completed}
-                                    onChange={() => handleToggleSubtask(subtask.id)}
+                                    checked={item.isCompleted === 1}
+                                    onChange={() => handleToggleSubtask(item.id, item.isCompleted === 1)}
                                     tabIndex={-1}
                                     disableRipple
                                 />
                             </ListItemIcon>
                             <ListItemText 
-                                primary={subtask.title} 
-                                sx={{ textDecoration: subtask.completed ? 'line-through' : 'none', color: subtask.completed ? 'text.disabled' : 'text.primary' }}
+                                primary={item.text} 
+                                sx={{ textDecoration: item.isCompleted === 1 ? 'line-through' : 'none', color: item.isCompleted === 1 ? 'text.disabled' : 'text.primary' }}
                             />
                         </ListItem>
                     ))}
-                    {currentSubtasks.length === 0 && (
+                    {checklistItems.length === 0 && (
                         <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 2 }}>
                             No subtasks yet. Break it down!
                         </Typography>

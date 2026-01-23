@@ -44,52 +44,95 @@ export const AiCompanion = () => {
     const opacity = Number(settings.ai_bubble_opacity) || 0.8;
     const isEnabled = settings.enable_ai_assistant !== 'false';
 
-    // ... (rest of imports and setup)
+    // Fetch initial stats
+    useEffect(() => {
+        if (!isEnabled) return;
+        const fetchStats = async () => {
+            const today = new Date().toISOString().split('T')[0];
+            try {
+                // @ts-ignore
+                const bio = await window.electron.database.getDailyBio(today);
+                setWaterIntake(bio.waterIntake || 0);
+                setMeditationMinutes(bio.meditationMinutes || 0);
+                setStretchingMinutes(bio.stretchingMinutes || 0);
+            } catch (e) {}
+        };
+        fetchStats();
+    }, [isEnabled]);
+
+    // Handle Click Outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (isMenuOpen && bubbleRef.current && !bubbleRef.current.contains(event.target as Node)) {
+                closeEverything();
+            }
+        };
+
+        if (isMenuOpen) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [isMenuOpen]);
+
+    const closeEverything = () => {
+        setIsMenuOpen(false);
+        setMenuView('main');
+        setMessage(null);
+        setPromptType('none');
+        setIsPriorityMessage(false);
+        
+        if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+        hideTimeoutRef.current = setTimeout(() => {
+            setIsVisible(false);
+        }, 5000);
+    };
 
     // IPC Listeners (Notifications)
     useEffect(() => {
         if (!isEnabled) return;
         
         const handleSummon = () => {
-            // Manual summon resets priority to allow interaction
+            if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+            if (messageTimeoutRef.current) clearTimeout(messageTimeoutRef.current);
             setIsPriorityMessage(false);
             setIsVisible(true);
             setIsMenuOpen(true);
             setMenuView('main');
             setPromptType('none');
             setMessage("Jestem! W czym pomóc?");
-            
-            if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
-            if (messageTimeoutRef.current) clearTimeout(messageTimeoutRef.current);
         };
 
-        const handleShowMessage = (event: any, msg: string) => {
-            // FORCE show cat and message
-            setIsVisible(true);
-            setMessage(msg);
-            setIsMenuOpen(false); // Close menu if open to show message clearly
-            setIsPriorityMessage(true); // Lock auto-hide logic
+        const handleShowMessage = (_: any, msg: string) => {
+            console.log("[AiCompanion] Received IPC Message:", msg);
             
-            // Clear any existing timers
+            // 1. Clear everything
             if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
             if (messageTimeoutRef.current) clearTimeout(messageTimeoutRef.current);
+            
+            // 2. Set State
+            setIsPriorityMessage(true);
+            setIsMenuOpen(false);
+            setIsVisible(true);
+            setMessage(msg);
 
-            // Detect prompt type
-            if (msg.includes("nawodnieniu")) setPromptType('water');
-            else if (msg.includes("ruch") || msg.includes("Wyprostuj")) setPromptType('stretching');
-            else if (msg.includes("Mindfulness") || msg.includes("oddech")) setPromptType('meditation');
+            // 3. Detect prompt type (matching labels from main.ts)
+            const lowMsg = msg.toLowerCase();
+            if (lowMsg.includes("nawodnieniu") || lowMsg.includes("wody")) setPromptType('water');
+            else if (lowMsg.includes("ruch") || lowMsg.includes("wyprostuj") || lowMsg.includes("szyję")) setPromptType('stretching');
+            else if (lowMsg.includes("mindfulness") || lowMsg.includes("oddech") || lowMsg.includes("medytacji")) setPromptType('meditation');
             else setPromptType('none');
             
-            // Auto-hide after 15s (longer for priority messages)
+            // 4. Priority messages stay for 20s or until acted upon
             hideTimeoutRef.current = setTimeout(() => {
-                // Only hide if user hasn't opened menu in the meantime
                 if (!isMenuOpen) {
                     setIsVisible(false);
                     setMessage(null);
                     setPromptType('none');
                     setIsPriorityMessage(false);
                 }
-            }, 15000);
+            }, 20000);
         };
 
         window.addEventListener('summon-ai-companion', handleSummon);
@@ -100,50 +143,39 @@ export const AiCompanion = () => {
             // @ts-ignore
             window.electron.ipcRenderer.removeListener('ai-companion:show-message', handleShowMessage);
         };
-    }, [isEnabled, isMenuOpen]); // Add isMenuOpen dependency to be safe
+    }, [isEnabled, isMenuOpen]);
 
     // Random Appearance Loop
     useEffect(() => {
         if (!isEnabled) return;
-        
         const scheduleNextAppearance = () => {
-            // Random time: 15 to 45 minutes
             const nextTime = Math.random() * (45 * 60 * 1000 - 15 * 60 * 1000) + 15 * 60 * 1000;
-            
             return setTimeout(() => {
-                // Only trigger if NOT currently showing a priority message
-                if (!isPriorityMessage) {
+                if (!isPriorityMessage && !isMenuOpen) {
                     triggerAppearance();
                 }
-                scheduleNextAppearance(); // Re-schedule recursively
+                scheduleNextAppearance();
             }, nextTime);
         };
 
         const timer = scheduleNextAppearance();
-        
-        // Initial greeting
         const initialTimer = setTimeout(() => {
-            if (!isPriorityMessage) triggerAppearance(true);
+            if (!isPriorityMessage && !isMenuOpen) triggerAppearance(true);
         }, 30000);
 
         return () => {
             clearTimeout(timer);
             clearTimeout(initialTimer);
-            if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
-            if (messageTimeoutRef.current) clearTimeout(messageTimeoutRef.current);
         };
-    }, [isEnabled, isPriorityMessage]); // Re-run if priority state changes
+    }, [isEnabled, isPriorityMessage, isMenuOpen]);
 
     const triggerAppearance = async (forceMessage = false) => {
-        // If cat is already visible or processing priority msg, skip random event
         if (isVisible || isPriorityMessage || !isEnabled) return;
 
         let msg = null;
         let type: 'none' | 'water' | 'meditation' | 'stretching' = 'none';
         
-        // ... (rest of logic: random selection) ...
         const rand = Math.random();
-
         if (settings.enable_water_reminders === 'true' && rand < 0.3) {
             msg = "Pamiętasz o nawodnieniu? 💧";
             type = 'water';
@@ -168,21 +200,20 @@ export const AiCompanion = () => {
             }
         }
 
+        if (!msg && !forceMessage) return; // Silent visit
+
         setMessage(msg);
         setIsVisible(true);
         setPromptType(type);
 
-        // Hide logic for standard/random appearances
-        const hideTime = type !== 'none' ? 15000 : (msg ? 8000 : 8000);
+        const hideTime = type !== 'none' ? 15000 : 8000;
         
         if (msg && type === 'none') {
-             if (messageTimeoutRef.current) clearTimeout(messageTimeoutRef.current);
              messageTimeoutRef.current = setTimeout(() => {
                 if (!isMenuOpen && !isPriorityMessage) setMessage(null);
             }, 3000);
         }
 
-        if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
         hideTimeoutRef.current = setTimeout(() => {
             if (!isMenuOpen && !isPriorityMessage) {
                 setIsVisible(false);
@@ -190,57 +221,6 @@ export const AiCompanion = () => {
                 setPromptType('none');
             }
         }, hideTime);
-    };
-
-    const formatDuration = (ms: number) => {
-        const h = Math.floor(ms / (1000 * 60 * 60));
-        const m = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
-        return h > 0 ? `${h}h ${m}m` : `${m}m`;
-    };
-
-    const handleCatClick = () => {
-        if (isMenuOpen) {
-            setIsMenuOpen(false);
-            setMenuView('main');
-            setMessage(null);
-            setPromptType('none');
-            
-            if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
-            hideTimeoutRef.current = setTimeout(() => {
-                setIsVisible(false);
-            }, 5000);
-        } else {
-            setIsMenuOpen(true);
-            setMenuView('main');
-            setMessage("W czym mogę Ci dzisiaj pomóc?");
-            if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
-        }
-    };
-
-    const getUser = () => {
-        const userStr = localStorage.getItem('userId');
-        return userStr ? JSON.parse(userStr) : 1;
-    };
-
-    const addWater = async () => {
-        const today = new Date().toISOString().split('T')[0];
-        const newVal = waterIntake + 1;
-        setWaterIntake(newVal);
-        try {
-            // @ts-ignore
-            await window.electron.database.updateDailyBio(today, { waterIntake: newVal });
-        } catch(e) {}
-        
-        if (isWaterPrompt) {
-            setMessage("Super! Tak trzymaj. 🌊");
-            setIsWaterPrompt(false);
-            setTimeout(() => {
-                if (!isMenuOpen) {
-                    setIsVisible(false);
-                    setMessage(null);
-                }
-            }, 3000);
-        }
     };
 
     const handleLogActivity = async (activity: 'water' | 'meditation' | 'stretching') => {
@@ -268,6 +248,7 @@ export const AiCompanion = () => {
         } catch(e) {}
 
         setPromptType('none');
+        setIsPriorityMessage(false);
         setTimeout(() => {
             if (!isMenuOpen) {
                 setIsVisible(false);
@@ -277,7 +258,8 @@ export const AiCompanion = () => {
     };
 
     const handleAction = async (action: string) => {
-        const userId = getUser();
+        const userStr = localStorage.getItem('userId');
+        const userId = userStr ? JSON.parse(userStr) : 1;
 
         switch(action) {
             case 'report':
@@ -290,7 +272,6 @@ export const AiCompanion = () => {
                     setMessage("Twoje dzisiejsze wyniki:");
                 } catch (e) { setMessage("Błąd pobierania raportu."); }
                 break;
-
             case 'suggest':
                 setMenuView('suggest');
                 setMessage("Szukam najlepszego zadania...");
@@ -298,10 +279,9 @@ export const AiCompanion = () => {
                     // @ts-ignore
                     const data = await window.electron.database.getDailyStandup(userId);
                     setSuggestion(data?.topSuggestion);
-                    setMessage(data?.topSuggestion ? "Proponuję zająć się tym:" : "Wszystko zrobione! Jesteś wolny.");
+                    setMessage(data?.topSuggestion ? "Proponuję zająć się tym:" : "Wszystko zrobione!");
                 } catch (e) { setMessage("Błąd analizy zadań."); }
                 break;
-
             case 'distractions':
                 setMenuView('distractions');
                 setMessage("Analizuję Twoje rozpraszacze...");
@@ -313,13 +293,9 @@ export const AiCompanion = () => {
                         time: Math.round(d.totalTime / 60000)
                     }));
                     setDistractions(top);
-                    setMessage(top.length > 0 ? "Główne pożeracze czasu:" : "Czysto! Brak rozpraszaczy.");
-                } catch (e) {
-                    console.error(e);
-                    setMessage("Nie udało się pobrać danych.");
-                }
+                    setMessage(top.length > 0 ? "Główne pożeracze czasu:" : "Czysto!");
+                } catch (e) { setMessage("Błąd danych."); }
                 break;
-
             case 'back':
                 setMenuView('main');
                 setMessage("W czym mogę Ci dzisiaj pomóc?");
@@ -330,50 +306,26 @@ export const AiCompanion = () => {
     if (!isEnabled) return null;
 
     return (
-        <Box
-            sx={{
-                position: 'fixed',
-                bottom: -40,
-                right: 0,
-                zIndex: 10000,
-                pointerEvents: 'none',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-end',
-                pr: 1
-            }}
-        >
+        <Box sx={{ position: 'fixed', bottom: -40, right: 0, zIndex: 10000, pointerEvents: 'none', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', pr: 1 }}>
             <Fade in={isVisible && !!message} timeout={500}>
-                <Paper
-                    ref={bubbleRef}
-                    sx={{
-                        mb: 2,
-                        mr: 10,
-                        p: isMenuOpen ? 2 : 1.5,
-                        background: `linear-gradient(135deg, rgba(255, 255, 255, ${opacity}) 0%, rgba(255, 255, 255, ${opacity * 0.6}) 100%)`,
-                        backdropFilter: 'saturate(180%) blur(20px)',
-                        border: '1px solid rgba(255, 255, 255, 0.4)',
-                        borderRadius: '24px',
-                        borderBottomRightRadius: '4px',
-                        boxShadow: '0 8px 32px 0 rgba(31, 38, 135, 0.1)',
-                        width: isMenuOpen ? 260 : 'max-content',
-                        maxWidth: 280,
-                        pointerEvents: 'auto',
-                        transition: 'all 0.3s ease'
-                    }}
-                >
+                <Paper ref={bubbleRef} sx={{
+                    mb: 2, mr: 10, p: isMenuOpen ? 2 : 1.5,
+                    background: `linear-gradient(135deg, rgba(255, 255, 255, ${opacity}) 0%, rgba(255, 255, 255, ${opacity * 0.6}) 100%)`,
+                    backdropFilter: 'saturate(180%) blur(20px)',
+                    border: '1px solid rgba(255, 255, 255, 0.4)',
+                    borderRadius: '24px', borderBottomRightRadius: '4px',
+                    boxShadow: '0 8px 32px 0 rgba(31, 38, 135, 0.1)',
+                    width: isMenuOpen ? 260 : 'max-content', maxWidth: 280,
+                    pointerEvents: 'auto', transition: 'all 0.3s ease'
+                }}>
                     <Typography variant="caption" sx={{ fontWeight: 700, color: '#023047', display: 'block', mb: (isMenuOpen || promptType !== 'none') ? 1.5 : 0 }}>
                         {message}
                     </Typography>
 
                     {promptType !== 'none' && !isMenuOpen && (
                         <Stack direction="row" spacing={1}>
-                            <Button size="small" variant="contained" color="primary" onClick={() => handleLogActivity(promptType as any)} sx={{ fontSize: '0.7rem' }}>
-                                Zrobione!
-                            </Button>
-                            <Button size="small" onClick={() => { setIsVisible(false); setPromptType('none'); }} sx={{ fontSize: '0.7rem' }}>
-                                Później
-                            </Button>
+                            <Button size="small" variant="contained" color="primary" onClick={() => handleLogActivity(promptType as any)} sx={{ fontSize: '0.7rem' }}>Zrobione!</Button>
+                            <Button size="small" onClick={() => { setIsVisible(false); setMessage(null); setPromptType('none'); setIsPriorityMessage(false); }} sx={{ fontSize: '0.7rem' }}>Później</Button>
                         </Stack>
                     )}
 
@@ -384,49 +336,19 @@ export const AiCompanion = () => {
                                     <Typography variant="caption" color="text.secondary">Woda dzisiaj:</Typography>
                                     <Box display="flex" alignItems="center" gap={1}>
                                         <Typography variant="caption" fontWeight="bold">{waterIntake} 🥛</Typography>
-                                        <Button size="small" sx={{ minWidth: 30, p: 0, height: 20 }} onClick={addWater}>+</Button>
+                                        <Button size="small" sx={{ minWidth: 30, p: 0, height: 20 }} onClick={() => handleLogActivity('water')}>+</Button>
                                     </Box>
                                 </Box>
                             )}
-                            
                             {(settings.enable_meditation_reminders === 'true' || settings.enable_stretching_reminders === 'true') && (
                                 <Box display="flex" justifyContent="space-between" sx={{ px: 0.5, mb: 0.5 }}>
-                                    {settings.enable_meditation_reminders === 'true' && (
-                                        <Typography variant="caption" color="text.secondary">🧘‍♀️ {meditationMinutes}m</Typography>
-                                    )}
-                                    {settings.enable_stretching_reminders === 'true' && (
-                                        <Typography variant="caption" color="text.secondary">🤸 {stretchingMinutes}m</Typography>
-                                    )}
+                                    {settings.enable_meditation_reminders === 'true' && <Typography variant="caption" color="text.secondary">🧘‍♀️ {meditationMinutes}m</Typography>}
+                                    {settings.enable_stretching_reminders === 'true' && <Typography variant="caption" color="text.secondary">🤸 {stretchingMinutes}m</Typography>}
                                 </Box>
                             )}
-
-                            <Button 
-                                size="small" 
-                                fullWidth 
-                                startIcon={<AssignmentIcon sx={{ fontSize: 16 }}/>} 
-                                onClick={() => handleAction('report')}
-                                sx={{ justifyContent: 'flex-start', textTransform: 'none', color: '#023047', fontSize: '0.75rem', py: 0.5 }}
-                            >
-                                Szybki raport
-                            </Button>
-                            <Button 
-                                size="small" 
-                                fullWidth 
-                                startIcon={<LightbulbIcon sx={{ fontSize: 16 }}/>} 
-                                onClick={() => handleAction('suggest')}
-                                sx={{ justifyContent: 'flex-start', textTransform: 'none', color: '#023047', fontSize: '0.75rem', py: 0.5 }}
-                            >
-                                Co teraz robić?
-                            </Button>
-                            <Button 
-                                size="small" 
-                                fullWidth 
-                                startIcon={<WarningIcon sx={{ fontSize: 16 }}/>} 
-                                onClick={() => handleAction('distractions')}
-                                sx={{ justifyContent: 'flex-start', textTransform: 'none', color: '#023047', fontSize: '0.75rem', py: 0.5 }}
-                            >
-                                Co mnie rozprasza?
-                            </Button>
+                            <Button size="small" fullWidth startIcon={<AssignmentIcon sx={{ fontSize: 16 }}/>} onClick={() => handleAction('report')} sx={{ justifyContent: 'flex-start', textTransform: 'none', color: '#023047', fontSize: '0.75rem', py: 0.5 }}>Szybki raport</Button>
+                            <Button size="small" fullWidth startIcon={<LightbulbIcon sx={{ fontSize: 16 }}/>} onClick={() => handleAction('suggest')} sx={{ justifyContent: 'flex-start', textTransform: 'none', color: '#023047', fontSize: '0.75rem', py: 0.5 }}>Co teraz robić?</Button>
+                            <Button size="small" fullWidth startIcon={<WarningIcon sx={{ fontSize: 16 }}/>} onClick={() => handleAction('distractions')} sx={{ justifyContent: 'flex-start', textTransform: 'none', color: '#023047', fontSize: '0.75rem', py: 0.5 }}>Co mnie rozprasza?</Button>
                         </Stack>
                     )}
 
@@ -438,34 +360,15 @@ export const AiCompanion = () => {
                                     <Typography variant="caption" fontWeight="bold">{d.time}m</Typography>
                                 </Box>
                             ))}
-                            {distractions.length === 0 && (
-                                <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic' }}>Brak danych.</Typography>
-                            )}
-                            <Button size="small" fullWidth onClick={() => handleAction('back')} sx={{ mt: 1, textTransform: 'none', color: '#023047', fontSize: '0.7rem', opacity: 0.7 }}>
-                                ← Wróć
-                            </Button>
+                            <Button size="small" fullWidth onClick={() => handleAction('back')} sx={{ mt: 1, textTransform: 'none', color: '#023047', fontSize: '0.7rem', opacity: 0.7 }}>← Wróć</Button>
                         </Stack>
                     )}
 
                     {isMenuOpen && menuView === 'report' && reportData && (
                         <Stack spacing={1} sx={{ mt: 1 }}>
-                            <Box display="flex" justifyContent="space-between">
-                                <Typography variant="caption" color="text.secondary">Zadania:</Typography>
-                                <Typography variant="caption" fontWeight="bold" color="#219ebc">{reportData.completedCount}</Typography>
-                            </Box>
-                            <Box display="flex" justifyContent="space-between">
-                                <Typography variant="caption" color="text.secondary">Czas pracy:</Typography>
-                                <Typography variant="caption" fontWeight="bold" color="#fb8500">{formatDuration(reportData.totalTimeMs)}</Typography>
-                            </Box>
-                            <Box display="flex" justifyContent="space-between">
-                                <Typography variant="caption" color="text.secondary">Trend:</Typography>
-                                <Typography variant="caption" fontWeight="bold" color={reportData.trend === 'increasing' ? 'green' : 'inherit'}>
-                                    {reportData.trend === 'increasing' ? '↗ Wzrost' : (reportData.trend === 'decreasing' ? '↘ Spadek' : '➡ Stabilnie')}
-                                </Typography>
-                            </Box>
-                            <Button size="small" fullWidth onClick={() => handleAction('back')} sx={{ mt: 1, textTransform: 'none', color: '#023047', fontSize: '0.7rem', opacity: 0.7 }}>
-                                ← Wróć
-                            </Button>
+                            <Box display="flex" justifyContent="space-between"><Typography variant="caption">Zadania:</Typography><Typography variant="caption" fontWeight="bold">{reportData.completedCount}</Typography></Box>
+                            <Box display="flex" justifyContent="space-between"><Typography variant="caption">Czas:</Typography><Typography variant="caption" fontWeight="bold">{formatDuration(reportData.totalTimeMs)}</Typography></Box>
+                            <Button size="small" fullWidth onClick={() => handleAction('back')} sx={{ mt: 1, textTransform: 'none', fontSize: '0.7rem', opacity: 0.7 }}>← Wróć</Button>
                         </Stack>
                     )}
 
@@ -473,55 +376,21 @@ export const AiCompanion = () => {
                         <Stack spacing={1} sx={{ mt: 1 }}>
                             {suggestion ? (
                                 <>
-                                    <Typography variant="caption" fontWeight="bold" sx={{ display: 'block', lineHeight: 1.2 }}>
-                                        {suggestion.title}
-                                    </Typography>
-                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
-                                        {suggestion.aiReason || "Wysoki priorytet"}
-                                    </Typography>
-                                    <Button 
-                                        variant="contained" 
-                                        size="small" 
-                                        color="secondary"
-                                        onClick={() => navigate(`/task/${suggestion.id}`)}
-                                        sx={{ fontSize: '0.65rem', py: 0.2, minHeight: 24 }}
-                                    >
-                                        Otwórz zadanie
-                                    </Button>
+                                    <Typography variant="caption" fontWeight="bold">{suggestion.title}</Typography>
+                                    <Button variant="contained" size="small" color="secondary" onClick={() => navigate(`/task/${suggestion.id}`)} sx={{ fontSize: '0.65rem' }}>Otwórz zadanie</Button>
                                 </>
-                            ) : (
-                                <Typography variant="caption" color="text.secondary">Brak pilnych zadań w kolejce.</Typography>
-                            )}
-                            <Button size="small" fullWidth onClick={() => handleAction('back')} sx={{ mt: 1, textTransform: 'none', color: '#023047', fontSize: '0.7rem', opacity: 0.7 }}>
-                                ← Wróć
-                            </Button>
+                            ) : <Typography variant="caption">Brak zadań.</Typography>}
+                            <Button size="small" fullWidth onClick={() => handleAction('back')} sx={{ mt: 1, textTransform: 'none', fontSize: '0.7rem', opacity: 0.7 }}>← Wróć</Button>
                         </Stack>
                     )}
                 </Paper>
             </Fade>
 
             <Slide direction="up" in={isVisible} mountOnEnter unmountOnExit timeout={800}>
-                <Box
-                    onMouseEnter={() => setIsHovered(true)}
-                    onMouseLeave={() => setIsHovered(false)}
-                    sx={{
-                        width: 130,
-                        height: 130,
-                        cursor: 'pointer',
-                        pointerEvents: 'auto',
-                        transition: 'transform 0.3s ease',
-                        transform: isHovered ? 'scale(1.05) translateY(-5px)' : 'scale(1)',
-                        filter: 'drop-shadow(0px 5px 10px rgba(0,0,0,0.15))'
-                    }}
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        handleCatClick();
-                    }}
-                >
-                    <Lottie 
-                        animationData={catAnimation} 
-                        loop={true} 
-                    />
+                <Box onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)}
+                    sx={{ width: 130, height: 130, cursor: 'pointer', pointerEvents: 'auto', transition: 'transform 0.3s ease', transform: isHovered ? 'scale(1.05) translateY(-5px)' : 'scale(1)', filter: 'drop-shadow(0px 5px 10px rgba(0,0,0,0.15))' }}
+                    onClick={(e) => { e.stopPropagation(); handleCatClick(); }}>
+                    <Lottie animationData={catAnimation} loop={true} />
                 </Box>
             </Slide>
         </Box>
