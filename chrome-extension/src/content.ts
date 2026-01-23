@@ -121,12 +121,38 @@ window.addEventListener('beforeunload', () => {
     if (isActive) syncActivity();
 });
 
-// --- Client-Side SPA Blocking ---
+// --- Client-Side SPA Blocking & UI Hiding ---
 let lastUrl = location.href;
+
+const hideShortsElements = () => {
+    if (!location.hostname.includes('youtube.com')) return;
+
+    // Selectors for various Shorts elements on YT
+    const selectors = [
+        'ytd-guide-entry-renderer:has(a[href="/shorts"])', // Sidebar
+        'ytd-mini-guide-entry-renderer:has(a[href="/shorts"])', // Mini sidebar
+        'ytd-rich-shelf-renderer[is-shorts]', // Homepage shelves
+        'ytd-reel-shelf-renderer', // Search result shelves
+        'a[href^="/shorts"]', // Any direct links
+        '#shorts-container' // Shorts player container
+    ];
+
+    selectors.forEach(selector => {
+        document.querySelectorAll(selector).forEach((el: any) => {
+            el.style.display = 'none';
+        });
+    });
+};
+
 const checkBlocking = async () => {
     const currentUrl = location.href;
     const { blockedPatterns } = await chrome.storage.local.get(['blockedPatterns']);
     
+    // Always try to hide elements if YT Shorts is in patterns
+    if (blockedPatterns?.some((p: string) => p.includes('shorts'))) {
+        hideShortsElements();
+    }
+
     if (!blockedPatterns || !Array.isArray(blockedPatterns)) return;
 
     for (const pattern of blockedPatterns) {
@@ -135,12 +161,9 @@ const checkBlocking = async () => {
         // Simple pattern matching
         const cleanPattern = pattern.replace(/^\|\|/, '');
         
-        // Accurate matching: if pattern contains a slash, check if it's part of path
-        // if not, check if it matches the hostname
         const isMatch = currentUrl.includes(cleanPattern);
         
         if (isMatch) {
-            // Additional check for YouTube Shorts to avoid blocking main site if pattern is specific
             if (cleanPattern.includes('shorts') && !currentUrl.includes('/shorts')) {
                 continue; 
             }
@@ -161,7 +184,6 @@ const checkBlocking = async () => {
                     <p style="margin-top: 2rem; color: #666;">Get back to work!</p>
                 </div>
             `;
-            // Stop media playback
             document.querySelectorAll('video, audio').forEach((el: any) => el.pause());
             return;
         }
@@ -171,11 +193,13 @@ const checkBlocking = async () => {
 // Check on load
 checkBlocking();
 
-// Check on URL change (SPA)
+// Check on URL change & DOM changes (to catch dynamically loaded Shorts)
 new MutationObserver(() => {
   const url = location.href;
   if (url !== lastUrl) {
     lastUrl = url;
     checkBlocking();
   }
+  // Periodically hide elements as YT loads content via AJAX
+  hideShortsElements(); 
 }).observe(document, { subtree: true, childList: true });
