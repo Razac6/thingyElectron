@@ -1,7 +1,7 @@
 {
   "description": "Todo app",
   "license": "MIT",
-  "version": "0.14.2",
+  "version": "0.14.3",
   "author": {
     "name": "thingy",
     "email": "binekmarcin@gmail.com",
@@ -192,7 +192,7 @@
         "dmg",
         "zip"
       ],
-      "icon": "assets/icon.icns",
+      "icon": "assets/icon.png",
       "hardenedRuntime": true,
       "entitlements": "assets/entitlements.mac.plist",
       "entitlementsInherit": "assets/entitlements.mac.plist",
