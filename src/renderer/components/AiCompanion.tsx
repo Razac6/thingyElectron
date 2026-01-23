@@ -48,9 +48,9 @@ export const AiCompanion = () => {
     const opacity = Number(settings.ai_bubble_opacity) || 0.8;
     const isEnabled = settings.enable_ai_assistant !== 'false';
 
-    // Fetch initial stats
+    // Fetch stats on visibility change
     useEffect(() => {
-        if (!isEnabled) return;
+        if (!isEnabled || !isVisible) return;
         const fetchStats = async () => {
             const today = new Date().toISOString().split('T')[0];
             try {
@@ -62,7 +62,7 @@ export const AiCompanion = () => {
             } catch (e) {}
         };
         fetchStats();
-    }, [isEnabled]);
+    }, [isEnabled, isVisible]);
 
     // Handle Click Outside
     useEffect(() => {

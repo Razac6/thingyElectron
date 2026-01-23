@@ -659,9 +659,14 @@ ipcMain.handle('app:meditation-completed', (event, userId, minutes) => {
     const newVal = (current.meditationMinutes || 0) + minutes;
     updateDailyBio(today, { meditationMinutes: newVal });
     
-    sendAiNotification('Umysł oczyszczony 🍃', `Zaliczono ${minutes} min medytacji.`);
+    // Log
     logSystemEvent(`Meditation Session: ${minutes} min`, 'HEALTH');
-    lastMeditationDate = new Date().toDateString(); // Ensure we don't prompt again today
+    lastMeditationDate = new Date().toDateString();
+
+    // Show Cat with Congratulations
+    if (mainWindow) {
+        mainWindow.webContents.send('ai-companion:show-message', `Wspaniale! 🧘‍♀️ Zaliczono ${minutes} min. Jak się czujesz?`);
+    }
 });
 
 ipcMain.handle('app:skip-meditation', () => {
