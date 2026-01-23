@@ -303,6 +303,25 @@ export const AiCompanion = () => {
         }
     };
 
+    const handleCatClick = () => {
+        if (isMenuOpen) {
+            closeEverything();
+        } else {
+            if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+            if (messageTimeoutRef.current) clearTimeout(messageTimeoutRef.current);
+            setIsPriorityMessage(false);
+            setIsMenuOpen(true);
+            setMenuView('main');
+            setMessage("W czym mogę Ci dzisiaj pomóc?");
+        }
+    };
+
+    const formatDuration = (ms: number) => {
+        const h = Math.floor(ms / (1000 * 60 * 60));
+        const m = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
+        return h > 0 ? `${h}h ${m}m` : `${m}m`;
+    };
+
     if (!isEnabled) return null;
 
     return (
