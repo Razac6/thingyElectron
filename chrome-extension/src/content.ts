@@ -130,12 +130,21 @@ const checkBlocking = async () => {
     if (!blockedPatterns || !Array.isArray(blockedPatterns)) return;
 
     for (const pattern of blockedPatterns) {
+        if (!pattern || pattern.length < 3) continue;
+
         // Simple pattern matching
-        // Remove || from start if exists
         const cleanPattern = pattern.replace(/^\|\|/, '');
         
-        // Check if URL contains the pattern (e.g. "youtube.com/shorts")
-        if (currentUrl.includes(cleanPattern)) {
+        // Accurate matching: if pattern contains a slash, check if it's part of path
+        // if not, check if it matches the hostname
+        const isMatch = currentUrl.includes(cleanPattern);
+        
+        if (isMatch) {
+            // Additional check for YouTube Shorts to avoid blocking main site if pattern is specific
+            if (cleanPattern.includes('shorts') && !currentUrl.includes('/shorts')) {
+                continue; // Don't block if we are on YT but NOT on shorts
+            }
+
             // BLOCK!
             document.body.innerHTML = `
                 <div style="

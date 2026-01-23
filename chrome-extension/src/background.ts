@@ -117,8 +117,8 @@ const updateBlockingRules = async (settings: any, focusMode: boolean) => {
       }
   }
 
-  // Deduplicate
-  sitesToBlock = [...new Set(sitesToBlock)];
+  // Deduplicate and filter empty/invalid
+  sitesToBlock = [...new Set(sitesToBlock)].filter(s => s && s.trim().length > 0);
   
   const oldRules = await chrome.declarativeNetRequest.getDynamicRules();
   const oldRuleIds = oldRules.map((r: any) => r.id);
