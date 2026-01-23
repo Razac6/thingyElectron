@@ -103,7 +103,9 @@ const sendAiNotification = (title: string, body: string) => {
             if (mainWindow.isMinimized()) mainWindow.restore();
             mainWindow.show();
             mainWindow.focus();
-            mainWindow.webContents.send('ai-companion:show-message', body);
+            setTimeout(() => {
+                mainWindow?.webContents.send('ai-companion:show-message', body);
+            }, 500);
         }
     });
 

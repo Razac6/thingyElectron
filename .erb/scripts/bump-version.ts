@@ -35,11 +35,11 @@ const rl = readline.createInterface({
   output: process.stdout
 });
 
-rl.question(chalk.blue('\nEnter new version (e.g., 1.0.1): '), (input) => {
+rl.question(chalk.blue(`\nEnter new version (current is ${rootPkg.version}): `), (input) => {
   const newVersion = input.trim();
   
   if (!newVersion) {
-    console.log(chalk.yellow('Operation cancelled.'));
+    console.log(chalk.yellow('Operation cancelled. No version entered.'));
     rl.close();
     process.exit(0);
   }
