@@ -606,6 +606,20 @@ function Settings() {
             </Grid>
         </Grid>
       </Paper>
+
+      <Box display="flex" justifyContent="center" mt={4} mb={2}>
+          <Button 
+            size="small" 
+            color="inherit" 
+            onClick={() => {
+                // @ts-ignore
+                window.electron.app.openDevTools();
+            }}
+            sx={{ opacity: 0.5, fontSize: '0.7rem' }}
+          >
+              Otwórz konsolę debugowania (DevTools)
+          </Button>
+      </Box>
     </Box>
   );
 }
