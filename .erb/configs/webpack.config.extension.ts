@@ -22,6 +22,7 @@ const configuration: webpack.Configuration = {
   entry: {
     content: path.join(extensionSrcPath, 'content.ts'),
     background: path.join(extensionSrcPath, 'background.ts'),
+    popup: path.join(extensionSrcPath, 'popup.ts'),
   },
 
   output: {
@@ -53,6 +54,7 @@ const configuration: webpack.Configuration = {
       patterns: [
         { from: path.join(extensionPath, 'manifest.json'), to: extensionDistPath },
         { from: path.join(extensionPath, 'blocked.html'), to: extensionDistPath },
+        { from: path.join(extensionPath, 'popup.html'), to: extensionDistPath },
         { from: path.join(extensionPath, 'assets'), to: path.join(extensionDistPath, 'assets') },
       ],
     }),
