@@ -175,28 +175,17 @@ export const AiCompanion = () => {
         let msg = null;
         let type: 'none' | 'water' | 'meditation' | 'stretching' = 'none';
         
-        const rand = Math.random();
-        if (settings.enable_water_reminders === 'true' && rand < 0.3) {
-            msg = "Pamiętasz o nawodnieniu? 💧";
-            type = 'water';
-        } else if (settings.enable_stretching_reminders === 'true' && rand < 0.45) {
-            msg = "Wyprostuj plecy i rozluźnij szyję! 🦒";
-            type = 'stretching';
-        } else if (settings.enable_meditation_reminders === 'true' && rand < 0.5) {
-            msg = "Może krótka chwila na oddech? 🧘‍♀️";
-            type = 'meditation';
-        } else {
-            const showMessage = forceMessage || Math.random() > 0.6;
-            if (showMessage) {
-                try {
-                    const userStr = localStorage.getItem('userId');
-                    const userId = userStr ? JSON.parse(userStr) : 1;
-                    // @ts-ignore
-                    const aiMsg = await window.electron.database.getAiMessage(userId);
-                    msg = aiMsg || MESSAGES[Math.floor(Math.random() * MESSAGES.length)];
-                } catch (e) {
-                    msg = MESSAGES[Math.floor(Math.random() * MESSAGES.length)];
-                }
+        // Random message selection (fluff only)
+        const showMessage = forceMessage || Math.random() > 0.6;
+        if (showMessage) {
+            try {
+                const userStr = localStorage.getItem('userId');
+                const userId = userStr ? JSON.parse(userStr) : 1;
+                // @ts-ignore
+                const aiMsg = await window.electron.database.getAiMessage(userId);
+                msg = aiMsg || MESSAGES[Math.floor(Math.random() * MESSAGES.length)];
+            } catch (e) {
+                msg = MESSAGES[Math.floor(Math.random() * MESSAGES.length)];
             }
         }
 
@@ -206,9 +195,9 @@ export const AiCompanion = () => {
         setIsVisible(true);
         setPromptType(type);
 
-        const hideTime = type !== 'none' ? 15000 : 8000;
+        const hideTime = 8000; // Standard fluff time
         
-        if (msg && type === 'none') {
+        if (msg) {
              messageTimeoutRef.current = setTimeout(() => {
                 if (!isMenuOpen && !isPriorityMessage) setMessage(null);
             }, 3000);
@@ -385,8 +374,8 @@ export const AiCompanion = () => {
 
                     {isMenuOpen && menuView === 'report' && reportData && (
                         <Stack spacing={1} sx={{ mt: 1 }}>
-                            <Box display="flex" justifyContent="space-between"><Typography variant="caption">Zadania:</Typography><Typography variant="caption" fontWeight="bold">{reportData.completedCount}</Typography></Box>
-                            <Box display="flex" justifyContent="space-between"><Typography variant="caption">Czas:</Typography><Typography variant="caption" fontWeight="bold">{formatDuration(reportData.totalTimeMs)}</Typography></Box>
+                            <Box display="flex" justifyContent="space-between"><Typography variant="caption">Zadania:</Typography><Typography variant="caption" fontWeight="bold">{reportData.completedCount || 0}</Typography></Box>
+                            <Box display="flex" justifyContent="space-between"><Typography variant="caption">Czas:</Typography><Typography variant="caption" fontWeight="bold">{formatDuration(reportData.totalTimeMs || 0)}</Typography></Box>
                             <Button size="small" fullWidth onClick={() => handleAction('back')} sx={{ mt: 1, textTransform: 'none', fontSize: '0.7rem', opacity: 0.7 }}>← Wróć</Button>
                         </Stack>
                     )}

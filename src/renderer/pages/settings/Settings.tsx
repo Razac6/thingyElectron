@@ -590,6 +590,20 @@ function Settings() {
                     />
                 </Box>
             </Grid>
+
+            <Grid item xs={12}>
+                <Button 
+                    variant="outlined" 
+                    fullWidth 
+                    disabled={settings.enable_ai_assistant === 'false'}
+                    onClick={() => {
+                        // @ts-ignore
+                        window.electron.app.testMeditationNotif();
+                    }}
+                >
+                    Testuj powiadomienie medytacji (3s opóźnienia)
+                </Button>
+            </Grid>
         </Grid>
       </Paper>
     </Box>

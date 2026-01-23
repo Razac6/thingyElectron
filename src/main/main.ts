@@ -647,6 +647,12 @@ ipcMain.handle('app:set-window-opacity', (event, opacity) => {
     }
 });
 
+ipcMain.handle('app:test-meditation-notif', () => {
+    setTimeout(() => {
+        sendAiNotification('🧘‍♀️ Czas na Mindfulness', 'Może krótka chwila na oddech?');
+    }, 3000);
+});
+
 // --- Tray IPC Handlers ---
 ipcMain.on('tray:create', createTray);
 ipcMain.on('tray:destroy', destroyTray);
@@ -694,6 +700,7 @@ ipcMain.on('electron-shell-open-external', (event, url) => {
 
 let lastFragmentationNotificationTime = 0;
 let lastStretchingTime = Date.now();
+let lastWaterTime = Date.now();
 let lastMeditationDate: string | null = null;
 
 // Smart Notification States
@@ -721,7 +728,19 @@ setInterval(() => {
   const aiEnabled = getSetting('enable_ai_assistant') !== 'false';
   
   if (aiEnabled) {
-      // 1. Stretching (Interval based, only during work hours)
+      // 1. Water (Random interval ~60-90 min)
+      if (getSetting('enable_water_reminders') === 'true') {
+          // Check if at least 60 mins passed
+          if (now - lastWaterTime > 60 * 60 * 1000) {
+              // 30% chance every 5 mins check after 1h (effectively random within 1-1.5h range usually)
+              if (Math.random() < 0.3) {
+                  sendAiNotification('💧 Nawodnienie', 'Pamiętasz o piciu wody?');
+                  lastWaterTime = now;
+              }
+          }
+      }
+
+      // 2. Stretching (Interval based, only during work hours)
       const stretchingEnabled = getSetting('enable_stretching_reminders') === 'true';
       if (stretchingEnabled) {
           const workStart = getSetting('workDayStart') || '09:00';
