@@ -118,7 +118,17 @@ const updateBlockingRules = async (settings: any, focusMode: boolean) => {
   }
 
   // Deduplicate and filter empty/invalid
-  sitesToBlock = [...new Set(sitesToBlock)].filter(s => s && s.trim().length > 0);
+  sitesToBlock = [...new Set(sitesToBlock)].filter(s => {
+      if (!s || s.trim().length === 0) return false;
+      
+      // Safety Filter: Never block entire YouTube
+      const clean = s.trim().toLowerCase();
+      if (clean === 'youtube.com' || clean === 'www.youtube.com' || clean === '||youtube.com' || clean === '||www.youtube.com') {
+          console.log('[Thingy] Blocked attempt to restrict entire YouTube domain. Filtered.');
+          return false;
+      }
+      return true;
+  });
   
   const oldRules = await chrome.declarativeNetRequest.getDynamicRules();
   const oldRuleIds = oldRules.map((r: any) => r.id);
@@ -128,6 +138,7 @@ const updateBlockingRules = async (settings: any, focusMode: boolean) => {
       await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldRuleIds });
       console.log('Blocking disabled - rules cleared.');
     }
+    await chrome.storage.local.set({ blockedPatterns: [] }); // CLEAR STORAGE
     chrome.action.setIcon({ path: "assets/16x16.png" }); 
     return;
   }

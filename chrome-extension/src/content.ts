@@ -142,8 +142,10 @@ const checkBlocking = async () => {
         if (isMatch) {
             // Additional check for YouTube Shorts to avoid blocking main site if pattern is specific
             if (cleanPattern.includes('shorts') && !currentUrl.includes('/shorts')) {
-                continue; // Don't block if we are on YT but NOT on shorts
+                continue; 
             }
+
+            console.log(`[Thingy] Blocking URL "${currentUrl}" due to pattern "${pattern}"`);
 
             // BLOCK!
             document.body.innerHTML = `

@@ -20,12 +20,18 @@ chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
     const url = new URL(tab.url);
     let patternToBlock = url.hostname;
 
-    // Smart logic for specific paths
-    if (url.hostname.includes('youtube.com') && url.pathname.includes('/shorts')) {
-        patternToBlock = 'youtube.com/shorts';
-        btn.innerText = 'Block YouTube Shorts';
+    // Force specific pattern for YouTube to avoid domain block
+    if (url.hostname.includes('youtube.com')) {
+        if (url.pathname.includes('/shorts')) {
+            patternToBlock = 'youtube.com/shorts';
+            btn.innerText = 'Block YouTube Shorts';
+        } else {
+            // If on main page, maybe offer to block shorts anyway?
+            patternToBlock = 'youtube.com/shorts';
+            btn.innerText = 'Block YT Shorts';
+        }
     } else if (url.hostname.includes('facebook.com')) {
-        patternToBlock = 'facebook.com'; // Block entire FB usually
+        patternToBlock = 'facebook.com';
         btn.innerText = 'Block Facebook';
     } else {
         btn.innerText = `Block ${url.hostname}`;
