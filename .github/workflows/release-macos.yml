@@ -1,5 +1,5 @@
 name: Build & Release for macOS
-run-name: Build & Release macOS ${{ github.event.inputs.version }}
+run-name: Build & Release macOS ${{ github.event.inputs.version || 'Auto-detected' }}
 
 on:
   workflow_dispatch:
@@ -55,8 +55,8 @@ jobs:
           name: Release ${{ env.VERSION }}
           body: "Automated macOS release for version ${{ env.VERSION }}. Note: This is an unsigned build."
           files: |
-            release/build/*.dmg
-            release/build/*.zip
-            release/build/latest-mac.yml
+            release/build/**/*.dmg
+            release/build/**/*.zip
+            release/build/**/latest-mac.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

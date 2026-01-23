@@ -1,5 +1,5 @@
 name: Build & Release Chrome Extension
-run-name: Build & Release Extension ${{ github.event.inputs.version }}
+run-name: Build & Release Extension ${{ github.event.inputs.version || 'Auto-detected' }}
 
 on:
   workflow_dispatch:
