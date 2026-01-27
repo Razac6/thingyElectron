@@ -1386,6 +1386,30 @@ export const getLifetimeStats = (userId: number) => {
     return { water: waterTotal, meditationSessions: medCount, stretchingSessions: stretchCount, pomodoros: pomCount };
 };
 
+export const getRecentDistraction = (minutes: number = 5) => {
+    if (!db) return null;
+    const cutoff = Date.now() - (minutes * 60 * 1000);
+    
+    // Find visited domains categorised as 'Social' or 'Entertainment' or just from the default blocklist
+    const stmt = db.prepare(`
+        SELECT ws.domain, dc.category 
+        FROM web_stats ws
+        LEFT JOIN domain_categories dc ON ws.domain = dc.domain
+        WHERE ws.timestamp >= ? 
+        AND (dc.category IN ('Social', 'Entertainment', 'Shopping') OR ws.domain IN ('facebook.com', 'twitter.com', 'instagram.com', 'youtube.com', 'reddit.com', 'tiktok.com'))
+        ORDER BY ws.timestamp DESC 
+        LIMIT 1
+    `);
+    
+    stmt.bind([cutoff]);
+    let result = null;
+    if (stmt.step()) {
+        result = stmt.getAsObject();
+    }
+    stmt.free();
+    return result; // { domain: 'facebook.com', category: 'Social' }
+};
+
 export const getDailyReportData = (userId: number) => {
     if (!db) return null;
 
