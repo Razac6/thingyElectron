@@ -130,14 +130,20 @@ export const AiCompanion = () => {
             else if (lowMsg.includes("mindfulness") || lowMsg.includes("oddech") || lowMsg.includes("medytacji")) setPromptType('meditation');
             else setPromptType('none');
             
-            hideTimeoutRef.current = setTimeout(() => {
-                if (!isMenuOpen) {
-                    setIsVisible(false);
-                    setMessage(null);
-                    setPromptType('none');
-                    setIsPriorityMessage(false);
-                }
-            }, 20000);
+            // Only auto-hide if it's a simple message without actions
+            // If it's a prompt (water, etc), WAIT for user interaction
+            const hasAction = lowMsg.includes("nawodnieniu") || lowMsg.includes("wody") || lowMsg.includes("ruch") || lowMsg.includes("wyprostuj") || lowMsg.includes("szyję") || lowMsg.includes("mindfulness") || lowMsg.includes("oddech") || lowMsg.includes("medytacji");
+
+            if (!hasAction) {
+                hideTimeoutRef.current = setTimeout(() => {
+                    if (!isMenuOpen) {
+                        setIsVisible(false);
+                        setMessage(null);
+                        setPromptType('none');
+                        setIsPriorityMessage(false);
+                    }
+                }, 20000);
+            }
         };
 
         window.addEventListener('summon-ai-companion', handleSummon);

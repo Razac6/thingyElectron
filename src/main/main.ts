@@ -94,10 +94,20 @@ let lastPeakHourNotificationDate: string | null = null;
 
 let isMeditating = false;
 
-const sendAiNotification = (title: string, body: string) => {
-    if (isMeditating) return; // Mute notifications during meditation
+// Notification Types
+type NotificationType = 'NORMAL' | 'IMPORTANT';
 
-    console.log(`[Notification] Sending: ${title} - ${body}`);
+const sendAiNotification = (title: string, body: string, type: NotificationType = 'NORMAL') => {
+    if (isMeditating) return; // Always mute during meditation
+
+    // Focus Mode Muting logic
+    // If a task is running (activeTaskInfo) AND the notification is just a normal reminder, skip it.
+    if (activeTaskInfo && type === 'NORMAL') {
+        console.log(`[Notification] Muted due to Focus Mode: ${title}`);
+        return;
+    }
+
+    console.log(`[Notification] Sending (${type}): ${title} - ${body}`);
     const notification = new Notification({
         title,
         body,
@@ -127,8 +137,8 @@ serverEvents.on('task-draft', (draft) => {
     // Send to renderer
     mainWindow.webContents.send('task:draft-received', draft);
     
-    // Use unified notification
-    sendAiNotification('Task Draft Received', `From: ${draft.title.substring(0, 30)}...`);
+    // Task Draft is important info
+    sendAiNotification('Task Draft Received', `From: ${draft.title.substring(0, 30)}...`, 'IMPORTANT');
   }
 });
 
@@ -750,7 +760,8 @@ ipcMain.handle('app:complete-pomodoro', (event, taskId) => {
         updateTask({ ...task, pomodoroCount: newCount });
         
         shell.beep();
-        sendAiNotification('🍅 Pomodoro Ukończone!', `Zadanie "${task.title}" ma już ${newCount} pomidorów.`);
+        // IMPORTANT flag ensures it shows even in Focus Mode
+        sendAiNotification('🍅 Pomodoro Ukończone!', `Zadanie "${task.title}" ma już ${newCount} pomidorów.`, 'IMPORTANT');
         logSystemEvent(`Pomodoro Completed for task: ${task.title}`, 'PRODUCTIVITY');
         
         // Challenge Check
@@ -827,6 +838,7 @@ let lastMeditationDate: string | null = null;
 // Smart Notification States
 let sentMorningNudge = false;
 let sentEveningNudge = false;
+let standupShown = false; // New flag
 let lastStaleTaskCheck = 0;
 let currentDayString = new Date().toDateString();
 
@@ -841,20 +853,40 @@ setInterval(() => {
   if (dateString !== currentDayString) {
       sentMorningNudge = false;
       sentEveningNudge = false;
+      standupShown = false; // Reset standup flag
       lastMeditationDate = null;
       currentDayString = dateString;
+  }
+
+  // --- 0. Morning Standup Auto-Trigger ---
+  // Trigger once between 8:00 and 11:00 if app is open
+  if (!standupShown && currentHour >= 8 && currentHour < 11) {
+      if (mainWindow && !mainWindow.isMinimized()) {
+          mainWindow.webContents.send('ai-companion:show-message', 'STANDUP_TRIGGER');
+          standupShown = true;
+          logSystemEvent('Daily Standup triggered automatically.', 'SYSTEM');
+      }
   }
 
   // --- Health Reminders ---
   const aiEnabled = getSetting('enable_ai_assistant') !== 'false';
   
   if (aiEnabled) {
-      // 1. Water (Random interval based on config)
-      if (getSetting('enable_water_reminders') === 'true') {
+      const workStart = getSetting('workDayStart') || '09:00';
+      const workEnd = getSetting('workDayEnd') || '17:00';
+      const [startH, startM] = workStart.split(':').map(Number);
+      const [endH, endM] = workEnd.split(':').map(Number);
+      const nowMinutes = currentHour * 60 + currentMinute;
+      const startMinutes = startH * 60 + startM;
+      const endMinutes = endH * 60 + endM;
+
+      const isWorkHours = nowMinutes >= startMinutes && nowMinutes <= endMinutes;
+
+      // 1. Water (Random interval based on config, ONLY during work hours)
+      if (getSetting('enable_water_reminders') === 'true' && isWorkHours) {
           const interval = Number(getSetting('water_interval') || 90) * 60 * 1000;
           
           if (now - lastWaterTime > interval) {
-              // 30% chance every check, effectively randomizing slightly
               if (Math.random() < 0.3) {
                   sendAiNotification('💧 Nawodnienie', 'Pamiętasz o piciu wody?');
                   lastWaterTime = now;
@@ -864,28 +896,15 @@ setInterval(() => {
 
       // 2. Stretching (Interval based, only during work hours)
       const stretchingEnabled = getSetting('enable_stretching_reminders') === 'true';
-      if (stretchingEnabled) {
-          const workStart = getSetting('workDayStart') || '09:00';
-          const workEnd = getSetting('workDayEnd') || '17:00';
-          const [startH, startM] = workStart.split(':').map(Number);
-          const [endH, endM] = workEnd.split(':').map(Number);
-          
-          const nowMinutes = currentHour * 60 + currentMinute;
-          const startMinutes = startH * 60 + startM;
-          const endMinutes = endH * 60 + endM;
-
-          if (nowMinutes >= startMinutes && nowMinutes <= endMinutes) {
-              const interval = Number(getSetting('stretching_interval') || 60) * 60 * 1000;
-              if (now - lastStretchingTime > interval) {
-                  // Sprawdź czy użytkownik nie jest idle (nie ma sensu przypominać jak go nie ma)
-                  const idleTime = powerMonitor.getSystemIdleTime();
-                  if (idleTime < 60) { // Mniej niż minuta idle
-                      sendAiNotification('🏃 Czas na ruch!', 'Wyprostuj plecy i rozluźnij szyję. Zrobione?');
-                      lastStretchingTime = now;
-                  } else {
-                      // Jeśli idle, przesuń sprawdzanie (żeby odpaliło jak wróci)
-                      lastStretchingTime = now - interval + (5 * 60 * 1000); 
-                  }
+      if (stretchingEnabled && isWorkHours) {
+          const interval = Number(getSetting('stretching_interval') || 60) * 60 * 1000;
+          if (now - lastStretchingTime > interval) {
+              const idleTime = powerMonitor.getSystemIdleTime();
+              if (idleTime < 60) {
+                  sendAiNotification('🏃 Czas na ruch!', 'Wyprostuj plecy i rozluźnij szyję. Zrobione?');
+                  lastStretchingTime = now;
+              } else {
+                  lastStretchingTime = now - interval + (5 * 60 * 1000); 
               }
           }
       }
@@ -907,29 +926,30 @@ setInterval(() => {
       }
 
       // --- Advanced Productivity Algorithms ---
-      
-      const workStart = getSetting('workDayStart') || '09:00';
-      const workEnd = getSetting('workDayEnd') || '17:00';
-      const [startH, startM] = workStart.split(':').map(Number);
-      const [endH, endM] = workEnd.split(':').map(Number);
-      const currentMinutes = currentHour * 60 + currentMinute;
-      const startMinutes = startH * 60 + startM;
-      const endMinutes = endH * 60 + endM;
+      // (workStart/workEnd variables are already declared above)
 
       // 3. Morning Nudge (Anti-Procrastination)
-      // If 1 hour passed since work start, and NO work logged yet
-      if (!sentMorningNudge && currentMinutes > startMinutes + 60 && currentMinutes < endMinutes) {
-          const userId = activeTaskInfo?.userId || 1; // Default or active
+      // Checks every interval
+      if (activeTaskInfo) {
+          // User IS working now, so disable the morning nudge for today
+          sentMorningNudge = true; 
+      }
+
+      // Only send if NOT sent yet, time is right, AND user is NOT working right now
+      if (!sentMorningNudge && !activeTaskInfo && currentMinutes > startMinutes + 60 && currentMinutes < endMinutes) {
+          const userId = activeTaskInfo?.userId || 1; 
           const todayStats = getDailyProductivity(userId).find((d:any) => d.date === new Date().toISOString().split('T')[0]);
           
           if (!todayStats || todayStats.totalDuration === 0) {
               sendAiNotification('☕ Trudny poranek?', 'Minęła godzina pracy, a licznik stoi. Zacznij od czegoś małego (5 min)!');
               sentMorningNudge = true;
+          } else {
+              // User has worked today (found in stats), so don't nudge
+              sentMorningNudge = true;
           }
       }
 
       // 4. Evening Wrap-up
-      // 30 mins before end of day
       if (!sentEveningNudge && currentMinutes >= endMinutes - 30 && currentMinutes < endMinutes) {
           sendAiNotification('🏁 Ostatnia prosta', 'Koniec dnia blisko. Czas na podsumowanie i plan na jutro!');
           sentEveningNudge = true;
