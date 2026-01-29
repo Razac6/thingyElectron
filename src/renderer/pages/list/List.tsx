@@ -85,9 +85,7 @@ function List() {
 
   // Handle Quick Add Draft from Extension
   useEffect(() => {
-    console.log('List: Location changed', location);
     if (location.state && location.state.draftTask) {
-        console.log('List: Found draft task in state', location.state.draftTask);
         const draft = location.state.draftTask;
         setNewTask(prev => ({
             ...prev,
@@ -108,6 +106,7 @@ function List() {
   const [filterSprint, setFilterSprint] = useState('all');
   const [filterType, setFilterType] = useState('all');
   const [isColumnSortActive, setIsColumnSortActive] = useState(false);
+  const [sortModel, setSortModel] = useState<GridSortModel>([]);
   const [editingStatusId, setEditingStatusId] = useState<number | null>(null);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [isPredicting, setIsPredicting] = useState(false);
@@ -157,11 +156,22 @@ function List() {
               return;
           }
 
-          const ids = proposedTasks.map(t => t.id);
-          await window.electron.database.updateTasksOrder(ids);
+          const proposedIds = proposedTasks.map(t => t.id);
+          const allTaskIds = tasks.map(t => t.id);
+          
+          // Tasks NOT in proposal (e.g. completed or filtered out by AI)
+          const otherIds = allTaskIds.filter(id => !proposedIds.includes(id));
+          
+          // New order: Proposal first, then others
+          const finalOrder = [...proposedIds, ...otherIds];
+
+          await window.electron.database.updateTasksOrder(finalOrder);
           
           const updatedTasks = await window.electron.database.getTasks(userId);
           setTasks(updatedTasks);
+          // Clear sorting to respect SQL order (Status > DisplayOrder)
+          setSortModel([]); 
+          setIsColumnSortActive(false);
           
           setIsProposalOpen(false);
           setShowAiSuccess(true);
@@ -345,6 +355,7 @@ function List() {
   };
 
   const columns: GridColDef[] = [
+    { field: 'displayOrder', headerName: 'Order', width: 0, hide: true, sortable: true, type: 'number' }, 
     {
         field: 'drag',
         headerName: '',
@@ -486,17 +497,23 @@ function List() {
   return (
     <Box sx={{ height: 'calc(100vh - 128px)', width: '100%' }}>
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2, mb: 1 }}>
-        <FormControl size="small" sx={{ minWidth: 150 }}>
-          <InputLabel>Filter by Sprint</InputLabel>
-          <Select value={filterSprint} label="Filter by Sprint" onChange={(e) => setFilterSprint(e.target.value)}>
-            <MenuItem value="all">All Sprints</MenuItem>
-            <MenuItem value="backlog">Backlog</MenuItem>
-            <Divider />
-            {sprints.map(sprint => (
-              <MenuItem key={sprint.id} value={sprint.id}>{sprint.name}</MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+        <Autocomplete
+            size="small"
+            sx={{ minWidth: 200 }}
+            options={[{ id: 'all', name: 'All Sprints' }, { id: 'backlog', name: 'Backlog' }, ...sprints]}
+            getOptionLabel={(option) => option.name}
+            value={
+                filterSprint === 'all' ? { id: 'all', name: 'All Sprints' } :
+                filterSprint === 'backlog' ? { id: 'backlog', name: 'Backlog' } :
+                sprints.find(s => s.id === Number(filterSprint)) || null
+            }
+            onChange={(event, newValue) => {
+                if (newValue) setFilterSprint(String(newValue.id));
+                else setFilterSprint('all');
+            }}
+            renderInput={(params) => <TextField {...params} label="Filter by Sprint" />}
+            disableClearable
+        />
         <FormControl size="small" sx={{ minWidth: 120 }}>
           <InputLabel>Filter by Type</InputLabel>
           <Select value={filterType} label="Filter by Type" onChange={(e) => setFilterType(e.target.value)}>
@@ -520,7 +537,11 @@ function List() {
         columns={columns}
         getRowClassName={getRowClassName}
         onRowClick={(params) => navigate(`/task/${params.id}`)}
-        onSortModelChange={handleSortModelChange}
+        sortModel={sortModel}
+        onSortModelChange={(model) => {
+            setSortModel(model);
+            handleSortModelChange(model);
+        }}
         sx={{ 
             '& .MuiDataGrid-row:hover': { cursor: 'pointer' },
             '& .drop-target-row': {

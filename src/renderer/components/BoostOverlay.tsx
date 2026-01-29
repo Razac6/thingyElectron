@@ -112,9 +112,6 @@ const BoostOverlay = ({ open, onClose }: BoostOverlayProps) => {
             const durationMs = durationMin * 60 * 1000;
             const elapsedSinceStart = now - start;
             
-            // Debug Log
-            // console.log('Pomodoro Debug:', { durationMin, durationMs, start, now, elapsedSinceStart });
-
             const remaining = Math.max(0, durationMs - elapsedSinceStart);
             
             const p = (remaining / durationMs) * 100;

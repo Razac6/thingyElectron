@@ -83,6 +83,7 @@ contextBridge.exposeInMainWorld('electron', {
     getWebSettings: () => ipcRenderer.invoke('db:get-web-settings'),
     saveWebSettings: (settings: any) => ipcRenderer.invoke('db:save-web-settings', settings),
     getWebStats: (days: number) => ipcRenderer.invoke('db:get-web-stats', days),
+    getDistractionStats: (days: number) => ipcRenderer.invoke('db:get-distraction-stats', days),
     setDomainCategory: (domain: string, category: string) => ipcRenderer.invoke('db:set-domain-category', domain, category),
     getAppStats: (days: number) => ipcRenderer.invoke('db:get-app-stats', days),
     setAppCategory: (appName: string, category: string) => ipcRenderer.invoke('db:set-app-category', appName, category),

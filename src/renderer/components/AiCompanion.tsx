@@ -106,16 +106,23 @@ export const AiCompanion = () => {
             setMessage("Jestem! W czym pomóc?");
         };
 
-        const handleShowMessage = (msg: any) => {
-            console.log("[AiCompanion] Received IPC Message:", msg);
-            const safeMsg = (typeof msg === 'string') ? msg : String(msg || '');
+                const handleShowMessage = (msg: any) => {
 
-            if (safeMsg === 'STANDUP_TRIGGER') {
-                handleAction('standup_init');
-                return;
-            }
+                    const safeMsg = (typeof msg === 'string') ? msg : String(msg || '');
 
-            if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+        
+
+                    if (safeMsg === 'STANDUP_TRIGGER') {
+
+                        handleAction('standup_init');
+
+                        return;
+
+                    }
+
+        
+
+                    if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
             if (messageTimeoutRef.current) clearTimeout(messageTimeoutRef.current);
             
             setIsPriorityMessage(true);
@@ -308,13 +315,19 @@ export const AiCompanion = () => {
                 setMessage("Analizuję Twoje rozpraszacze...");
                 try {
                     // @ts-ignore
-                    const stats = await window.electron.database.getWebStats(1);
-                    const top = stats.topDomains.slice(0, 3).map((d: any) => ({
-                        name: d.domain,
-                        time: Math.round(d.totalTime / 60000)
-                    }));
-                    setDistractions(top);
-                    setMessage(top.length > 0 ? "Główne pożeracze czasu:" : "Czysto!");
+                    const top = await window.electron.database.getDistractionStats(1); // Today
+                    
+                    if (top.length === 0) {
+                        setDistractions([]);
+                        setMessage("Czysto! Nic Cię dzisiaj nie rozprasza. 🛡️");
+                    } else {
+                        const formatted = top.map((d: any) => ({
+                            name: d.domain,
+                            time: Math.round(d.totalTime / 60000)
+                        }));
+                        setDistractions(formatted);
+                        setMessage("Główne pożeracze czasu:");
+                    }
                 } catch (e) { setMessage("Błąd danych."); }
                 break;
             case 'back':

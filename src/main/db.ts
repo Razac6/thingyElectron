@@ -698,7 +698,14 @@ export const getTasks = (userId: number, includeMeetings: boolean = false) => {
       (SELECT GROUP_CONCAT(tags.name) FROM task_tags JOIN tags ON tags.id = task_tags.tagId WHERE task_tags.taskId = t.id) as tags
     FROM tasks t
     WHERE t.userId = :userId
-    ORDER BY t.displayOrder ASC
+    ORDER BY 
+      CASE 
+        WHEN t.status = 'In Progress' THEN 1 
+        WHEN t.status = 'In Review' THEN 2 
+        WHEN t.status = 'To Do' THEN 3 
+        ELSE 4 -- Completed or others
+      END ASC,
+      t.displayOrder ASC
   `;
   const stmt = db.prepare(query);
   stmt.bind({ ':userId': userId });
@@ -1609,6 +1616,37 @@ export const getWebStats = (days: number = 1) => {
   } catch (e) {
     console.error('Failed to get web stats', e);
     return { topDomains: [], totalDuration: 0 };
+  }
+};
+
+export const getDistractionStats = (days: number = 1) => {
+  if (!db) return [];
+  const start = new Date();
+  start.setHours(0,0,0,0);
+  start.setDate(start.getDate() - (days - 1));
+  const startTimestamp = start.getTime();
+
+  try {
+    const stmt = db.prepare(`
+      SELECT ws.domain, SUM(ws.duration) as totalTime, dc.category 
+      FROM web_stats ws
+      LEFT JOIN domain_categories dc ON ws.domain = dc.domain
+      WHERE ws.timestamp >= :start 
+      AND (dc.category IN ('Social', 'Entertainment', 'Shopping') OR ws.domain IN ('facebook.com', 'twitter.com', 'instagram.com', 'youtube.com', 'reddit.com', 'tiktok.com', 'netflix.com'))
+      GROUP BY ws.domain 
+      ORDER BY totalTime DESC 
+      LIMIT 5
+    `);
+    
+    stmt.bind({ ':start': startTimestamp });
+    const rows = [];
+    while(stmt.step()) {
+        rows.push(stmt.getAsObject());
+    }
+    stmt.free();
+    return rows;
+  } catch (e) {
+    return [];
   }
 };
 

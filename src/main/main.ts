@@ -64,7 +64,8 @@ import {
   setDomainCategory,
   getAppStats,
   setAppCategory,
-  getLifetimeStats
+  getLifetimeStats,
+  getDistractionStats
 } from './db';
 import { autoScheduleTasks, getProposedSchedule } from './TaskScheduler';
 import { ProductivityAnalyst, AnalysisResult } from './ProductivityAnalysis';
@@ -82,6 +83,10 @@ log.catchErrors({
   }
 });
 
+if (process.platform === 'win32') {
+    app.setAppUserModelId(app.isPackaged ? 'org.erb.Thingy' : process.execPath);
+}
+
 require('dotenv').config();
 
 let mainWindow: BrowserWindow | null = null;
@@ -93,6 +98,9 @@ let hasSentFatigueWarning = false;
 let lastPeakHourNotificationDate: string | null = null;
 
 let isMeditating = false;
+let isQuitting = false;
+
+app.on('before-quit', () => { isQuitting = true; });
 
 // Notification Types
 type NotificationType = 'NORMAL' | 'IMPORTANT';
@@ -101,13 +109,10 @@ const sendAiNotification = (title: string, body: string, type: NotificationType 
     if (isMeditating) return; // Always mute during meditation
 
     // Focus Mode Muting logic
-    // If a task is running (activeTaskInfo) AND the notification is just a normal reminder, skip it.
     if (activeTaskInfo && type === 'NORMAL') {
-        console.log(`[Notification] Muted due to Focus Mode: ${title}`);
         return;
     }
 
-    console.log(`[Notification] Sending (${type}): ${title} - ${body}`);
     const notification = new Notification({
         title,
         body,
@@ -115,7 +120,7 @@ const sendAiNotification = (title: string, body: string, type: NotificationType 
     });
 
     notification.on('click', () => {
-        if (mainWindow) {
+        if (mainWindow && !mainWindow.isDestroyed()) {
             if (mainWindow.isMinimized()) mainWindow.restore();
             mainWindow.show();
             mainWindow.focus();
@@ -130,14 +135,11 @@ const sendAiNotification = (title: string, body: string, type: NotificationType 
 
 // --- Listen for Extension Events ---
 serverEvents.on('task-draft', (draft) => {
-  if (mainWindow) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.show();
     mainWindow.focus();
-    // Send to renderer
     mainWindow.webContents.send('task:draft-received', draft);
-    
-    // Task Draft is important info
     sendAiNotification('Task Draft Received', `From: ${draft.title.substring(0, 30)}...`, 'IMPORTANT');
   }
 });
@@ -146,17 +148,15 @@ const refreshInsights = async (userId: number) => {
   try {
     const recentSessions = getRecentWorkSessions(userId, 30);
     const trendData = getLast14DaysProductivity(userId);
-    const tagData = getTagAnalyticsWithNames(); // This returns {id, name, ema, std_dev...}
+    const tagData = getTagAnalyticsWithNames();
     const allTasks = getTasks(userId);
 
-    // Create a map for the analysis
     const tagMap = new Map<number, string>();
     tagData.forEach((t: any) => tagMap.set(t.id, t.name));
 
     const newConsistency = ProductivityAnalyst.analyzeTagConsistency(tagData, tagMap);
     const difficultyProfile = ProductivityAnalyst.analyzeTagDifficulty(allTasks);
 
-    // Filter out undefined names just in case
     newConsistency.consistent = newConsistency.consistent.filter(name => !!name);
     newConsistency.volatile = newConsistency.volatile.filter(name => !!name);
 
@@ -166,13 +166,13 @@ const refreshInsights = async (userId: number) => {
 
         newConsistency.consistent.forEach(tag => {
             if (!oldConsistent.has(tag)) {
-                logSystemEvent(`Tag #${tag} achieved CONSISTENCY stability. Standard Deviation is low.`, 'LEARNING');
+                logSystemEvent(`Tag #${tag} achieved CONSISTENCY stability.`, 'LEARNING');
             }
         });
 
         newConsistency.volatile.forEach(tag => {
             if (!oldVolatile.has(tag)) {
-                logSystemEvent(`Tag #${tag} is now VOLATILE. High variance detected in session times.`, 'LEARNING');
+                logSystemEvent(`Tag #${tag} is now VOLATILE.`, 'LEARNING');
             }
         });
     }
@@ -200,7 +200,6 @@ const refreshInsights = async (userId: number) => {
       dailyTipCategory: 'neutral'
     };
 
-    // Usunięto aktualizację porady przez AI
     log.info('Smart Insights Refreshed');
 
     const today = new Date().toISOString().split('T')[0];
@@ -242,59 +241,43 @@ function formatTimeForTray(ms: number): string {
   let minutes = Math.floor(seconds / 60);
   let hours = Math.floor(minutes / 60);
   minutes %= 60;
-
-  if (hours > 0) {
-    return `${hours}h ${minutes.toString().padStart(2, '0')}m`;
-  }
+  if (hours > 0) return `${hours}h ${minutes.toString().padStart(2, '0')}m`;
   return `${minutes.toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
 }
 
 const updateTrayTitle = () => {
   if (!tray || !activeTaskInfo) return;
-
   const { title, startTime, estimate, initialSpendTime } = activeTaskInfo;
   const estimateTime = (estimate || 0) * 3600 * 1000;
   const currentTime = Date.now();
   const elapsedSinceStart = currentTime - startTime;
   const totalTime = initialSpendTime + elapsedSinceStart;
-
   const remaining = estimateTime - totalTime;
   const timeString = formatTimeForTray(remaining);
   const shortTitle = title.length > 10 ? `${title.substring(0, 10)}...` : title;
   const menubarTitle = `${shortTitle} ${timeString}`;
-  const menubarTooltip = `Working on: ${title}`;
-
   tray.setTitle(menubarTitle);
-  tray.setToolTip(menubarTooltip);
+  tray.setToolTip(`Working on: ${title}`);
 
   if (cachedInsights && !hasSentFatigueWarning) {
     const elapsedMinutes = elapsedSinceStart / (1000 * 60);
     const limit = cachedInsights.fatigueProfile.maxRecommended;
-
     if (elapsedMinutes > limit && limit > 10) {
       const notification = new Notification({
         title: '🧠 Brain Fatigue Detected',
-        body: `You've passed your optimal session limit of ${limit}m. A 5m break increases subsequent efficiency by 40%.`,
-        icon: getAssetPath('icon.png'),
+        body: `Passed session limit of ${limit}m. A break is recommended.`,
+        icon: appIconPath,
         actions: [{ type: 'button', text: 'Stop Timer & Rest' }]
       });
-
       notification.on('action', () => {
-        log.info('User clicked Stop Timer on Fatigue Notification');
-        if (mainWindow) {
-          mainWindow.webContents.send('timer:stop-requested');
-        }
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('timer:stop-requested');
       });
-
       notification.on('click', () => {
-          if (mainWindow) {
-              if (mainWindow.isMinimized()) mainWindow.restore();
+          if (mainWindow && !mainWindow.isDestroyed()) {
               mainWindow.show();
-              mainWindow.focus();
               mainWindow.webContents.send('ai-companion:show-message', "Zrobiłeś sobie przerwę? ☕");
           }
       });
-
       notification.show();
       hasSentFatigueWarning = true;
     }
@@ -306,9 +289,7 @@ const notifiedHabits = new Set<string>();
 const checkHabitReminders = () => {
   const enabled = getSetting('habit_notifications_enabled') !== 'false';
   if (!enabled) return;
-
   const userId = activeTaskInfo?.userId || 1;
-
   const habits = getHabits(userId);
   const logs = getHabitLogs(userId);
   const today = new Date().toISOString().split('T')[0];
@@ -323,25 +304,18 @@ const checkHabitReminders = () => {
           const dayOfWeek = now.getDay();
           if (habit.frequency.days.includes(dayOfWeek)) isDue = true;
       }
-
       if (!isDue) return;
-
       const isDone = logs.some((l: any) => l.habitId === habit.id && l.date === today && l.value >= 1);
       if (isDone) return;
-
       if (!habit.reminderTime) return;
       const [remHour, remMin] = habit.reminderTime.split(':').map(Number);
-
       const targetTimeMin = (remHour * 60) + remMin;
       const currentTimeMin = (currentHour * 60) + currentMinute;
-      const thresholdMin = targetTimeMin + 180;
-
-      if (currentTimeMin >= thresholdMin) {
+      if (currentTimeMin >= targetTimeMin + 180) {
           const key = `${habit.id}-${today}`;
           if (!notifiedHabits.has(key)) {
               sendAiNotification('🎗 Habit Reminder', `Nie zapomnij o nawyku: ${habit.title}!`);
               notifiedHabits.add(key);
-              logSystemEvent(`Sent reminder for habit: ${habit.title}`, 'HABIT');
           }
       }
   });
@@ -356,16 +330,8 @@ const createTray = () => {
     { label: 'Quit', click: () => { app.quit(); } },
   ]);
   tray.setContextMenu(contextMenu);
-  tray.setToolTip('Thingy App');
-  tray.setTitle('');
-
-  tray.on('click', () => {
-    mainWindow?.isVisible() ? mainWindow?.hide() : mainWindow?.show();
-  });
-
-  if (activeTaskInfo) {
-      updateTrayTitle();
-  }
+  tray.on('click', () => { mainWindow?.isVisible() ? mainWindow?.hide() : mainWindow?.show(); });
+  if (activeTaskInfo) updateTrayTitle();
 };
 
 const destroyTray = () => {
@@ -378,72 +344,41 @@ const destroyTray = () => {
 // --- IPC Handlers ---
 ipcMain.handle('db:log-work-session', async (event, session) => {
   logWorkSession(session);
-
   if (activeTaskInfo && activeTaskInfo.userId) {
      const userId = activeTaskInfo.userId;
      const today = new Date().toISOString().split('T')[0];
      const challenge: any = getDailyChallenge(userId, today);
-
      if (challenge && challenge.status === 'ACTIVE') {
        let newProgress = challenge.progress;
-
-       if (challenge.type === 'TOTAL_DURATION') {
-         newProgress += Math.round(session.duration / (1000 * 60));
-       } else if (challenge.type === 'DEEP_WORK') {
-         const durationMin = session.duration / (1000 * 60);
-         if (durationMin >= 20) {
-            newProgress += Math.round(durationMin);
-         }
-       }
-
+       if (challenge.type === 'TOTAL_DURATION') newProgress += Math.round(session.duration / 60000);
+       else if (challenge.type === 'DEEP_WORK' && session.duration >= 1200000) newProgress += Math.round(session.duration / 60000);
        const status = newProgress >= challenge.target ? 'COMPLETED' : 'ACTIVE';
        updateDailyChallengeProgress(challenge.id, newProgress, status);
-
-       if (status === 'COMPLETED') {
-         sendAiNotification('🎉 Challenge Completed!', `Ukończyłeś: ${challenge.description} (+${challenge.xpReward} XP)`);
-       }
+       if (status === 'COMPLETED') sendAiNotification('🎉 Challenge Completed!', challenge.description);
      }
   }
 });
 
 ipcMain.handle('db:global-search', (event, userId, query) => globalSearch(userId, query));
-ipcMain.handle('db:get-daily-challenge', (event, userId) => {
-  const today = new Date().toISOString().split('T')[0];
-  return getDailyChallenge(userId, today);
-});
+ipcMain.handle('db:get-daily-challenge', (event, userId) => getDailyChallenge(userId, new Date().toISOString().split('T')[0]));
 ipcMain.handle('db:get-tasks', (event, userId) => getTasks(userId));
 ipcMain.handle('db:create-task', (event, task, userId) => createTask(task, userId));
 ipcMain.handle('db:update-task', (event, task) => {
   const updated = updateTask(task);
-
   if (task.status === 'Completed' && task.userId) {
       const today = new Date().toISOString().split('T')[0];
       const challenge: any = getDailyChallenge(task.userId, today);
-
       if (challenge && challenge.status === 'ACTIVE') {
           let newProgress = challenge.progress;
           let shouldUpdate = false;
-
-          if (challenge.type === 'FROG_EATER') {
-              if (task.priority === 'High') {
-                  newProgress += 1;
-                  shouldUpdate = true;
-              }
-          } else if (challenge.type === 'BACKLOG_CLEANER') {
-              newProgress += 1;
-              shouldUpdate = true;
-          } else if (challenge.type === 'TASK_SPRINTER') {
-              if ((task.estimate || 0) < 1) { // Small task (< 1h)
-                  newProgress += 1;
-                  shouldUpdate = true;
-              }
-          }
-
+          if (challenge.type === 'FROG_EATER' && task.priority === 'High') { newProgress += 1; shouldUpdate = true; }
+          else if (challenge.type === 'BACKLOG_CLEANER') { newProgress += 1; shouldUpdate = true; }
+          else if (challenge.type === 'TASK_SPRINTER' && (task.estimate || 0) < 1) { newProgress += 1; shouldUpdate = true; }
           if (shouldUpdate) {
               const status = newProgress >= challenge.target ? 'COMPLETED' : 'ACTIVE';
               updateDailyChallengeProgress(challenge.id, newProgress, status);
               if (status === 'COMPLETED') {
-                  sendAiNotification('🎉 Challenge Completed!', `Ukończyłeś: ${challenge.description} (+${challenge.xpReward} XP)`);
+                  sendAiNotification('🎉 Challenge Completed!', challenge.description);
                   const profile = getProfile(task.userId);
                   if (profile) updateProfile({ ...profile, xp: profile.xp + challenge.xpReward });
               }
@@ -464,15 +399,8 @@ ipcMain.handle('db:get-sprint-analysis', (event, userId) => {
     const sprint = getActiveSprint();
     if (!sprint) return null;
     const tasks = getSprintTasks(sprint.id);
-    const unfinished = tasks.filter(t => t.status !== 'Completed');
-
-    const predictions = unfinished.map(t => neuralCore.predictForTask(t));
-    const sessions = getRecentWorkSessions(userId, 14);
-
-    const workStart = getSetting('workDayStart') || '09:00';
-    const workEnd = getSetting('workDayEnd') || '17:00';
-
-    return ProductivityAnalyst.analyzeSprintRisk(sprint, tasks, sessions, predictions, { start: workStart, end: workEnd });
+    const predictions = tasks.filter(t => t.status !== 'Completed').map(t => neuralCore.predictForTask(t));
+    return ProductivityAnalyst.analyzeSprintRisk(sprint, tasks, getRecentWorkSessions(userId, 14), predictions, { start: getSetting('workDayStart') || '09:00', end: getSetting('workDayEnd') || '17:00' });
 });
 ipcMain.handle('db:get-notes', (event, userId) => getNotes(userId));
 ipcMain.handle('db:create-note', (event, note, userId) => createNote(note, userId));
@@ -482,19 +410,11 @@ ipcMain.handle('db:login', async (event, { username, password }) => {
   const user = loginUser(username, password);
   if (user) {
     await refreshInsights(user.id);
-
-    try {
-        const tasks = getTasks(user.id);
-        neuralCore.train(tasks).catch(err => log.error('Neural Training Failed', err));
-    } catch (e) {
-        log.error('Failed to trigger neural training', e);
-    }
-
-    return { access_token: 'local-session-token', userId: user.id };
+    getTasks(user.id); // Triggers training
+    return { access_token: 'local-token', userId: user.id };
   }
-  throw new Error('Invalid credentials');
+  throw new Error('Invalid');
 });
-ipcMain.handle('db:register', (event, { username, password }) => registerUser(username, password));
 ipcMain.handle('db:get-profile', (event, userId) => getProfile(userId));
 ipcMain.handle('db:update-profile', (event, profile) => updateProfile(profile));
 ipcMain.handle('db:get-earned-achievements', (event, userId) => getEarnedAchievements(userId));
@@ -518,51 +438,35 @@ ipcMain.handle('db:get-ai-stats', () => getAiStats());
 // Settings Handlers
 ipcMain.handle('db:get-all-settings', () => getAllSettings());
 ipcMain.handle('db:set-setting', (event, key, value) => setSetting(key, value));
-
-// Checklist Handlers
 ipcMain.handle('db:get-checklist-items', (event, taskId) => getChecklistItems(taskId));
 ipcMain.handle('db:add-checklist-item', (event, taskId, text) => addChecklistItem(taskId, text));
-ipcMain.handle('db:toggle-checklist-item', (event, itemId, isCompleted) => toggleChecklistItem(itemId, isCompleted));
+ipcMain.handle('db:toggle-checklist-item', (event, itemId, isComp) => toggleChecklistItem(itemId, isComp));
 ipcMain.handle('db:delete-checklist-item', (event, itemId) => deleteChecklistItem(itemId));
-
-// Daily Bio Handlers
 ipcMain.handle('db:get-daily-bio', (event, date) => getDailyBio(date));
 ipcMain.handle('db:update-daily-bio', (event, date, data) => {
     const result = updateDailyBio(date, data);
-    
-    // Check Hydration Challenge
     if (data.waterIntake !== undefined) {
-        // We need userId, assuming 1 for single user setup or context
-        const userId = 1; 
-        const challenge: any = getDailyChallenge(userId, date);
+        const challenge: any = getDailyChallenge(1, date);
         if (challenge && challenge.status === 'ACTIVE' && challenge.type === 'HYDRATION_HERO') {
-             // waterIntake in DB is the total count, so update progress directly
-             const newProgress = data.waterIntake; 
-             const status = newProgress >= challenge.target ? 'COMPLETED' : 'ACTIVE';
-             updateDailyChallengeProgress(challenge.id, newProgress, status);
-             
+             const status = data.waterIntake >= challenge.target ? 'COMPLETED' : 'ACTIVE';
+             updateDailyChallengeProgress(challenge.id, data.waterIntake, status);
              if (status === 'COMPLETED') {
-                 sendAiNotification('🎉 Challenge Completed!', `Ukończyłeś: ${challenge.description} (+${challenge.xpReward} XP)`);
-                 const profile = getProfile(userId);
-                 if (profile) updateProfile({ ...profile, xp: profile.xp + challenge.xpReward });
+                 sendAiNotification('🎉 Challenge Completed!', challenge.description);
+                 const p = getProfile(1);
+                 if (p) updateProfile({ ...p, xp: p.xp + challenge.xpReward });
              }
         }
     }
-    
     return result;
 });
-
-// Habit Tracker Handlers
 ipcMain.handle('db:get-habits', (event, userId) => getHabits(userId));
-ipcMain.handle('db:create-habit', (event, habit, userId) => createHabit(habit, userId));
-ipcMain.handle('db:update-habit', (event, habit) => updateHabit(habit));
-ipcMain.handle('db:delete-habit', (event, habitId) => deleteHabit(habitId));
-ipcMain.handle('db:log-habit', (event, habitId, date, value) => logHabit(habitId, date, value));
-ipcMain.handle('db:get-habit-logs', (event, userId, fromDate) => getHabitLogs(userId, fromDate));
-ipcMain.handle('db:get-top-habit', (event, userId) => getTopHabit(userId));
-ipcMain.handle('db:toggle-habit-favorite', (event, habitId, userId) => toggleHabitFavorite(habitId, userId));
-
-// Neural Handlers
+ipcMain.handle('db:create-habit', (event, h, uid) => createHabit(h, uid));
+ipcMain.handle('db:update-habit', (event, h) => updateHabit(h));
+ipcMain.handle('db:delete-habit', (event, hid) => deleteHabit(hid));
+ipcMain.handle('db:log-habit', (event, hid, d, v) => logHabit(hid, d, v));
+ipcMain.handle('db:get-habit-logs', (event, uid, fd) => getHabitLogs(uid, fd));
+ipcMain.handle('db:get-top-habit', (event, uid) => getTopHabit(uid));
+ipcMain.handle('db:toggle-habit-favorite', (event, hid, uid) => toggleHabitFavorite(hid, uid));
 ipcMain.handle('db:predict-duration', (event, task) => neuralCore.predict(task));
 ipcMain.handle('db:get-ai-performance', (event, userId, days) => neuralCore.getPerformanceHistory(userId, days));
 ipcMain.handle('db:generate-daily-report', (event, userId) => neuralCore.generateDailyReport(userId));
@@ -572,558 +476,214 @@ ipcMain.handle('db:force-neural-training', (event, userId) => {
     neuralCore.train(tasks).catch(err => log.error('Manual Neural Training Failed', err));
     return true;
 });
-
-import { personalityEngine } from './PersonalityEngine';
-import { getFocusContext } from './db';
-
-// ... (existing imports)
-
-// --- Listen for Extension Events ---
-// ... (existing listeners)
-
-ipcMain.handle('db:get-ai-message', (event, userId) => {
-    // Gather Context
-    const focusScore = getFocusContext(Date.now()) * 100; // 0-100
-    const idleTimeMin = (powerMonitor.getSystemIdleTime()) / 60;
-    
-    // Get Task Info if available
-    let tasksRemaining = 0;
-    const sprint = getActiveSprint();
-    if (sprint) {
-        const tasks = getSprintTasks(sprint.id);
-        tasksRemaining = tasks.filter(t => t.status !== 'Completed').length;
-    }
-
-    const context = {
-        mood: 'STABLE' as any, // Will be overridden by generateMessage logic
-        userName: 'Marcin', // Hardcoded or fetch from profile
-        focusScore: Math.round(focusScore),
-        idleTimeMin: Math.round(idleTimeMin),
-        tasksRemaining,
-        habitScore: 0.5 // Simplified
-    };
-
+ipcMain.handle('db:get-ai-message', (event, uid) => {
+    const context = { mood: 'STABLE' as any, userName: 'Marcin', focusScore: Math.round(getFocusContext(Date.now()) * 100), idleTimeMin: Math.round(powerMonitor.getSystemIdleTime() / 60), tasksRemaining: 0, habitScore: 0.5 };
     return personalityEngine.generateMessage(context);
 });
-
-ipcMain.handle('db:get-productivity-insights', async (event, userId) => {
-  refreshInsights(userId); // Ensure fresh data
-
-  // Trigger Neural Training in background
-  try {
-      const tasks = getTasks(userId);
-      neuralCore.train(tasks).catch(err => log.error('Neural Training Failed', err));
-  } catch (err) {
-      log.error('Failed to trigger neural training', err);
-  }
-
-  return cachedInsights;
-});
-
-  ipcMain.handle('db:get-daily-standup', (event, userId) => {
-  const stats = getDailyStandupData(userId);
-  const schedule = getProposedSchedule(userId);
-  const topTask = schedule.length > 0 ? schedule[0] : null;
+ipcMain.handle('db:get-productivity-insights', async (event, uid) => { refreshInsights(uid); return cachedInsights; });
+ipcMain.handle('db:get-daily-standup', (event, uid) => {
+  const stats = getDailyStandupData(uid);
+  const schedule = getProposedSchedule(uid);
   const today = new Date().toISOString().split('T')[0];
-  const challenge = getDailyChallenge(userId, today);
-
+  const challenge = getDailyChallenge(uid, today);
   let suggestion = null;
-  if (topTask) {
-      suggestion = {
-          id: topTask.id,
-          title: topTask.title,
-          link: topTask.link,
-          aiReason: topTask.aiReason,
-          neuralEst: (topTask.neuralEstimate || topTask.estimate || 0.5) * 60, // minutes
-          priority: topTask.priority
-      };
-  }
-
-  return {
-      ...stats,
-      topSuggestion: suggestion,
-      challenge: challenge,
-      isPeakHour: cachedInsights?.peakHours?.includes(new Date().getHours()) || false
-  };
+  if (schedule.length > 0) suggestion = { id: schedule[0].id, title: schedule[0].title, aiReason: schedule[0].aiReason, priority: schedule[0].priority };
+  return { ...stats, topSuggestion: suggestion, challenge };
 });
-
-ipcMain.handle('db:get-daily-report-data', (event, userId) => getDailyReportData(userId));
-
-ipcMain.handle('gamification:reward-fatigue-compliance', (event, userId) => {
-  const profile = getProfile(userId);
-  if (profile) {
-    updateProfile({ ...profile, xp: profile.xp + 15 });
-    logSystemEvent('Fatigue Model Validated: User accepted warning. (+15 XP)', 'LEARNING');
-    sendAiNotification('Mindful Rest Reward', 'Dobrze, że słuchasz swojego organizmu! +15 XP');
-  }
+ipcMain.handle('db:get-daily-report-data', (event, uid) => getDailyReportData(uid));
+ipcMain.handle('db:get-lifetime-stats', (event, uid) => getLifetimeStats(uid));
+ipcMain.handle('gamification:reward-fatigue-compliance', (event, uid) => {
+  const p = getProfile(uid);
+  if (p) { updateProfile({ ...p, xp: p.xp + 15 }); sendAiNotification('Mindful Rest Reward', 'Dobrze, że słuchasz swojego organizmu! +15 XP'); }
 });
-
-// --- Web Blocking IPC ---
 ipcMain.handle('db:get-web-settings', () => getWebBlockingSettings());
-ipcMain.handle('db:save-web-settings', (event, settings) => {
-    saveWebBlockingSettings(settings);
-    return true;
-});
-ipcMain.handle('db:get-web-stats', (event, days) => getWebStats(days));
-ipcMain.handle('db:set-domain-category', (event, domain, category) => {
-    setDomainCategory(domain, category);
-    return true;
-});
-ipcMain.handle('db:get-app-stats', (event, days) => getAppStats(days));
-ipcMain.handle('db:get-lifetime-stats', (event, userId) => getLifetimeStats(userId));
-ipcMain.handle('db:set-app-category', (event, appName, category) => {
-    setAppCategory(appName, category);
-    return true;
-});
-ipcMain.handle('server:restart', () => {
-    restartServer();
-    return true;
-});
-
-ipcMain.handle('server:request-sync', () => {
-    requestSync();
-    return true;
-});
-
-ipcMain.handle('app:open-devtools', () => {
-  mainWindow?.webContents.openDevTools();
-});
-
-ipcMain.handle('app:set-window-opacity', (event, opacity) => {
-    if (mainWindow) {
-        mainWindow.setOpacity(opacity);
-    }
-});
-
-ipcMain.handle('app:test-meditation-notif', () => {
-    setTimeout(() => {
-        sendAiNotification('🧘‍♀️ Czas na Mindfulness', 'Może krótka chwila na oddech?');
-    }, 3000);
-});
-
-ipcMain.handle('app:test-daily-standup', () => {
-    if (mainWindow) {
-        mainWindow.webContents.send('ai-companion:show-message', 'STANDUP_TRIGGER');
-    }
-});
-
-ipcMain.handle('app:meditation-started', () => {
-    isMeditating = true;
-});
-
-ipcMain.handle('app:meditation-cancelled', () => {
+ipcMain.handle('db:save-web-settings', (event, s) => { saveWebBlockingSettings(s); return true; });
+ipcMain.handle('db:get-web-stats', (event, d) => getWebStats(d));
+ipcMain.handle('db:get-distraction-stats', (event, d) => getDistractionStats(d));
+ipcMain.handle('db:set-domain-category', (event, d, c) => { setDomainCategory(d, c); return true; });
+ipcMain.handle('db:get-app-stats', (event, d) => getAppStats(d));
+ipcMain.handle('db:set-app-category', (event, a, c) => { setAppCategory(a, c); return true; });
+ipcMain.handle('server:restart', () => { restartServer(); return true; });
+ipcMain.handle('server:request-sync', () => { requestSync(); return true; });
+ipcMain.handle('app:open-devtools', () => { mainWindow?.webContents.openDevTools(); });
+ipcMain.handle('app:set-window-opacity', (event, o) => { mainWindow?.setOpacity(o); });
+ipcMain.handle('app:test-meditation-notif', () => { setTimeout(() => sendAiNotification('🧘‍♀️ Czas na Mindfulness', 'Może krótka chwila na oddech?'), 3000); });
+ipcMain.handle('app:test-daily-standup', () => { mainWindow?.webContents.send('ai-companion:show-message', 'STANDUP_TRIGGER'); });
+ipcMain.handle('app:meditation-started', () => { isMeditating = true; });
+ipcMain.handle('app:meditation-cancelled', () => { isMeditating = false; });
+ipcMain.handle('app:meditation-completed', (event, uid, mins) => {
     isMeditating = false;
-});
-
-ipcMain.handle('app:meditation-completed', (event, userId, minutes) => {
-    isMeditating = false;
-    shell.beep(); // Play sound notification
-
+    shell.beep();
     const today = new Date().toISOString().split('T')[0];
     const current = getDailyBio(today);
-    const newVal = (current.meditationMinutes || 0) + minutes;
-    updateDailyBio(today, { meditationMinutes: newVal });
-    
-    // Log
-    logSystemEvent(`Meditation Session: ${minutes} min`, 'HEALTH');
+    updateDailyBio(today, { meditationMinutes: (current.meditationMinutes || 0) + mins });
     lastMeditationDate = new Date().toDateString();
-
-    // Challenge Check
-    const challenge: any = getDailyChallenge(userId, today);
+    const challenge: any = getDailyChallenge(uid, today);
     if (challenge && challenge.status === 'ACTIVE' && challenge.type === 'MINDFULNESS_MOMENT') {
-         const newProgress = challenge.progress + minutes;
-         const status = newProgress >= challenge.target ? 'COMPLETED' : 'ACTIVE';
-         updateDailyChallengeProgress(challenge.id, newProgress, status);
-         if (status === 'COMPLETED') {
-             sendAiNotification('🎉 Challenge Completed!', `Ukończyłeś: ${challenge.description} (+${challenge.xpReward} XP)`);
-             const profile = getProfile(userId);
-             if (profile) updateProfile({ ...profile, xp: profile.xp + challenge.xpReward });
-         }
+         const np = challenge.progress + mins;
+         updateDailyChallengeProgress(challenge.id, np, np >= challenge.target ? 'COMPLETED' : 'ACTIVE');
     }
-
-    // Show Cat with Congratulations
-    if (mainWindow) {
-        mainWindow.webContents.send('ai-companion:show-message', `Wspaniale! 🧘‍♀️ Zaliczono ${minutes} min. Jak się czujesz?`);
-        mainWindow.webContents.send('gamification:check', 'HEALTH_ACTION');
-    }
+    mainWindow?.webContents.send('ai-companion:show-message', `Wspaniale! 🧘‍♀️ Zaliczono ${mins} min.`);
+    mainWindow?.webContents.send('gamification:check', 'HEALTH_ACTION');
 });
-
-ipcMain.handle('app:skip-meditation', () => {
-    lastMeditationDate = new Date().toDateString();
-    logSystemEvent('Meditation skipped for today', 'HEALTH');
-});
-
-ipcMain.handle('app:complete-pomodoro', (event, taskId) => {
-    const task = getTasks(1).find(t => t.id === taskId); // Basic lookup
+ipcMain.handle('app:skip-meditation', () => { lastMeditationDate = new Date().toDateString(); });
+ipcMain.handle('app:complete-pomodoro', (event, tid) => {
+    const task = getTasks(1).find(t => t.id === tid);
     if (task) {
-        const newCount = (task.pomodoroCount || 0) + 1;
-        updateTask({ ...task, pomodoroCount: newCount });
-        
+        const nc = (task.pomodoroCount || 0) + 1;
+        updateTask({ ...task, pomodoroCount: nc });
         shell.beep();
-        // IMPORTANT flag ensures it shows even in Focus Mode
-        sendAiNotification('🍅 Pomodoro Ukończone!', `Zadanie "${task.title}" ma już ${newCount} pomidorów.`, 'IMPORTANT');
-        logSystemEvent(`Pomodoro Completed for task: ${task.title}`, 'PRODUCTIVITY');
-        
-        // Challenge Check
-        const today = new Date().toISOString().split('T')[0];
-        const challenge: any = getDailyChallenge(task.userId || 1, today);
+        sendAiNotification('🍅 Pomodoro Ukończone!', `Zadanie "${task.title}" ma już ${nc} pomidorów.`, 'IMPORTANT');
+        const challenge: any = getDailyChallenge(1, new Date().toISOString().split('T')[0]);
         if (challenge && challenge.status === 'ACTIVE' && challenge.type === 'POMODORO_MARATHON') {
-             const newProgress = challenge.progress + 1;
-             const status = newProgress >= challenge.target ? 'COMPLETED' : 'ACTIVE';
-             updateDailyChallengeProgress(challenge.id, newProgress, status);
-             if (status === 'COMPLETED') {
-                 sendAiNotification('🎉 Challenge Completed!', `Ukończyłeś: ${challenge.description} (+${challenge.xpReward} XP)`);
-                 const profile = getProfile(task.userId || 1);
-                 if (profile) updateProfile({ ...profile, xp: profile.xp + challenge.xpReward });
-             }
+             updateDailyChallengeProgress(challenge.id, challenge.progress + 1, (challenge.progress + 1) >= challenge.target ? 'COMPLETED' : 'ACTIVE');
         }
-        
-        if (mainWindow) {
-            mainWindow.webContents.send('ai-companion:show-message', `Świetna sesja! 🍅 Zasłużyłeś na 5 min przerwy. Rozpocząć timer przerwy?`);
-            mainWindow.webContents.send('gamification:check', 'POMODORO_COMPLETED');
-        }
+        mainWindow?.webContents.send('ai-companion:show-message', `Świetna sesja! 🍅 Zasłużyłeś na przerwę.`);
+        mainWindow?.webContents.send('gamification:check', 'POMODORO_COMPLETED');
     }
 });
 
-// --- Tray IPC Handlers ---
 ipcMain.on('tray:create', createTray);
 ipcMain.on('tray:destroy', destroyTray);
-ipcMain.on('tray:update-title', (event, title) => {
-  if (tray) {
-    tray.setTitle(title);
-  }
-});
-
-ipcMain.on('tray:update-tooltip', (event, tooltip) => {
-  if (tray) {
-    tray.setToolTip(tooltip);
-  }
-});
-
+ipcMain.on('tray:update-title', (event, t) => { tray?.setTitle(t); });
 ipcMain.on('tray:start-timer', (event, info) => {
   activeTaskInfo = info;
   if (trayTimerInterval) clearInterval(trayTimerInterval);
-
   hasSentFatigueWarning = false;
   updateServerState({ focusMode: true });
-
   updateTrayTitle();
   trayTimerInterval = setInterval(updateTrayTitle, 1000);
 });
-
 ipcMain.on('tray:stop-timer', () => {
   activeTaskInfo = null;
   if (trayTimerInterval) clearInterval(trayTimerInterval);
   trayTimerInterval = null;
   updateServerState({ focusMode: false });
-  if (tray) {
-    tray.setTitle('');
-    tray.setToolTip('Thingy App');
-  }
+  tray?.setTitle('');
 });
-
-ipcMain.on('tray:get-icon-path', (event) => {
-  event.returnValue = trayIconPath;
-});
-
-ipcMain.on('electron-shell-open-external', (event, url) => {
-  shell.openExternal(url);
-});
+ipcMain.on('electron-shell-open-external', (event, url) => { shell.openExternal(url); });
 
 let lastFragmentationNotificationTime = 0;
 let lastStretchingTime = Date.now();
 let lastWaterTime = Date.now();
 let lastMeditationDate: string | null = null;
-
-// Smart Notification States
 let sentMorningNudge = false;
 let sentEveningNudge = false;
-let standupShown = false; // New flag
+let standupShown = false;
 let lastStaleTaskCheck = 0;
 let currentDayString = new Date().toDateString();
 
 setInterval(() => {
-  const now = Date.now();
-  const currentDate = new Date();
-  const currentHour = currentDate.getHours();
-  const currentMinute = currentDate.getMinutes();
-  const dateString = currentDate.toDateString();
+  if (isQuitting) return;
+  try {
+      const now = Date.now();
+      const currentDate = new Date();
+      const currentHour = currentDate.getHours();
+      const currentMinute = currentDate.getMinutes();
+      const dateString = currentDate.toDateString();
 
-  // Reset daily flags at midnight
-  if (dateString !== currentDayString) {
-      sentMorningNudge = false;
-      sentEveningNudge = false;
-      standupShown = false; // Reset standup flag
-      lastMeditationDate = null;
-      currentDayString = dateString;
-  }
-
-  // --- 0. Morning Standup Auto-Trigger ---
-  // Trigger once between 8:00 and 11:00 if app is open
-  if (!standupShown && currentHour >= 8 && currentHour < 11) {
-      if (mainWindow && !mainWindow.isMinimized()) {
-          mainWindow.webContents.send('ai-companion:show-message', 'STANDUP_TRIGGER');
-          standupShown = true;
-          logSystemEvent('Daily Standup triggered automatically.', 'SYSTEM');
+      if (dateString !== currentDayString) {
+          sentMorningNudge = false; sentEveningNudge = false; standupShown = false; lastMeditationDate = null; currentDayString = dateString;
       }
-  }
 
-  // --- Health Reminders ---
-  const aiEnabled = getSetting('enable_ai_assistant') !== 'false';
-  
-  if (aiEnabled) {
-      const workStart = getSetting('workDayStart') || '09:00';
-      const workEnd = getSetting('workDayEnd') || '17:00';
-      const [startH, startM] = workStart.split(':').map(Number);
-      const [endH, endM] = workEnd.split(':').map(Number);
-      const nowMinutes = currentHour * 60 + currentMinute;
-      const startMinutes = startH * 60 + startM;
-      const endMinutes = endH * 60 + endM;
+      if (!standupShown && currentHour >= 8 && currentHour < 11) {
+          if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isMinimized()) {
+              mainWindow.webContents.send('ai-companion:show-message', 'STANDUP_TRIGGER');
+              standupShown = true;
+          }
+      }
 
-      const isWorkHours = nowMinutes >= startMinutes && nowMinutes <= endMinutes;
+      const aiEnabled = getSetting('enable_ai_assistant') !== 'false';
+      if (aiEnabled) {
+          const workStart = getSetting('workDayStart') || '09:00';
+          const workEnd = getSetting('workDayEnd') || '17:00';
+          const [sh, sm] = workStart.split(':').map(Number);
+          const [eh, em] = workEnd.split(':').map(Number);
+          const nm = currentHour * 60 + currentMinute;
+          const isWorkHours = nm >= (sh * 60 + sm) && nm <= (eh * 60 + em);
 
-      // 1. Water (Random interval based on config, ONLY during work hours)
-      if (getSetting('enable_water_reminders') === 'true' && isWorkHours) {
-          const interval = Number(getSetting('water_interval') || 90) * 60 * 1000;
-          
-          if (now - lastWaterTime > interval) {
-              if (Math.random() < 0.3) {
+          if (getSetting('enable_water_reminders') === 'true' && isWorkHours) {
+              if (now - lastWaterTime > Number(getSetting('water_interval') || 90) * 60000 && Math.random() < 0.3) {
                   sendAiNotification('💧 Nawodnienie', 'Pamiętasz o piciu wody?');
                   lastWaterTime = now;
               }
           }
-      }
-
-      // 2. Stretching (Interval based, only during work hours)
-      const stretchingEnabled = getSetting('enable_stretching_reminders') === 'true';
-      if (stretchingEnabled && isWorkHours) {
-          const interval = Number(getSetting('stretching_interval') || 60) * 60 * 1000;
-          if (now - lastStretchingTime > interval) {
-              const idleTime = powerMonitor.getSystemIdleTime();
-              if (idleTime < 60) {
-                  sendAiNotification('🏃 Czas na ruch!', 'Wyprostuj plecy i rozluźnij szyję. Zrobione?');
+          if (getSetting('enable_stretching_reminders') === 'true' && isWorkHours) {
+              if (now - lastStretchingTime > Number(getSetting('stretching_interval') || 60) * 60000 && powerMonitor.getSystemIdleTime() < 60) {
+                  sendAiNotification('🏃 Czas na ruch!', 'Wyprostuj plecy.');
                   lastStretchingTime = now;
-              } else {
-                  lastStretchingTime = now - interval + (5 * 60 * 1000); 
+              }
+          }
+          if (getSetting('enable_meditation_reminders') === 'true' && lastMeditationDate !== dateString) {
+              const [th, tm] = (getSetting('meditation_time') || '09:00').split(':').map(Number);
+              if (nm >= (th * 60 + tm) && nm < (th * 60 + tm) + 60) {
+                   sendAiNotification('🧘‍♀️ Czas na Mindfulness', 'Może krótka chwila na oddech?');
+                   lastMeditationDate = dateString;
+              }
+          }
+          if (activeTaskInfo) sentMorningNudge = true;
+          if (!sentMorningNudge && nm > (sh * 60 + sm) + 60 && nm < (eh * 60 + em)) {
+              sendAiNotification('☕ Trudny poranek?', 'Zacznij od czegoś małego.');
+              sentMorningNudge = true;
+          }
+
+          // 5. Golden Hour check
+          if (cachedInsights && lastPeakHourNotificationDate !== dateString) {
+              const currentHour = new Date().getHours();
+              if (cachedInsights.peakHours.includes(currentHour)) {
+                  sendAiNotification('🚀 Golden Hour', `To Twój czas najwyższej produktywności!`, 'IMPORTANT');
+                  lastPeakHourNotificationDate = dateString;
+              }
+          }
+
+          // 6. Fragmented Focus check
+          if (now - lastFragmentationNotificationTime > 1800000) { // 30 min
+              if (activeTaskInfo && activeTaskInfo.userId) {
+                  const sessions = getRecentWorkSessions(activeTaskInfo.userId, 1);
+                  const oneHourAgo = now - 3600000;
+                  const recentShortSessions = sessions.filter((s: any) => {
+                      const endTime = new Date(s.endTime || s.startTime).getTime();
+                      return endTime > oneHourAgo && s.duration < 600000; // < 10m
+                  });
+                  if (recentShortSessions.length >= 5) {
+                      sendAiNotification('⚠️ Fragmented Focus', 'Skaczesz między zadaniami. Może czas na jeden blok głębokiej pracy?');
+                      lastFragmentationNotificationTime = now;
+                  }
               }
           }
       }
-
-      // 2. Meditation (Time based)
-      const meditationEnabled = getSetting('enable_meditation_reminders') === 'true';
-      if (meditationEnabled && lastMeditationDate !== dateString) {
-          const targetTime = getSetting('meditation_time') || '09:00';
-          const [targetH, targetM] = targetTime.split(':').map(Number);
-          
-          const nowMins = currentHour * 60 + currentMinute;
-          const targetMins = targetH * 60 + targetM;
-          
-          // Check if we passed the target time (with a tolerance window, e.g., within the last 15 mins to avoid spam on startup if missed)
-          if (nowMins >= targetMins && nowMins < targetMins + 60) {
-               sendAiNotification('🧘‍♀️ Czas na Mindfulness', 'Może krótka chwila na oddech?');
-               lastMeditationDate = dateString;
-          }
-      }
-
-      // --- Advanced Productivity Algorithms ---
-      // (workStart/workEnd variables are already declared above)
-
-      // 3. Morning Nudge (Anti-Procrastination)
-      // Checks every interval
-      if (activeTaskInfo) {
-          // User IS working now, so disable the morning nudge for today
-          sentMorningNudge = true; 
-      }
-
-      // Only send if NOT sent yet, time is right, AND user is NOT working right now
-      if (!sentMorningNudge && !activeTaskInfo && currentMinutes > startMinutes + 60 && currentMinutes < endMinutes) {
-          const userId = activeTaskInfo?.userId || 1; 
-          const todayStats = getDailyProductivity(userId).find((d:any) => d.date === new Date().toISOString().split('T')[0]);
-          
-          if (!todayStats || todayStats.totalDuration === 0) {
-              sendAiNotification('☕ Trudny poranek?', 'Minęła godzina pracy, a licznik stoi. Zacznij od czegoś małego (5 min)!');
-              sentMorningNudge = true;
-          } else {
-              // User has worked today (found in stats), so don't nudge
-              sentMorningNudge = true;
-          }
-      }
-
-      // 4. Evening Wrap-up
-      if (!sentEveningNudge && currentMinutes >= endMinutes - 30 && currentMinutes < endMinutes) {
-          sendAiNotification('🏁 Ostatnia prosta', 'Koniec dnia blisko. Czas na podsumowanie i plan na jutro!');
-          sentEveningNudge = true;
-      }
-
-      // 5. "Eat the Frog" (Stale High Priority Tasks) - Check every 2 hours
-      if (now - lastStaleTaskCheck > 2 * 60 * 60 * 1000) {
-          const userId = activeTaskInfo?.userId || 1;
-          const tasks = getTasks(userId);
-          const twoDaysAgo = new Date();
-          twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-
-          const frog = tasks.find((t: any) => 
-              t.priority === 'High' && 
-              t.status !== 'Completed' && 
-              new Date(t.createdAt) < twoDaysAgo
-          );
-
-          if (frog) {
-              sendAiNotification('🐸 Zjedz tę żabę!', `Zadanie "${frog.title}" czeka już długo. Może zajmiemy się tym teraz?`);
-          }
-          lastStaleTaskCheck = now;
-      }
-  }
-
-  if (cachedInsights) {
-    const currentHour = new Date().getHours();
-    const dateString = new Date().toDateString();
-
-    if (lastPeakHourNotificationDate !== dateString) {
-      if (cachedInsights.peakHours.includes(currentHour)) {
-        logSystemEvent(`Golden Hour Detected: It's ${currentHour}:00 - your peak productivity time.`, 'PRODUCTIVITY');
-        sendAiNotification('🚀 Golden Hour', `It's ${currentHour}:00! To Twój czas najwyższej produktywności.`);
-        lastPeakHourNotificationDate = dateString;
-      }
-    }
-  }
-
-  if (now - lastFragmentationNotificationTime > 30 * 60 * 1000) {
-      if (activeTaskInfo && activeTaskInfo.userId) {
-          const sessions = getRecentWorkSessions(activeTaskInfo.userId, 1);
-          const oneHourAgo = now - (60 * 60 * 1000);
-
-          const recentShortSessions = sessions.filter((s: any) => {
-              const endTime = new Date(s.endTime || s.startTime).getTime();
-              return endTime > oneHourAgo && s.duration < (10 * 60 * 1000);
-          });
-
-          if (recentShortSessions.length >= 5) {
-              logSystemEvent(`High Fragmentation Detected: ${recentShortSessions.length} short sessions (<10m) in the last hour.`, 'PRODUCTIVITY');
-
-              sendAiNotification('⚠️ Fragmented Focus', 'Skaczesz między zadaniami. Może czas skupić się na jednym?');
-
-              lastFragmentationNotificationTime = now;
-          }
-      }
-  }
-
-  checkHabitReminders();
-
-}, 5 * 60 * 1000);
+      checkHabitReminders();
+  } catch (e) { console.error('Interval error:', e); }
+}, 300000);
 
 setInterval(() => {
   if (activeTaskInfo) {
-    const idleTime = powerMonitor.getSystemIdleTime();
-    const threshold = Number(getSetting('idleTimeout') || 600);
-    if (idleTime >= threshold) {
-      if (mainWindow) {
-        mainWindow.webContents.send('activity:idle-detected');
-      }
-    }
+    if (powerMonitor.getSystemIdleTime() >= Number(getSetting('idleTimeout') || 600)) mainWindow?.webContents.send('activity:idle-detected');
   }
 }, 60000);
-
 
 if (process.env.NODE_ENV === 'production') {
   const sourceMapSupport = require('source-map-support');
   sourceMapSupport.install();
 }
 
-const isDebug = process.env.NODE_ENV === 'development' || process.env.DEBUG_PROD === 'true';
-
-if (isDebug) {
-  // require('electron-debug')();
-}
-
-const installExtensions = async () => {
-  const installer = require('electron-devtools-installer');
-  const forceDownload = !!process.env.UPGRADE_EXTENSIONS;
-  const extensions = ['REACT_DEVELOPER_TOOLS'];
-  return installer.default(extensions.map((name) => installer[name]), forceDownload).catch(console.log);
-};
-
 const createWindow = async () => {
-  if (isDebug) await installExtensions();
-
   mainWindow = new BrowserWindow({
-    show: false,
-    width: 1254,
-    height: 728,
-    icon: getAssetPath('icon.png'),
-    webPreferences: {
-      preload: app.isPackaged ? path.join(__dirname, 'preload.js') : path.join(__dirname, '../../.erb/dll/preload.js'),
-      devTools: true,
-    },
+    show: false, width: 1254, height: 728, icon: getAssetPath('icon.png'),
+    webPreferences: { preload: app.isPackaged ? path.join(__dirname, 'preload.js') : path.join(__dirname, '../../.erb/dll/preload.js'), devTools: true },
     opacity: Number(getSetting('window_opacity')) || 1.0
   });
-
   mainWindow.loadURL(resolveHtmlPath('index.html'));
-
-  mainWindow.on('ready-to-show', () => {
-    if (!mainWindow) {
-      throw new Error('"mainWindow" is not defined');
-    }
-    if (process.env.START_MINIMIZED) {
-      mainWindow.minimize();
-    } else {
-      mainWindow.show();
-    }
-  });
-
+  mainWindow.on('ready-to-show', () => { if (process.env.START_MINIMIZED) mainWindow?.minimize(); else mainWindow?.show(); });
   mainWindow.on('closed', () => { mainWindow = null; });
-
-  const menuBuilder = new MenuBuilder(mainWindow);
-  menuBuilder.buildMenu();
-
-  mainWindow.webContents.setWindowOpenHandler((edata) => {
-    shell.openExternal(edata.url);
-    return { action: 'deny' };
-  });
+  new MenuBuilder(mainWindow).buildMenu();
 };
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
-
-app.on('activate', () => {
-  if (mainWindow === null) {
-    createWindow();
-  }
-});
-
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+app.on('activate', () => { if (mainWindow === null) createWindow(); });
 app.whenReady().then(async () => {
-  try {
-    log.info('Initializing database...');
-    await initDB();
-    startServer();
-    startAppMonitor();
-    log.info('Database initialized successfully.');
-  } catch (error) {
-    log.error('CRITICAL: Failed to initialize database on startup.', error);
-    app.quit();
-    return;
-  }
+  await initDB(); startServer(); startAppMonitor(); createWindow();
+  globalShortcut.register('CommandOrControl+K', () => { mainWindow?.webContents.send('open-search'); });
+}).catch(app.quit);
 
-  createWindow();
-
-  globalShortcut.register('CommandOrControl+K', () => {
-    mainWindow?.webContents.send('open-search');
-  });
-
-  globalShortcut.register('CommandOrControl+Shift+T', () => {
-    sendAiNotification('Testowe Powiadomienie', 'To jest wiadomość testowa od Twojego Kota! 🐾');
-  });
-
-}).catch((error) => {
-  log.error('CRITICAL: Unhandled error in app.whenReady.', error);
-  app.quit();
-});
-
-app.on('will-quit', () => {
-  stopServer();
-  stopAppMonitor();
-  globalShortcut.unregisterAll();
-});
+app.on('will-quit', () => { stopServer(); stopAppMonitor(); globalShortcut.unregisterAll(); });
