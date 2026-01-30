@@ -263,22 +263,17 @@ const updateTrayTitle = () => {
     const elapsedMinutes = elapsedSinceStart / (1000 * 60);
     const limit = cachedInsights.fatigueProfile.maxRecommended;
     if (elapsedMinutes > limit && limit > 10) {
-      const notification = new Notification({
-        title: '🧠 Brain Fatigue Detected',
-        body: `Passed session limit of ${limit}m. A break is recommended.`,
-        icon: appIconPath,
-        actions: [{ type: 'button', text: 'Stop Timer & Rest' }]
-      });
-      notification.on('action', () => {
-        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('timer:stop-requested');
-      });
-      notification.on('click', () => {
-          if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.show();
-              mainWindow.webContents.send('ai-companion:show-message', "Zrobiłeś sobie przerwę? ☕");
-          }
-      });
-      notification.show();
+      sendAiNotification(
+          '🧠 Brain Fatigue Detected', 
+          `Passed session limit of ${limit}m. A break is recommended.`, 
+          'IMPORTANT'
+      );
+      
+      // Auto-show cat for interaction
+      if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('ai-companion:show-message', "Zrobiłeś sobie przerwę? ☕");
+      }
+      
       hasSentFatigueWarning = true;
     }
   }
@@ -533,7 +528,16 @@ ipcMain.handle('app:complete-pomodoro', (event, tid) => {
         const nc = (task.pomodoroCount || 0) + 1;
         updateTask({ ...task, pomodoroCount: nc });
         shell.beep();
-        sendAiNotification('🍅 Pomodoro Ukończone!', `Zadanie "${task.title}" ma już ${nc} pomidorów.`, 'IMPORTANT');
+        // IMPORTANT flag ensures it shows even in Focus Mode
+        sendAiNotification('🍅 Pomodoro Ukończone!', `Zadanie "${task.title}" ma już ${newCount} pomidorów.`, 'IMPORTANT');
+        logSystemEvent(`Pomodoro Completed for task: ${task.title}`, 'PRODUCTIVITY');
+        
+        // Show Cat IMMEDIATELY (bypass notification click requirement)
+        if (mainWindow && !mainWindow.isDestroyed()) {
+             mainWindow.webContents.send('ai-companion:show-message', `🍅 Pomodoro zakończone! Czas na przerwę.`);
+        }
+        
+        // Challenge Check
         const challenge: any = getDailyChallenge(1, new Date().toISOString().split('T')[0]);
         if (challenge && challenge.status === 'ACTIVE' && challenge.type === 'POMODORO_MARATHON') {
              updateDailyChallengeProgress(challenge.id, challenge.progress + 1, (challenge.progress + 1) >= challenge.target ? 'COMPLETED' : 'ACTIVE');
@@ -549,8 +553,11 @@ ipcMain.on('tray:update-title', (event, t) => { tray?.setTitle(t); });
 ipcMain.on('tray:start-timer', (event, info) => {
   activeTaskInfo = info;
   if (trayTimerInterval) clearInterval(trayTimerInterval);
+
   hasSentFatigueWarning = false;
+  isMeditating = false; // Reset just in case
   updateServerState({ focusMode: true });
+
   updateTrayTitle();
   trayTimerInterval = setInterval(updateTrayTitle, 1000);
 });
@@ -617,7 +624,7 @@ setInterval(() => {
           if (getSetting('enable_meditation_reminders') === 'true' && lastMeditationDate !== dateString) {
               const [th, tm] = (getSetting('meditation_time') || '09:00').split(':').map(Number);
               if (nm >= (th * 60 + tm) && nm < (th * 60 + tm) + 60) {
-                   sendAiNotification('🧘‍♀️ Czas na Mindfulness', 'Może krótka chwila na oddech?');
+                   sendAiNotification('🧘‍♀️ Czas na Mindfulness', 'Może krótka chwila na oddech?', 'IMPORTANT');
                    lastMeditationDate = dateString;
               }
           }
