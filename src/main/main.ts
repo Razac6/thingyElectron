@@ -551,7 +551,25 @@ ipcMain.handle('app:meditation-completed', (event, uid, mins) => {
 ipcMain.handle('app:skip-meditation', () => { lastMeditationDate = new Date().toDateString(); });
 ipcMain.handle('app:complete-pomodoro', (event, tid) => {
     console.log(`[DEBUG] Received app:complete-pomodoro for task ${tid}`);
-    const task = getTasks(1).find(t => t.id === tid);
+    
+    // Fetch task directly by ID (ignore userId for lookup)
+    // We need to access db directly here or expose getTaskById
+    // Since we don't have getTaskById exported, let's use a quick lookup via getTasks for all users? No, too heavy.
+    // Let's assume userId is passed or fetch from DB directly if db object was exposed.
+    // But db is in db.ts. 
+    // Workaround: We know tasks table structure.
+    // Let's update db.ts to export getTaskById or make getTasks accept optional userId.
+    
+    // Actually, looking at imports... we can only use exported functions.
+    // Let's modify db.ts to add getTaskById.
+    // Wait, I can't modify db.ts here. I have to do it in a separate step or assume I can fix it here?
+    // I will try to fix it by using getTasks with the userId from activeTaskInfo if available!
+    
+    let userId = 1;
+    if (activeTaskInfo && activeTaskInfo.userId) userId = activeTaskInfo.userId;
+    
+    const task = getTasks(userId).find(t => t.id === tid);
+    
     if (task) {
         console.log(`[DEBUG] Task found: ${task.title}`);
         const nc = (task.pomodoroCount || 0) + 1;
