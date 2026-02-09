@@ -178,14 +178,14 @@ export default function Layout({ children }: LayoutProps) {
       navigate('/list', { state: { draftTask: draft } });
     };
 
-    window.electron.ipcRenderer.on('open-search', handleOpenSearch);
-    window.electron.ipcRenderer.on('open-settings', handleOpenSettings);
-    window.electron.ipcRenderer.on('task:draft-received', handleTaskDraft);
+    const unsubSearch = window.electron.ipcRenderer.on('open-search', handleOpenSearch);
+    const unsubSettings = window.electron.ipcRenderer.on('open-settings', handleOpenSettings);
+    const unsubDraft = window.electron.ipcRenderer.on('task:draft-received', handleTaskDraft);
 
     return () => {
-      window.electron.ipcRenderer.removeListener('open-search', handleOpenSearch);
-      window.electron.ipcRenderer.removeListener('open-settings', handleOpenSettings);
-      window.electron.ipcRenderer.removeListener('task:draft-received', handleTaskDraft);
+      if (unsubSearch) unsubSearch();
+      if (unsubSettings) unsubSettings();
+      if (unsubDraft) unsubDraft();
     };
   }, [navigate]);
 

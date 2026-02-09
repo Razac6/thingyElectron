@@ -153,8 +153,9 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
       }
     };
 
-    window.electron.ipcRenderer.on('activity:idle-detected', handleIdle);
+    const unsubIdle = window.electron.ipcRenderer.on('activity:idle-detected', handleIdle);
     
+    // Listener for notification action "Stop Timer"
     const handleStopRequest = () => {
         const currentTasks = tasksRef.current;
         const activeTask = currentTasks.find(t => t.startTimer);
@@ -168,21 +169,28 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
             }
         }
     };
-    window.electron.ipcRenderer.on('timer:stop-requested', handleStopRequest);
+    const unsubStop = window.electron.ipcRenderer.on('timer:stop-requested', handleStopRequest);
 
+    // Refresh data on gamification events
     const handleGamificationUpdate = () => {
         fetchAllData();
     };
-    window.electron.ipcRenderer.on('gamification:check', handleGamificationUpdate);
+    const unsubGame = window.electron.ipcRenderer.on('gamification:check', handleGamificationUpdate);
     
     // Auto-refresh on new day
-    window.electron.ipcRenderer.on('app:day-changed', () => {
+    const unsubDay = window.electron.ipcRenderer.on('app:day-changed', () => {
         console.log('Day changed detected. Refreshing data...');
         fetchAllData();
     });
 
-    return () => {};
-  }, []);
+    // Cleanup
+    return () => {
+       if (unsubIdle) unsubIdle();
+       if (unsubStop) unsubStop();
+       if (unsubGame) unsubGame();
+       if (unsubDay) unsubDay();
+    };
+  }, []); // Mount once
 
   const fetchAllData = async () => {
     setIsLoading(true);
@@ -330,7 +338,7 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
         ...taskToUpdate,
         spendTime: newSpendTime,
         startTimer: null,
-        updateStatusDate: new Date().toLocaleDateString(),
+        updateStatusDate: new Date().toISOString(),
       };
 
       await logWorkSessionService({

@@ -148,6 +148,7 @@ const BoostOverlay = ({ open, onClose }: BoostOverlayProps) => {
   }, [open, activeTask, isPomodoro]);
 
     const handlePomodoroComplete = async () => {
+        console.log('BoostOverlay: Pomodoro Timer Finished! Triggering completePomodoro...');
         if (!activeTask) return;
         
         await window.electron.app.completePomodoro(activeTask.id);

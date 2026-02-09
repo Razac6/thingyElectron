@@ -235,7 +235,7 @@ const trayIconPath = getAssetPath('icons', 'tray-icon.png');
 const appIconPath = getAssetPath('icons', 'icon.png');
 
 let trayTimerInterval: NodeJS.Timeout | null = null;
-let activeTaskInfo: { title: string; startTime: number; estimate: number; initialSpendTime: number; userId?: number } | null = null;
+let activeTaskInfo: { title: string; startTime: number; estimate: number; initialSpendTime: number; userId?: number; timerMode?: string; duration?: number } | null = null;
 
 function formatTimeForTray(ms: number): string {
   if (ms <= 0) return '00:00';
@@ -249,17 +249,40 @@ function formatTimeForTray(ms: number): string {
 
 const updateTrayTitle = () => {
   if (!tray || !activeTaskInfo) return;
-  const { title, startTime, estimate, initialSpendTime } = activeTaskInfo;
-  const estimateTime = (estimate || 0) * 3600 * 1000;
+  const { title, startTime, estimate, initialSpendTime, timerMode } = activeTaskInfo;
+  
   const currentTime = Date.now();
   const elapsedSinceStart = currentTime - startTime;
-  const totalTime = initialSpendTime + elapsedSinceStart;
-  const remaining = estimateTime - totalTime;
-  const timeString = formatTimeForTray(remaining);
+  
+  let timeString = '';
+  
+  if (timerMode === 'pomodoro') {
+      // Countdown
+      const pomodoroDuration = Number(getSetting('pomodoro_duration') || 25) * 60 * 1000;
+      const remaining = Math.max(0, pomodoroDuration - elapsedSinceStart);
+      timeString = formatTimeForTray(remaining);
+  } else {
+      // Count up
+      const totalTime = initialSpendTime + elapsedSinceStart;
+      const estimateTime = (estimate || 0) * 3600 * 1000;
+      // Show remaining if estimated, or just total spent? 
+      // Previous logic was remaining from estimate. Let's stick to elapsed for clarity or remaining.
+      // Original code calculated 'remaining' from estimate.
+      const remainingFromEst = (estimateTime > 0) ? (estimateTime - totalTime) : totalTime;
+      // If estimate is 0, show elapsed. If estimate exists, show remaining.
+      // But user wants to see "working time". Let's show elapsed for normal tasks to be safe, 
+      // OR stick to original logic if it was counting down from estimate.
+      // Original logic: const remaining = estimateTime - totalTime;
+      
+      // Let's keep original logic for normal tasks but make sure it handles negative
+      const remaining = estimateTime - totalTime;
+      timeString = formatTimeForTray(remaining);
+  }
+
   const shortTitle = title.length > 10 ? `${title.substring(0, 10)}...` : title;
   const menubarTitle = `${shortTitle} ${timeString}`;
   tray.setTitle(menubarTitle);
-  tray.setToolTip(`Working on: ${title}`);
+  tray.setToolTip(`Working on: ${title} (${timerMode || 'normal'})`);
 
   if (cachedInsights && !hasSentFatigueWarning) {
     const elapsedMinutes = elapsedSinceStart / (1000 * 60);
@@ -527,55 +550,58 @@ ipcMain.handle('app:meditation-completed', (event, uid, mins) => {
 });
 ipcMain.handle('app:skip-meditation', () => { lastMeditationDate = new Date().toDateString(); });
 ipcMain.handle('app:complete-pomodoro', (event, tid) => {
+    console.log(`[DEBUG] Received app:complete-pomodoro for task ${tid}`);
     const task = getTasks(1).find(t => t.id === tid);
     if (task) {
+        console.log(`[DEBUG] Task found: ${task.title}`);
         const nc = (task.pomodoroCount || 0) + 1;
-        updateTask({ ...task, pomodoroCount: newCount });
+        updateTask({ ...task, pomodoroCount: nc });
         
+        console.log('[DEBUG] Playing beep...');
         shell.beep();
         
-        // Direct Notification (Bypass filters)
-        const pomNotification = new Notification({
-            title: '🍅 Pomodoro Ukończone!',
-            body: `Zadanie "${task.title}" ma już ${newCount} pomidorów.`,
-            icon: appIconPath,
-            silent: false
-        });
-        pomNotification.on('click', () => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-                if (mainWindow.isMinimized()) mainWindow.restore();
-                mainWindow.show();
-                mainWindow.webContents.send('ai-companion:show-message', `🍅 Pomodoro zakończone! Czas na przerwę.`);
-            }
-        });
-        pomNotification.show();
+        console.log('[DEBUG] Attempting to show Notification...');
+        try {
+            const pomNotification = new Notification({
+                title: '🍅 Pomodoro Ukończone!',
+                body: `Zadanie "${task.title}" ma już ${nc} pomidorów.`,
+                icon: appIconPath,
+                silent: false
+            });
+            
+            pomNotification.on('show', () => console.log('[DEBUG] Notification \'show\' event fired.'));
+            pomNotification.on('failed', (e) => console.error('[DEBUG] Notification failed:', e));
+            
+            pomNotification.on('click', () => {
+                console.log('[DEBUG] Notification clicked.');
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                    if (mainWindow.isMinimized()) mainWindow.restore();
+                    mainWindow.show();
+                    mainWindow.webContents.send('ai-companion:show-message', `🍅 Pomodoro zakończone! Czas na przerwę.`);
+                }
+            });
+            pomNotification.show();
+            console.log('[DEBUG] Notification.show() called.');
+        } catch (e) {
+            console.error('[DEBUG] CRITICAL: Failed to create/show notification:', e);
+        }
 
-        // macOS: Bounce dock icon
         if (process.platform === 'darwin') {
+            console.log('[DEBUG] Bouncing dock...');
             app.dock.bounce('critical');
         }
-
-        logSystemEvent(`Pomodoro Completed for task: ${task.title}`, 'PRODUCTIVITY');
         
-        // Show Cat IMMEDIATELY and bring window to front
-        if (mainWindow && !mainWindow.isDestroyed()) {
-             if (mainWindow.isMinimized()) mainWindow.restore();
-             mainWindow.show();
-             mainWindow.focus(); // Force focus
-             mainWindow.setAlwaysOnTop(true); // Temporary flash on top
-             mainWindow.setAlwaysOnTop(false);
-             
-             mainWindow.webContents.send('ai-companion:show-message', `🍅 Pomodoro zakończone! Czas na przerwę.`);
-             mainWindow.webContents.send('gamification:check', 'POMODORO_COMPLETED');
-        }
-        
-        // Challenge Check
+        // ... rest of logic
         const challenge: any = getDailyChallenge(1, new Date().toISOString().split('T')[0]);
         if (challenge && challenge.status === 'ACTIVE' && challenge.type === 'POMODORO_MARATHON') {
              updateDailyChallengeProgress(challenge.id, challenge.progress + 1, (challenge.progress + 1) >= challenge.target ? 'COMPLETED' : 'ACTIVE');
         }
-        mainWindow?.webContents.send('ai-companion:show-message', `Świetna sesja! 🍅 Zasłużyłeś na przerwę.`);
-        mainWindow?.webContents.send('gamification:check', 'POMODORO_COMPLETED');
+        if (mainWindow) {
+            mainWindow.webContents.send('ai-companion:show-message', `Świetna sesja! 🍅 Zasłużyłeś na przerwę.`);
+            mainWindow.webContents.send('gamification:check', 'POMODORO_COMPLETED');
+        }
+    } else {
+        console.error(`[DEBUG] Task ${tid} not found!`);
     }
 });
 

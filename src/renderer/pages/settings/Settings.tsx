@@ -182,6 +182,35 @@ function Settings() {
               label="Enable Brain Fatigue Warnings"
             />
         </Box>
+        
+        <Divider sx={{ my: 2 }} />
+        
+        <Grid container spacing={2}>
+            <Grid item xs={12} sm={6}>
+                <Typography gutterBottom>Window Opacity</Typography>
+                <Slider
+                    value={Number(settings.window_opacity) || 1.0}
+                    onChange={(_, val) => {
+                        updateSetting('window_opacity', String(val));
+                        window.electron.app.setWindowOpacity(val as number);
+                    }}
+                    step={0.05}
+                    min={0.5}
+                    max={1.0}
+                    valueLabelDisplay="auto"
+                />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+                <Typography gutterBottom>Activity Graph Range (Days)</Typography>
+                <TextField 
+                    type="number" 
+                    size="small" 
+                    fullWidth 
+                    value={settings.activityGraphDays || 365} 
+                    onChange={(e) => updateSetting('activityGraphDays', e.target.value)}
+                />
+            </Grid>
+        </Grid>
       </Paper>
 
       {/* Shutdown Ritual Section */}
@@ -265,9 +294,37 @@ function Settings() {
                     onChange={(e) => updateSetting('pomodoro_duration', e.target.value)}
                 />
             </Grid>
+            <Grid item xs={12} sm={6}>
+                <Typography gutterBottom>Complexity Threshold (SP)</Typography>
+                <TextField 
+                    type="number" 
+                    size="small" 
+                    fullWidth 
+                    value={settings.complexityThreshold || 8} 
+                    onChange={(e) => updateSetting('complexityThreshold', e.target.value)}
+                />
+            </Grid>
         </Grid>
 
         <Box sx={{ mt: 2 }}>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={settings.enableRewardAnimations !== 'false'}
+                  onChange={(e) => updateSetting('enableRewardAnimations', String(e.target.checked))}
+                />
+              }
+              label="Enable Reward Animations (Confetti)"
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={settings.enableFatigueWarnings !== 'false'}
+                  onChange={(e) => updateSetting('enableFatigueWarnings', String(e.target.checked))}
+                />
+              }
+              label="Enable Brain Fatigue Warnings"
+            />
             <FormControlLabel
               control={
                 <Switch
@@ -298,15 +355,71 @@ function Settings() {
         </Box>
       </Paper>
 
+      {/* Web Integration Section */}
+      <Paper sx={{ p: 3, mb: 3 }}>
+          <Typography variant="h6" gutterBottom>Web Integration</Typography>
+          <FormControlLabel
+              control={
+                  <Switch
+                      checked={settings.browser_integration_enabled !== 'false'}
+                      onChange={(e) => updateSetting('browser_integration_enabled', String(e.target.checked))}
+                  />
+              }
+              label="Enable Browser Integration (Chrome Extension)"
+          />
+          <FormControlLabel
+              control={
+                  <Switch
+                      checked={settings.desktop_app_monitoring_enabled !== 'false'}
+                      onChange={(e) => updateSetting('desktop_app_monitoring_enabled', String(e.target.checked))}
+                  />
+              }
+              label="Enable Desktop App Monitoring"
+          />
+          <FormControlLabel
+              control={
+                  <Switch
+                      checked={settings.web_blocking_only_focus !== 'false'}
+                      onChange={(e) => updateSetting('web_blocking_only_focus', String(e.target.checked))}
+                  />
+              }
+              label="Block Sites Only During Focus Mode"
+          />
+          
+          <Box sx={{ mt: 2 }}>
+              <Typography variant="subtitle2" gutterBottom>Always Blocked Sites (Distractions)</Typography>
+              <Typography variant="caption" color="text.secondary" paragraph>
+                  These sites will be blocked or modified (e.g. Shorts hidden) if integration is active.
+              </Typography>
+              {/* Simple list display for now, full editor was complex. 
+                  If we had a chip editor here it would be best. 
+                  Let's add a simple text area for JSON editing as a power user fallback or just list them.
+              */}
+              <TextField
+                  label="Blocked Sites (JSON Array)"
+                  multiline
+                  rows={3}
+                  fullWidth
+                  variant="outlined"
+                  value={settings.web_blocking_sites || '[]'}
+                  onChange={(e) => updateSetting('web_blocking_sites', e.target.value)}
+                  helperText='Example: ["facebook.com", "youtube.com/shorts"]'
+              />
+          </Box>
+      </Paper>
+
       {/* Debug Section */}
       <Paper sx={{ p: 3, bgcolor: '#fff3e0' }}>
           <Typography variant="h6" color="warning.main" gutterBottom>Debug Zone</Typography>
-          <Box sx={{ display: 'flex', gap: 2 }}>
+          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
               <Button variant="outlined" color="warning" onClick={handleTestNotification}>
                   Test Notification (Kot)
               </Button>
               <Button variant="outlined" color="warning" onClick={handleTestStandup}>
                   Test Daily Standup
+              </Button>
+              <Button variant="outlined" color="secondary" onClick={() => window.electron.app.openDevTools()}>
+                  Open DevTools
               </Button>
           </Box>
       </Paper>

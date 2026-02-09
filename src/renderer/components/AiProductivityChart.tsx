@@ -109,7 +109,7 @@ const AiProductivityChart = () => {
       <Typography variant="body2" color="inherit">
         Ten wykres to Twoje "Lustro Produktywności". Porównuje Twój rzeczywisty czas pracy z tym, co przewiduje AI.
       </Typography>
-      <Typography variant="body2" color="inherit" mt={1}>
+      <Typography variant="body2" color="inherit" mt={1} component="div">
         <ul>
           <li><strong>Rzeczywistość &lt; AI:</strong> Jesteś w stanie Flow.</li>
           <li><strong>Rzeczywistość &gt; AI:</strong> Coś Cię blokuje lub zadanie jest trudniejsze niż myślałeś.</li>
