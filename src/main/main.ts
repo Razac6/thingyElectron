@@ -530,10 +530,31 @@ ipcMain.handle('app:complete-pomodoro', (event, tid) => {
     const task = getTasks(1).find(t => t.id === tid);
     if (task) {
         const nc = (task.pomodoroCount || 0) + 1;
-        updateTask({ ...task, pomodoroCount: nc });
+        updateTask({ ...task, pomodoroCount: newCount });
+        
         shell.beep();
-        // IMPORTANT flag ensures it shows even in Focus Mode
-        sendAiNotification('🍅 Pomodoro Ukończone!', `Zadanie "${task.title}" ma już ${newCount} pomidorów.`, 'IMPORTANT');
+        
+        // Direct Notification (Bypass filters)
+        const pomNotification = new Notification({
+            title: '🍅 Pomodoro Ukończone!',
+            body: `Zadanie "${task.title}" ma już ${newCount} pomidorów.`,
+            icon: appIconPath,
+            silent: false
+        });
+        pomNotification.on('click', () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                if (mainWindow.isMinimized()) mainWindow.restore();
+                mainWindow.show();
+                mainWindow.webContents.send('ai-companion:show-message', `🍅 Pomodoro zakończone! Czas na przerwę.`);
+            }
+        });
+        pomNotification.show();
+
+        // macOS: Bounce dock icon
+        if (process.platform === 'darwin') {
+            app.dock.bounce('critical');
+        }
+
         logSystemEvent(`Pomodoro Completed for task: ${task.title}`, 'PRODUCTIVITY');
         
         // Show Cat IMMEDIATELY and bring window to front

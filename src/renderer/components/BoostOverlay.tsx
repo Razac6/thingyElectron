@@ -147,12 +147,12 @@ const BoostOverlay = ({ open, onClose }: BoostOverlayProps) => {
     return () => clearInterval(interval);
   }, [open, activeTask, isPomodoro]);
 
-  const handlePomodoroComplete = async () => {
-      if (!activeTask) return;
-      // @ts-ignore
-      await window.electron.app.completePomodoro(activeTask.id);
-      stopTimer(activeTask.id);
-  };
+    const handlePomodoroComplete = async () => {
+        if (!activeTask) return;
+        
+        await window.electron.app.completePomodoro(activeTask.id);
+        stopTimer(activeTask.id);
+    };
 
   const handleAddSubtask = async () => {
       if (!newSubtaskTitle.trim() || !activeTask) return;
