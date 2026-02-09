@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Box, Paper, Grid, Typography, TextField, Tabs, Tab } from '@mui/material';
 import { Pie, Doughnut } from 'react-chartjs-2';
 import 'chart.js/auto';
@@ -9,6 +9,7 @@ import ProductivityChart from '../../components/ProductivityChart';
 import HourlyProductivityChart from '../../components/HourlyProductivityChart';
 import { getTagAnalyticsWithNames, getHourlyProductivity, getAiStats } from '../../services/DatabaseService';
 import AiProductivityChart from '../../components/AiProductivityChart';
+import { Line as ChartLine } from 'react-chartjs-2'; // Import ChartLine specifically
 
 // Helper to format date to YYYY-MM-DD for the input
 const formatDateForInput = (date: Date): string => {
@@ -50,10 +51,57 @@ function Statistics() {
     return formatDateForInput(date);
   });
   const [endDate, setEndDate] = useState<string>(formatDateForInput(new Date()));
+  const [deepWorkData, setDeepWorkData] = useState<any[]>([]);
+
+  useEffect(() => {
+      const fetchDeepWork = async () => {
+          const userStr = localStorage.getItem('userId');
+          const userId = userStr ? JSON.parse(userStr) : 1;
+          const data = await window.electron.database.getDeepWorkHistory(userId, 14);
+          setDeepWorkData(data);
+      };
+      fetchDeepWork();
+  }, []);
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
   };
+
+  // Memoized data for Focus Quality Chart
+  const focusQualityData = useMemo(() => {
+      const labels = deepWorkData.map(d => new Date(d.date).toLocaleDateString([], { month: 'short', day: 'numeric' }));
+      return {
+          labels,
+          datasets: [
+              {
+                  label: 'Total Work (min)',
+                  data: deepWorkData.map(d => d.totalDuration),
+                  backgroundColor: 'rgba(200, 200, 200, 0.2)',
+                  borderColor: 'rgba(200, 200, 200, 0.5)',
+                  fill: true,
+                  tension: 0.4
+              },
+              {
+                  label: 'Deep Work (min)',
+                  data: deepWorkData.map(d => d.deepWorkDuration),
+                  backgroundColor: 'rgba(33, 150, 243, 0.2)',
+                  borderColor: '#2196f3',
+                  fill: true,
+                  tension: 0.4
+              },
+              {
+                  label: 'Max Session (min)',
+                  data: deepWorkData.map(d => d.maxSession),
+                  borderColor: '#ff9800',
+                  borderDash: [5, 5],
+                  pointStyle: 'circle',
+                  pointRadius: 5,
+                  tension: 0,
+                  fill: false
+              }
+          ]
+      };
+  }, [deepWorkData]);
 
   // Memoized data for Productivity Line Chart based on date range
   const productivityChartData = useMemo(() => {
@@ -136,6 +184,14 @@ function Statistics() {
               </Box>
               <Box sx={{ height: 300, position: 'relative' }}>
                 <ProductivityChart chartData={productivityChartData} />
+              </Box>
+            </Paper>
+          </Grid>
+          <Grid item xs={12}>
+            <Paper sx={{ padding: 2 }}>
+              <Typography variant="h6" gutterBottom>Focus Quality Trend (Last 14 Days)</Typography>
+              <Box sx={{ height: 300, position: 'relative' }}>
+                <ChartLine data={focusQualityData} options={{ maintainAspectRatio: false }} />
               </Box>
             </Paper>
           </Grid>

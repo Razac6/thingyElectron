@@ -52,6 +52,7 @@ export interface IElectronAPI {
       getWorkSessions: (userId: number, days: number) => Promise<any[]>;
       getTaskWorkSessions: (taskId: number) => Promise<any[]>;
       getLast14DaysProductivity: (userId: number) => Promise<any[]>;
+      getDeepWorkHistory: (userId: number, days: number) => Promise<any[]>;
       getTagAnalytics: (tagId: number) => Promise<any>;
       getTagByName: (name: string) => Promise<number[]>;
       getAllTags: () => Promise<string[]>;

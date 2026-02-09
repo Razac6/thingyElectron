@@ -122,7 +122,13 @@ export const initDB = async () => {
       { key: 'water_interval', value: '90' },
       { key: 'water_goal', value: '8' },
       { key: 'meditation_duration', value: '10' },
-      { key: 'pomodoro_duration', value: '25' }
+      { key: 'pomodoro_duration', value: '25' },
+      { key: 'shutdown_checklist', value: JSON.stringify([
+          "Skrzynka odbiorcza i komunikatory sprawdzone (Inbox Zero)",
+          "Plan na jutro przygotowany i zapisany",
+          "Biurko / Pulpit uporządkowane",
+          "Ostatnie spojrzenie na kalendarz"
+      ])}
   ];
   const settingStmt = db.prepare('INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)');
   defaultSettings.forEach(s => settingStmt.run([s.key, s.value]));
@@ -440,6 +446,56 @@ export const getLast14DaysProductivity = (userId: number) => {
   }
   stmt.free();
   return results;
+};
+
+export const getDeepWorkHistory = (userId: number, days: number = 14) => {
+  if (!db) return [];
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - days);
+  
+  // Get all sessions in range
+  const stmt = db.prepare(`
+    SELECT ws.startTime, ws.duration
+    FROM work_sessions ws
+    JOIN tasks t ON ws.taskId = t.id
+    WHERE t.userId = :userId AND ws.startTime >= :cutoffDate
+    ORDER BY ws.startTime ASC
+  `);
+  stmt.bind({ ':userId': userId, ':cutoffDate': cutoffDate.toISOString() });
+  
+  const dailyStats: Record<string, { total: number, deep: number, maxSession: number }> = {};
+  
+  while(stmt.step()) {
+      const row = stmt.getAsObject();
+      // Date logic (4 AM cutoff)
+      const dateObj = new Date(row.startTime as string);
+      if (dateObj.getHours() < 4) dateObj.setDate(dateObj.getDate() - 1);
+      const dateStr = dateObj.toISOString().split('T')[0];
+      
+      if (!dailyStats[dateStr]) dailyStats[dateStr] = { total: 0, deep: 0, maxSession: 0 };
+      
+      const durationMin = (row.duration as number) / 60000;
+      dailyStats[dateStr].total += durationMin;
+      
+      if (durationMin > dailyStats[dateStr].maxSession) {
+          dailyStats[dateStr].maxSession = Math.round(durationMin);
+      }
+      
+      // Deep Work Logic (Simplified here, assumes >20m is deep for history chart)
+      // Ideally we would check FocusContext, but that's heavy for history. 
+      // Let's stick to duration proxy for history chart.
+      if (durationMin >= 20 && durationMin <= 120) {
+          dailyStats[dateStr].deep += durationMin;
+      }
+  }
+  stmt.free();
+  
+  return Object.entries(dailyStats).map(([date, stats]) => ({
+      date,
+      totalDuration: Math.round(stats.total),
+      deepWorkDuration: Math.round(stats.deep),
+      maxSession: stats.maxSession
+  })).sort((a, b) => a.date.localeCompare(b.date));
 };
 
 // --- Daily Challenges ---
@@ -1651,10 +1707,10 @@ export const getDistractionStats = (days: number = 1) => {
 };
 
 export const getDailyDeepWorkStats = (userId: number) => {
-    if (!db) return { score: 0, duration: 0 };
+    if (!db) return { score: 0, duration: 0, longestSession: 0 };
     const todayStart = new Date();
     todayStart.setHours(0,0,0,0);
-    const startTs = todayStart.getTime();
+    const startIso = todayStart.toISOString();
     
     // Fetch sessions for today
     const stmt = db.prepare(`
@@ -1665,7 +1721,7 @@ export const getDailyDeepWorkStats = (userId: number) => {
     `);
     
     const sessions = [];
-    stmt.bind([userId, startTs]);
+    stmt.bind([userId, startIso]);
     while(stmt.step()) sessions.push(stmt.getAsObject());
     stmt.free();
     

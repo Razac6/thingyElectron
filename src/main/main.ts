@@ -27,6 +27,7 @@ import {
   getRecentWorkSessions,
   getTaskWorkSessions,
   getLast14DaysProductivity,
+  getDeepWorkHistory,
   getDailyChallenge,
   createDailyChallenge,
   updateDailyChallengeProgress,
@@ -423,6 +424,7 @@ ipcMain.handle('db:get-contribution-data', (event, userId, days) => getContribut
 ipcMain.handle('db:get-work-sessions', (event, userId, days) => getRecentWorkSessions(userId, days));
 ipcMain.handle('db:get-task-work-sessions', (event, taskId) => getTaskWorkSessions(taskId));
 ipcMain.handle('db:get-last-14-days-productivity', (event, userId) => getLast14DaysProductivity(userId));
+ipcMain.handle('db:get-deep-work-history', (event, userId, days) => getDeepWorkHistory(userId, days)); // New
 ipcMain.handle('db:get-tag-analytics', (event, tagId) => getTagAnalytics(tagId));
 ipcMain.handle('db:get-tag-by-name', (event, name) => getTagByName(name));
 ipcMain.handle('db:get-all-tags', () => getAllTags());

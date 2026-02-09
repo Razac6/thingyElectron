@@ -15,9 +15,11 @@ import SmartToyIcon from '@mui/icons-material/SmartToy';
 import FlagIcon from '@mui/icons-material/Flag';
 import AssignmentIcon from '@mui/icons-material/Assignment';
 import PetsIcon from '@mui/icons-material/Pets';
+import PowerSettingsNewIcon from '@mui/icons-material/PowerSettingsNew';
 import { useTimer } from '../context/TimerContext';
 import { useSettings } from '../context/SettingsContext';
 import { getDailyBio, updateDailyBio } from '../services/DatabaseService';
+import ShutdownModal from './ShutdownModal';
 
 const SmartInsightWidget = () => {
   const { insights, toggleBoostMode } = useTimer();
@@ -26,6 +28,13 @@ const SmartInsightWidget = () => {
   const [anchorEl, setAnchorEl] = useState<HTMLButtonElement | null>(null);
   const [meetingAnchorEl, setMeetingAnchorEl] = useState<HTMLButtonElement | null>(null);
   const [sprintAnalysis, setSprintAnalysis] = useState<any>(null);
+  const [isShutdownOpen, setIsShutdownOpen] = useState(false);
+
+  useEffect(() => {
+    const handleOpenShutdown = () => setIsShutdownOpen(true);
+    window.addEventListener('open-shutdown-modal', handleOpenShutdown);
+    return () => window.removeEventListener('open-shutdown-modal', handleOpenShutdown);
+  }, []);
 
   useEffect(() => {
     const userStr = localStorage.getItem('userId');
@@ -192,9 +201,17 @@ const SmartInsightWidget = () => {
                           <PetsIcon fontSize="small" />
                       </IconButton>
                   </Tooltip>
+                  
+                  <Tooltip title="Zakończ dzień (Shutdown Ritual)" arrow placement="left">
+                      <IconButton size="small" onClick={() => setIsShutdownOpen(true)}>
+                          <PowerSettingsNewIcon fontSize="small" />
+                      </IconButton>
+                  </Tooltip>
               </Box>
            </Box>
        </Box>
+
+       <ShutdownModal open={isShutdownOpen} onClose={() => setIsShutdownOpen(false)} />
 
        {/* Popovers */}
        <Popover open={Boolean(anchorEl)} anchorEl={anchorEl} onClose={() => setAnchorEl(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>

@@ -112,17 +112,43 @@ export const AiCompanion = () => {
 
         
 
-                    if (safeMsg === 'STANDUP_TRIGGER') {
-
-                        handleAction('standup_init');
-
-                        return;
-
-                    }
+                                if (safeMsg === 'STANDUP_TRIGGER') {
 
         
 
-                    if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+                                    handleAction('standup_init');
+
+        
+
+                                    return;
+
+        
+
+                                }
+
+        
+
+                    
+
+        
+
+                                if (safeMsg.includes("Koniec dnia blisko") || safeMsg.includes("podsumowanie")) {
+
+        
+
+                                    window.dispatchEvent(new CustomEvent('open-shutdown-modal'));
+
+        
+
+                                }
+
+        
+
+                    
+
+        
+
+                                if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
             if (messageTimeoutRef.current) clearTimeout(messageTimeoutRef.current);
             
             setIsPriorityMessage(true);
