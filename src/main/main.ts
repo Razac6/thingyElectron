@@ -572,8 +572,37 @@ ipcMain.handle('app:complete-pomodoro', (event, tid) => {
     
     if (task) {
         console.log(`[DEBUG] Task found: ${task.title}`);
+        logSystemEvent(`Pomodoro Completed for task: ${task.title}`, 'PRODUCTIVITY');
+        
+        const now = Date.now();
+        const startTime = Number(task.startTimer);
+        let timeSpent = 0;
+        
+        if (startTime && !isNaN(startTime)) {
+            timeSpent = now - startTime;
+        }
+
         const nc = (task.pomodoroCount || 0) + 1;
-        updateTask({ ...task, pomodoroCount: nc });
+        const newSpendTime = (task.spendTime || 0) + timeSpent;
+
+        // Update everything atomically: Count + Stop Timer + Time Spent
+        updateTask({ 
+            ...task, 
+            pomodoroCount: nc,
+            spendTime: newSpendTime,
+            startTimer: null,
+            updateStatusDate: new Date().toISOString()
+        });
+        
+        // Also log work session
+        if (timeSpent > 0) {
+            logWorkSession({
+                taskId: task.id,
+                startTime: new Date(startTime).toISOString(),
+                endTime: new Date(now).toISOString(),
+                duration: timeSpent
+            });
+        }
         
         console.log('[DEBUG] Playing beep...');
         shell.beep();

@@ -842,7 +842,7 @@ export const updateTask = (task: any) => {
   
   const subtasksStr = task.subtasks ? (typeof task.subtasks === 'string' ? task.subtasks : JSON.stringify(task.subtasks)) : '[]';
 
-  db.run(`UPDATE tasks SET title = ?, description = ?, status = ?, updateStatusDate = ?, estimate = ?, priority = ?, link = ?, spendTime = ?, startTimer = ?, sprintId = ?, type = ?, storyPoints = ?, subtasks = ?, timerMode = ? WHERE id = ?`, [task.title, task.description, task.status, updateDate, task.estimate, task.priority, task.link, task.spendTime, task.startTimer, task.sprintId, task.type || 'TASK', task.storyPoints || 0, subtasksStr, task.timerMode || null, task.id]);
+  db.run(`UPDATE tasks SET title = ?, description = ?, status = ?, updateStatusDate = ?, estimate = ?, priority = ?, link = ?, spendTime = ?, startTimer = ?, sprintId = ?, type = ?, storyPoints = ?, subtasks = ?, timerMode = ?, pomodoroCount = ? WHERE id = ?`, [task.title, task.description, task.status, updateDate, task.estimate, task.priority, task.link, task.spendTime, task.startTimer, task.sprintId, task.type || 'TASK', task.storyPoints || 0, subtasksStr, task.timerMode || null, task.pomodoroCount || 0, task.id]);
 
   if (oldStatus !== 'Completed' && task.status === 'Completed') {
     const tagIdsStmt = db.prepare('SELECT tagId FROM task_tags WHERE taskId = ?');
@@ -1530,13 +1530,15 @@ export const getDailyReportData = (userId: number) => {
         else if (last < prev * 0.9) trend = 'decreasing';
     }
 
-    // 5. Pomodoro Count Today
+    // 5. Pomodoro Count Today (Simple ISO Match)
+    const todayISO = new Date().toISOString().split('T')[0];
     const pomodoroStmt = db.prepare(`
         SELECT COUNT(*) as count 
         FROM system_logs 
-        WHERE message LIKE 'Pomodoro Completed%' AND timestamp LIKE :datePattern
+        WHERE message LIKE 'Pomodoro Completed%' 
+        AND timestamp LIKE ?
     `);
-    const pomodoroResult = pomodoroStmt.getAsObject({ ':datePattern': `${todayStr}%` });
+    const pomodoroResult = pomodoroStmt.getAsObject([`${todayISO}%`]);
     pomodoroStmt.free();
 
     return {

@@ -152,7 +152,9 @@ const BoostOverlay = ({ open, onClose }: BoostOverlayProps) => {
         if (!activeTask) return;
         
         await window.electron.app.completePomodoro(activeTask.id);
-        stopTimer(activeTask.id);
+        // Backend handles stopping timer and logging session now to prevent race conditions.
+        // We just need to refresh data.
+        window.dispatchEvent(new CustomEvent('gamification:check')); // Triggers refresh in Context
     };
 
   const handleAddSubtask = async () => {
