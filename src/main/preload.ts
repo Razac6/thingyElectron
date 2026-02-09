@@ -78,6 +78,7 @@ contextBridge.exposeInMainWorld('electron', {
     getAiMessage: (userId: number) => ipcRenderer.invoke('db:get-ai-message', userId),
     getDailyStandup: (userId: number) => ipcRenderer.invoke('db:get-daily-standup', userId),
     getDailyReportData: (userId: number) => ipcRenderer.invoke('db:get-daily-report-data', userId),
+    getDailyDeepWork: (userId: number) => ipcRenderer.invoke('db:get-daily-deep-work', userId),
     getLifetimeStats: (userId: number) => ipcRenderer.invoke('db:get-lifetime-stats', userId),
     // Web Integration
     getWebSettings: () => ipcRenderer.invoke('db:get-web-settings'),

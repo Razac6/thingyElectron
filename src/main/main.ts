@@ -65,7 +65,8 @@ import {
   getAppStats,
   setAppCategory,
   getLifetimeStats,
-  getDistractionStats
+  getDistractionStats,
+  getDailyDeepWorkStats
 } from './db';
 import { autoScheduleTasks, getProposedSchedule } from './TaskScheduler';
 import { ProductivityAnalyst, AnalysisResult } from './ProductivityAnalysis';
@@ -486,6 +487,7 @@ ipcMain.handle('db:get-daily-standup', (event, uid) => {
   return { ...stats, topSuggestion: suggestion, challenge };
 });
 ipcMain.handle('db:get-daily-report-data', (event, uid) => getDailyReportData(uid));
+ipcMain.handle('db:get-daily-deep-work', (event, uid) => getDailyDeepWorkStats(uid)); // New
 ipcMain.handle('db:get-lifetime-stats', (event, uid) => getLifetimeStats(uid));
 ipcMain.handle('gamification:reward-fatigue-compliance', (event, uid) => {
   const p = getProfile(uid);
@@ -532,9 +534,16 @@ ipcMain.handle('app:complete-pomodoro', (event, tid) => {
         sendAiNotification('🍅 Pomodoro Ukończone!', `Zadanie "${task.title}" ma już ${newCount} pomidorów.`, 'IMPORTANT');
         logSystemEvent(`Pomodoro Completed for task: ${task.title}`, 'PRODUCTIVITY');
         
-        // Show Cat IMMEDIATELY (bypass notification click requirement)
+        // Show Cat IMMEDIATELY and bring window to front
         if (mainWindow && !mainWindow.isDestroyed()) {
+             if (mainWindow.isMinimized()) mainWindow.restore();
+             mainWindow.show();
+             mainWindow.focus(); // Force focus
+             mainWindow.setAlwaysOnTop(true); // Temporary flash on top
+             mainWindow.setAlwaysOnTop(false);
+             
              mainWindow.webContents.send('ai-companion:show-message', `🍅 Pomodoro zakończone! Czas na przerwę.`);
+             mainWindow.webContents.send('gamification:check', 'POMODORO_COMPLETED');
         }
         
         // Challenge Check
@@ -589,8 +598,18 @@ setInterval(() => {
       const currentMinute = currentDate.getMinutes();
       const dateString = currentDate.toDateString();
 
+      // Reset daily flags at midnight
       if (dateString !== currentDayString) {
-          sentMorningNudge = false; sentEveningNudge = false; standupShown = false; lastMeditationDate = null; currentDayString = dateString;
+          sentMorningNudge = false;
+          sentEveningNudge = false;
+          standupShown = false; 
+          lastMeditationDate = null;
+          currentDayString = dateString;
+          
+          // Notify renderer to refresh daily stats (counters)
+          if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('app:day-changed');
+          }
       }
 
       if (!standupShown && currentHour >= 8 && currentHour < 11) {

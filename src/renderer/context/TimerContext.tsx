@@ -41,7 +41,7 @@ interface AnalysisResult {
     direction: 'increasing' | 'decreasing' | 'stable';
     description: string;
   };
-  focusScore: number;
+  focusScore: { score: number, deepWorkMinutes: number, longestSessionToday: number };
   tagConsistency: {
     consistent: string[];
     volatile: string[];
@@ -85,22 +85,7 @@ interface TimerContextType {
   updateTask: (updatedData: Partial<Task> & { id: number }) => Promise<void>;
   createTask: (newTask: Partial<Task>) => Promise<void>;
   deleteTask: (taskId: number) => Promise<void>;
-  startTimer: (taskId: number) => Promise<void>;
-  stopTimer: (taskId: number) => Promise<void>;
-  isLoading: boolean;
-  productivityData: DailyProgressEntry[];
-  isLoadingProductivity: boolean;
-  contributionData: any[];
-  isLoadingContribution: boolean;
-  hourlyProductivity: any[];
-  insights: AnalysisResult | null;
-  dailyChallenge: DailyChallenge | null;
-  totalSpendTimeToday: number;
-  refreshData: () => Promise<void>;
-  idlePrompt: IdlePromptState | null;
-  createTask: (newTask: Partial<Task>) => Promise<void>;
-  deleteTask: (taskId: number) => Promise<void>;
-  startTimer: (taskId: number) => Promise<void>;
+  startTimer: (taskId: number, mode?: 'normal' | 'pomodoro') => Promise<void>;
   stopTimer: (taskId: number) => Promise<void>;
   isLoading: boolean;
   productivityData: DailyProgressEntry[];
@@ -145,7 +130,6 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
       setIsBoostMode(prev => forceState !== undefined ? forceState : !prev);
   };
   
-  // Ref to access latest tasks inside the event listener closure
   const tasksRef = React.useRef(tasks);
   useEffect(() => {
     tasksRef.current = tasks;
@@ -157,9 +141,7 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
       const activeTask = currentTasks.find(t => t.startTimer);
       
       if (activeTask && activeTask.startTimer) {
-        const IDLE_THRESHOLD = 10 * 60 * 1000; // 10 minutes
-        
-        // Don't auto-stop. Ask user.
+        const IDLE_THRESHOLD = 10 * 60 * 1000;
         setIdlePrompt({
             isOpen: true,
             idleTimeMs: IDLE_THRESHOLD,
@@ -167,55 +149,65 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
             taskTitle: activeTask.title,
             originalStartTime: Number(activeTask.startTimer)
         });
-        
-        // Notify user about the prompt
-        new Notification("💤 Idle Detected", { 
-           body: "Are you still working? Click to confirm." 
-        });
+        new Notification("💤 Idle Detected", { body: "Are you still working? Click to confirm." });
       }
     };
 
-    // Register listener (using the generic 'on' from preload)
     window.electron.ipcRenderer.on('activity:idle-detected', handleIdle);
     
-    // Listener for notification action "Stop Timer"
     const handleStopRequest = () => {
         const currentTasks = tasksRef.current;
         const activeTask = currentTasks.find(t => t.startTimer);
         if (activeTask) {
             stopTimer(activeTask.id);
-            
             const userStr = localStorage.getItem('userId');
             if (userStr) {
                 const userId = JSON.parse(userStr);
+                // @ts-ignore
                 window.electron.rewardFatigueCompliance(userId);
             }
         }
     };
     window.electron.ipcRenderer.on('timer:stop-requested', handleStopRequest);
 
-    // Refresh data on gamification events (e.g. daily challenge progress update)
     const handleGamificationUpdate = () => {
         fetchAllData();
     };
     window.electron.ipcRenderer.on('gamification:check', handleGamificationUpdate);
+    
+    // Auto-refresh on new day
+    window.electron.ipcRenderer.on('app:day-changed', () => {
+        console.log('Day changed detected. Refreshing data...');
+        fetchAllData();
+    });
 
-    // Cleanup (optional for singleton, but good practice if we had a working removeListener)
-    return () => {
-       // window.electron.ipcRenderer.removeListener('activity:idle-detected', handleIdle);
-       // window.electron.ipcRenderer.removeListener('timer:stop-requested', handleStopRequest);
-    };
-  }, []); // Mount once
+    return () => {};
+  }, []);
 
   const fetchAllData = async () => {
     setIsLoading(true);
     setIsLoadingProductivity(true);
     setIsLoadingContribution(true);
     try {
-      // Fetch insights first to ensure Daily Challenge is generated if missing
+      const userStr = localStorage.getItem('userId');
+      const userId = userStr ? JSON.parse(userStr) : 1;
       const todayISO = getWorkdayISO();
-      const insightsData = await getProductivityInsights();
       
+      // @ts-ignore
+      const rawInsights = await getProductivityInsights(userId);
+      // @ts-ignore
+      const dailyDeep = await window.electron.database.getDailyDeepWork(userId);
+
+      // Merge daily deep work into insights for dashboard display
+      const combinedInsights = rawInsights ? {
+          ...rawInsights,
+          focusScore: { 
+              score: dailyDeep.score,
+              deepWorkMinutes: dailyDeep.duration,
+              longestSessionToday: dailyDeep.longestSession
+          }
+      } : null;
+
       const [taskData, prodData, contData, hourlyData, challengeData, bioData] = await Promise.all([
         fetchTasks(navigate),
         getDailyProductivity(),
@@ -229,7 +221,7 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
       setProductivityData(prodData || []);
       setContributionData(contData || []);
       setHourlyProductivity(hourlyData || []);
-      setInsights(insightsData);
+      setInsights(combinedInsights);
       setDailyChallenge(challengeData);
       if (bioData) setDailyMode(bioData.mode);
     } catch (error) {
@@ -243,7 +235,7 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     fetchAllData();
-  }, [settings.activityGraphDays]); // Fetch on mount and when graph settings change
+  }, [settings.activityGraphDays]);
 
   useEffect(() => {
     const todayISO = getWorkdayISO();
@@ -254,7 +246,6 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const activeTask = tasks.find(task => task.startTimer !== null);
     if (activeTask && activeTask.startTimer) {
-      // Get userId from localStorage for the tray
       const userStr = localStorage.getItem('userId');
       const userId = userStr ? JSON.parse(userStr) : undefined;
       
@@ -289,8 +280,10 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const createTask = async (newTask: Partial<Task>): Promise<Task> => {
+    // @ts-ignore
     const createdTask = await createTaskService(newTask);
     await fetchAllData();
+    // @ts-ignore
     return createdTask;
   };
 
@@ -309,7 +302,6 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
         timerMode: mode 
     };
     
-    // Auto-enable Boost Mode for Pomodoro
     if (mode === 'pomodoro') {
         setIsBoostMode(true);
     }
@@ -326,7 +318,6 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
       const startTime = Number(rawStartTimer);
 
       if (!rawStartTimer || isNaN(startTime)) {
-        // Just reset the timer state if it's invalid but exists (or clean up if it was "running" but invalid)
         if (rawStartTimer !== null) {
              await updateTask({ ...taskToUpdate, startTimer: null, id: taskId });
         }
@@ -342,9 +333,6 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
         updateStatusDate: new Date().toLocaleDateString(),
       };
 
-      console.log('Stopping timer for task:', taskId, 'Duration:', timeSpent);
-
-      // 1. Log the session first
       await logWorkSessionService({
         taskId: taskId,
         startTime: new Date(startTime).toISOString(),
@@ -352,19 +340,11 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
         duration: timeSpent,
       });
 
-      // Achievement Check
       const earned = await checkForAchievements('WORK_SESSION_ENDED', { duration: timeSpent });
       if (earned) triggerRewardAnimation('achievement');
 
-      // 2. Update the task state (stop timer, update spendTime)
       await updateTaskService(updatedTaskData);
-
-      console.log('Timer stopped and data saved. Fetching updated data...');
-
-      // 3. Fetch all data immediately to update UI
       await fetchAllData();
-      
-      console.log('Data refreshed.');
     } catch (error) {
       console.error('Error in stopTimer:', error);
     }
@@ -372,31 +352,27 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
 
   const handleKeepIdleTime = () => {
       setIdlePrompt(null);
-      // User was working, just close prompt and let timer continue.
   };
 
   const handleDiscardIdleTime = async () => {
       if (!idlePrompt) return;
       const { taskId, originalStartTime, idleTimeMs } = idlePrompt;
-      setIdlePrompt(null); // Close prompt immediately
+      setIdlePrompt(null);
 
-      const currentTasks = tasksRef.current; // Use ref to get latest tasks
+      const currentTasks = tasksRef.current;
       const task = currentTasks.find(t => t.id === taskId);
       
       if (!task) return;
 
       const now = Date.now();
-      // "Effective" end time is NOW minus the idle time (since we discard it)
       const effectiveEndTime = now - idleTimeMs;
       
-      // Calculate duration of valid work
       let duration = effectiveEndTime - originalStartTime;
       if (duration < 0) duration = 0;
 
       const newSpendTime = (task.spendTime || 0) + duration;
 
       try {
-          // Log session
           await logWorkSessionService({
               taskId,
               startTime: new Date(originalStartTime).toISOString(),
@@ -404,7 +380,6 @@ export const TimerProvider = ({ children }: { children: ReactNode }) => {
               duration: duration
           });
 
-          // Stop timer & Update task
           await updateTaskService({
               ...task,
               spendTime: newSpendTime,

@@ -78,6 +78,17 @@ const SmartInsightWidget = () => {
     }
   };
 
+  const formatDuration = (mins: number) => {
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      if (h > 0) return `${h}h ${m}m`;
+      return `${m}m`;
+  };
+
+  const focusText = typeof focusScore === 'object' 
+      ? `${focusScore.score}% (${formatDuration(focusScore.deepWorkMinutes || 0)})` 
+      : `${focusScore}%`;
+
   const getAiColor = (category?: string) => {
       switch(category) {
           case 'high': return 'error';
@@ -103,12 +114,15 @@ const SmartInsightWidget = () => {
 
              <Box display="flex" alignItems="center" gap={1}>
                 <CenterFocusStrongIcon sx={{ color: '#219ebc', fontSize: 16 }} />
-                <Typography variant="caption"><strong>Deep Work:</strong> {focusScore}%</Typography>
+                <Typography variant="caption"><strong>Deep Work:</strong> {focusText}</Typography>
              </Box>
 
              <Box display="flex" alignItems="center" gap={1}>
                 <BatteryAlertIcon sx={{ color: '#fb8500', fontSize: 16 }} />
-                <Typography variant="caption"><strong>Max Focus:</strong> {fatigueProfile.maxRecommended}m</Typography>
+                <Typography variant="caption">
+                    <strong>Max Focus:</strong> {focusScore.longestSessionToday || 0}m 
+                    <span style={{ opacity: 0.6, marginLeft: 4 }}>/ {fatigueProfile.maxRecommended}m limit</span>
+                </Typography>
              </Box>
              
              <Tooltip title={trend.description} arrow>

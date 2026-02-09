@@ -1650,6 +1650,53 @@ export const getDistractionStats = (days: number = 1) => {
   }
 };
 
+export const getDailyDeepWorkStats = (userId: number) => {
+    if (!db) return { score: 0, duration: 0 };
+    const todayStart = new Date();
+    todayStart.setHours(0,0,0,0);
+    const startTs = todayStart.getTime();
+    
+    // Fetch sessions for today
+    const stmt = db.prepare(`
+        SELECT ws.* 
+        FROM work_sessions ws
+        JOIN tasks t ON ws.taskId = t.id
+        WHERE t.userId = ? AND ws.startTime >= ?
+    `);
+    
+    const sessions = [];
+    stmt.bind([userId, startTs]);
+    while(stmt.step()) sessions.push(stmt.getAsObject());
+    stmt.free();
+    
+    // Reuse analyst logic but for today only
+    // Circular dependency issue? No, db.ts doesn't import ProductivityAnalyst.
+    // We have to reimplement logic or move logic to db.ts.
+    // Better: Reimplement simple logic here to avoid circular dep with Analysis module.
+    
+    let totalDur = 0;
+    let deepDur = 0;
+    let longestSession = 0;
+    
+    sessions.forEach((s: any) => {
+        const durMin = s.duration / 60000;
+        totalDur += durMin;
+        if (durMin > longestSession) longestSession = Math.round(durMin);
+
+        if (durMin >= 20 && durMin <= 120) {
+             const endT = s.startTime + s.duration;
+             const ctx = getFocusContext(endT);
+             if (ctx > 0.75) deepDur += durMin;
+        }
+    });
+    
+    return {
+        score: totalDur > 0 ? Math.round((deepDur / totalDur) * 100) : 0,
+        duration: Math.round(deepDur),
+        longestSession: longestSession
+    };
+};
+
 export const setDomainCategory = (domain: string, category: string) => {
     if (!db) return;
     try {

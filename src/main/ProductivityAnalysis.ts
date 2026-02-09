@@ -1,4 +1,5 @@
 import { app } from 'electron';
+import { getFocusContext } from './db';
 
 // Interfaces
 export interface WorkSession {
@@ -19,7 +20,7 @@ export interface AnalysisResult {
     direction: 'increasing' | 'decreasing' | 'stable';
     description: string;
   };
-  focusScore: number; // 0-100%
+  focusScore: { score: number, deepWorkMinutes: number }; // Updated interface
   tagConsistency: {
     consistent: string[];
     volatile: string[];
@@ -165,8 +166,8 @@ export class ProductivityAnalyst {
    * Calculates the percentage of time spent in "Deep Work" sessions.
    * Deep Work is defined as a session lasting between 20 and 120 minutes.
    */
-  static analyzeFocusQuality(sessions: WorkSession[]): number {
-    if (sessions.length === 0) return 0;
+  static analyzeFocusQuality(sessions: WorkSession[]): { score: number, deepWorkMinutes: number } {
+    if (sessions.length === 0) return { score: 0, deepWorkMinutes: 0 };
 
     let totalDuration = 0;
     let deepWorkDuration = 0;
@@ -175,17 +176,25 @@ export class ProductivityAnalyst {
       const durationMinutes = session.duration / (1000 * 60);
       totalDuration += durationMinutes;
 
-      // Deep Work Criteria:
-      // > 20 mins: Takes time to get into flow
-      // < 120 mins: Beyond this is likely fatigue/forgetting to stop timer, diminishing returns
+      // Deep Work Criteria 2.0:
+      // 1. Duration: 20m - 120m
+      // 2. Focus Context: > 75% score (low distractions)
       if (durationMinutes >= 20 && durationMinutes <= 120) {
-        deepWorkDuration += durationMinutes;
+          const endTime = new Date(session.startTime).getTime() + session.duration;
+          const focusScore = getFocusContext(endTime); 
+
+          if (focusScore > 0.75) {
+              deepWorkDuration += durationMinutes;
+          }
       }
     });
 
-    if (totalDuration === 0) return 0;
+    if (totalDuration === 0) return { score: 0, deepWorkMinutes: 0 };
 
-    return Math.round((deepWorkDuration / totalDuration) * 100);
+    return {
+        score: Math.round((deepWorkDuration / totalDuration) * 100),
+        deepWorkMinutes: Math.round(deepWorkDuration)
+    };
   }
 
   /**
@@ -239,8 +248,8 @@ export class ProductivityAnalyst {
    */
   static analyzeFatigue(sessions: WorkSession[]): { averageSession: number, maxRecommended: number } {
     if (sessions.length < 5) {
-      // Not enough data, return defaults (Pomodoro standard)
-      return { averageSession: 25, maxRecommended: 45 };
+      // Not enough data, return realistic default for devs
+      return { averageSession: 45, maxRecommended: 60 };
     }
 
     // Convert to minutes
@@ -249,7 +258,7 @@ export class ProductivityAnalyst {
     // Filter out micro-sessions (< 1 min) that might skew data (mistakes)
     const validDurations = durations.filter(d => d > 1);
     
-    if (validDurations.length === 0) return { averageSession: 25, maxRecommended: 45 };
+    if (validDurations.length === 0) return { averageSession: 45, maxRecommended: 60 };
 
     // Calculate Mean (μ)
     const sum = validDurations.reduce((a, b) => a + b, 0);
@@ -262,8 +271,8 @@ export class ProductivityAnalyst {
     // Rule: Recommended Limit = Mean + 1.5 Sigma (covers ~87% of your typical productive sessions)
     // Capped at 90 minutes (biological limit)
     let maxRecommended = mean + (1.5 * stdDev);
-    if (maxRecommended > 90) maxRecommended = 90;
-    if (maxRecommended < 25) maxRecommended = 25; // Minimum viable session
+    if (maxRecommended > 120) maxRecommended = 120; // Increased cap to 2h
+    if (maxRecommended < 30) maxRecommended = 30; // Minimum viable session
 
     return {
       averageSession: Math.round(mean),
