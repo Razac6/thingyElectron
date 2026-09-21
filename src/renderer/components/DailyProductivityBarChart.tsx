@@ -20,7 +20,7 @@ function DailyProductivityBarChart() {
     const data: number[] = [];
     const today = new Date();
     if (today.getHours() < 4) {
-        today.setDate(today.getDate() - 1);
+      today.setDate(today.getDate() - 1);
     }
 
     const productivityMap = new Map(
@@ -32,7 +32,9 @@ function DailyProductivityBarChart() {
       const day = new Date(today);
       day.setDate(today.getDate() - i);
 
-      const shortDayName = day.toLocaleDateString('en-US', { weekday: 'short' });
+      const shortDayName = day.toLocaleDateString('en-US', {
+        weekday: 'short',
+      });
       labels.push(shortDayName);
 
       const isoDate = getISODateString(day);
@@ -69,8 +71,8 @@ function DailyProductivityBarChart() {
       y: {
         beginAtZero: true,
         ticks: {
-          callback: function (value: number) {
-            return value + 'm';
+          callback(value: number) {
+            return `${value}m`;
           },
         },
       },

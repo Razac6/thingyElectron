@@ -1,19 +1,57 @@
 import React from 'react';
-import { Box, Paper, Typography, Grid, LinearProgress, List, ListItem, ListItemIcon, ListItemText } from '@mui/material';
-import { useGamification } from '../../context/GamificationContext';
+import {
+  Box,
+  Paper,
+  Typography,
+  Grid,
+  LinearProgress,
+  List,
+  ListItem,
+  ListItemIcon,
+  ListItemText,
+} from '@mui/material';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
+import { useGamification } from '../../context/GamificationContext';
 import DailyChallengeWidget from '../../components/DailyChallengeWidget';
 
 const allAchievements = [
-  { id: 'FIRST_TASK', name: 'First Step', description: 'Complete your first task.' },
+  {
+    id: 'FIRST_TASK',
+    name: 'First Step',
+    description: 'Complete your first task.',
+  },
   { id: 'FIVE_TASKS', name: 'Apprentice', description: 'Complete 5 tasks.' },
   { id: 'TEN_TASKS', name: 'Journeyman', description: 'Complete 10 tasks.' },
-  { id: 'THE_PLANNER', name: 'The Planner', description: 'Create your first sprint.' },
-  { id: 'DEEP_DIVE', name: 'Deep Dive', description: 'Complete a work session over 2 hours.' },
-  { id: 'POMODORO_MASTER', name: 'Pomodoro Master', description: 'Complete your first Pomodoro session.' },
-  { id: 'ZEN_MASTER', name: 'Zen Master', description: 'Complete 5 meditation sessions.' },
-  { id: 'HYDRO_HOMIE', name: 'Hydro Homie', description: 'Log water intake 10 times.' },
-  { id: 'FLEXIBLE', name: 'Flexible', description: 'Complete 5 stretching sessions.' },
+  {
+    id: 'THE_PLANNER',
+    name: 'The Planner',
+    description: 'Create your first sprint.',
+  },
+  {
+    id: 'DEEP_DIVE',
+    name: 'Deep Dive',
+    description: 'Complete a work session over 2 hours.',
+  },
+  {
+    id: 'POMODORO_MASTER',
+    name: 'Pomodoro Master',
+    description: 'Complete your first Pomodoro session.',
+  },
+  {
+    id: 'ZEN_MASTER',
+    name: 'Zen Master',
+    description: 'Complete 5 meditation sessions.',
+  },
+  {
+    id: 'HYDRO_HOMIE',
+    name: 'Hydro Homie',
+    description: 'Log water intake 10 times.',
+  },
+  {
+    id: 'FLEXIBLE',
+    name: 'Flexible',
+    description: 'Complete 5 stretching sessions.',
+  },
 ];
 
 function Profile() {
@@ -40,33 +78,49 @@ function Profile() {
             </Typography>
             <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
               <Box sx={{ width: '100%', mr: 1 }}>
-                <LinearProgress variant="determinate" value={xpProgress} sx={{ height: 10, borderRadius: 5 }} />
+                <LinearProgress
+                  variant="determinate"
+                  value={xpProgress}
+                  sx={{ height: 10, borderRadius: 5 }}
+                />
               </Box>
               <Box sx={{ minWidth: 60 }}>
-                <Typography variant="body2" color="text.secondary">{`${profile.xp}/${xpForNextLevel} XP`}</Typography>
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                >{`${profile.xp}/${xpForNextLevel} XP`}</Typography>
               </Box>
             </Box>
           </Paper>
         </Grid>
 
         {/* Daily Challenge */}
-        <Grid item xs={12} md={6} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <Box>
-                <DailyChallengeWidget />
-            </Box>
+        <Grid
+          item
+          xs={12}
+          md={6}
+          sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}
+        >
+          <Box>
+            <DailyChallengeWidget />
+          </Box>
         </Grid>
 
         {/* Achievements Card */}
         <Grid item xs={12} md={6}>
           <Paper sx={{ padding: 3, height: '100%' }}>
-            <Typography variant="h5" gutterBottom>Achievements</Typography>
+            <Typography variant="h5" gutterBottom>
+              Achievements
+            </Typography>
             <List>
-              {allAchievements.map(ach => {
+              {allAchievements.map((ach) => {
                 const isEarned = earnedAchievements.includes(ach.id);
                 return (
                   <ListItem key={ach.id} sx={{ opacity: isEarned ? 1 : 0.4 }}>
                     <ListItemIcon>
-                      <EmojiEventsIcon color={isEarned ? "warning" : "disabled"} />
+                      <EmojiEventsIcon
+                        color={isEarned ? 'warning' : 'disabled'}
+                      />
                     </ListItemIcon>
                     <ListItemText
                       primary={ach.name}
@@ -84,4 +138,3 @@ function Profile() {
 }
 
 export default Profile;
-

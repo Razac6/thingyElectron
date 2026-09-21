@@ -7,14 +7,16 @@ interface TagAnalytics {
   completed_count: number;
 }
 
-export const analyzeSprintOptimism = async (tasks: Task[]): Promise<string | null> => {
+export const analyzeSprintOptimism = async (
+  tasks: Task[],
+): Promise<string | null> => {
   if (!tasks || tasks.length === 0) return null;
 
   // 1. Identify all unique tags in the current task list to avoid duplicate DB calls
   const allTags = new Set<string>();
-  tasks.forEach(task => {
+  tasks.forEach((task) => {
     if (task.tags && Array.isArray(task.tags)) {
-      task.tags.forEach(tag => allTags.add(tag));
+      task.tags.forEach((tag) => allTags.add(tag));
     }
   });
 
@@ -22,13 +24,14 @@ export const analyzeSprintOptimism = async (tasks: Task[]): Promise<string | nul
 
   // 2. Fetch analytics for all tags in parallel
   const tagAnalyticsMap = new Map<string, TagAnalytics>();
-  
+
   const analyticsPromises = Array.from(allTags).map(async (tagName) => {
     try {
       const tag: any = await getTagByName(tagName);
       if (tag && tag.id) {
         const analytics: any = await getTagAnalytics(tag.id);
-        if (analytics && analytics.completed_count > 2) { // Require at least 3 data points for statistical relevance
+        if (analytics && analytics.completed_count > 2) {
+          // Require at least 3 data points for statistical relevance
           return { tagName, analytics };
         }
       }
@@ -39,8 +42,8 @@ export const analyzeSprintOptimism = async (tasks: Task[]): Promise<string | nul
   });
 
   const results = await Promise.all(analyticsPromises);
-  
-  results.forEach(result => {
+
+  results.forEach((result) => {
     if (result) {
       tagAnalyticsMap.set(result.tagName, result.analytics);
     }
@@ -70,7 +73,7 @@ export const analyzeSprintOptimism = async (tasks: Task[]): Promise<string | nul
       // (e.g. if task has #backend (2h avg) and #api (1h avg), expected is 1.5h)
       // Note: This is a simplification. In reality, tags might be additive, but averaging is a safe baseline for now.
       const averageTaskEma = taskEmaSum / validTagsCount;
-      
+
       // EMA is usually in ms (from database), estimate is in hours (from UI) or minutes depending on storage
       // Assuming EMA is in ms (duration) and Task.estimate is in Hours (standard for this app)
       const historicalHours = averageTaskEma / (1000 * 60 * 60);
@@ -82,7 +85,7 @@ export const analyzeSprintOptimism = async (tasks: Task[]): Promise<string | nul
   }
 
   if (tasksWithAnalytics === 0) {
-    return null; 
+    return null;
   }
 
   const averageEstimate = totalEstimate / tasksWithAnalytics;
@@ -91,9 +94,11 @@ export const analyzeSprintOptimism = async (tasks: Task[]): Promise<string | nul
   // 4. Analysis Logic
   // If estimate is significantly lower than historical data
   const threshold = 0.75; // 25% buffer
-  
+
   if (averageEstimate < averageHistorical * threshold) {
-    const percentage = Math.round((1 - averageEstimate / averageHistorical) * 100);
+    const percentage = Math.round(
+      (1 - averageEstimate / averageHistorical) * 100,
+    );
     return `Optimism Warning: Estimates are ~${percentage}% lower than historical average for these task types (${averageEstimate.toFixed(1)}h vs ${averageHistorical.toFixed(1)}h).`;
   }
 

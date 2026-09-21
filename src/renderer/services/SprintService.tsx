@@ -8,7 +8,11 @@ export const getSprints = async () => {
   }
 };
 
-export const createSprint = async (sprint: { name: string, startDate: string, endDate: string }) => {
+export const createSprint = async (sprint: {
+  name: string;
+  startDate: string;
+  endDate: string;
+}) => {
   try {
     const newSprint = await window.electron.database.createSprint(sprint);
     return newSprint;
@@ -30,7 +34,10 @@ export const updateSprint = async (sprint: any) => {
 
 export const updateSprintStatus = async (sprintId: number, status: string) => {
   try {
-    const updatedSprint = await window.electron.database.updateSprintStatus(sprintId, status);
+    const updatedSprint = await window.electron.database.updateSprintStatus(
+      sprintId,
+      status,
+    );
     return updatedSprint;
   } catch (error) {
     console.error('Error updating sprint status:', error);

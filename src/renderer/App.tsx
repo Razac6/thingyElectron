@@ -9,6 +9,7 @@ import Statistics from './pages/statistics/Statistics';
 import Profile from './pages/profile/Profile';
 import SystemLogs from './pages/system-logs/SystemLogs';
 import Settings from './pages/settings/Settings';
+import About from './pages/about/About';
 import SprintsPage from './pages/sprints/Sprints';
 import SprintDetail from './pages/sprints/SprintDetail';
 import TaskDetail from './pages/task/TaskDetail';
@@ -18,39 +19,56 @@ import { TimerProvider } from './context/TimerContext';
 import { GamificationProvider } from './context/GamificationContext';
 import { SettingsProvider } from './context/SettingsContext';
 import Layout from './components/Layout';
+import ErrorBoundary from './components/ErrorBoundary';
 import theme from './theme';
 
 export default function App() {
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <Router>
-        <SettingsProvider>
-          <GamificationProvider>
-            <TimerProvider>
-              <Layout>
-                <Routes>
-                  <Route path="/list" element={<List />} />
-                  <Route path="/habits" element={<Habits />} />
-                  {/* Chat route removed */}
-                  <Route path="/notes" element={<Notes />} />
-                  <Route path="/statistics" element={<Statistics />} />
-                  <Route path="/web-activity" element={<WebAnalytics />} />
-                  <Route path="/profile" element={<Profile />} />
-                  <Route path="/meditation" element={<MeditationPage />} />
+    <ErrorBoundary>
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <Router>
+          <ErrorBoundary>
+            <SettingsProvider>
+              <GamificationProvider>
+                <TimerProvider>
+                  <ErrorBoundary>
+                    <Layout>
+                      <Routes>
+                        <Route path="/list" element={<List />} />
+                        <Route path="/habits" element={<Habits />} />
+                        {/* Chat route removed */}
+                        <Route path="/notes" element={<Notes />} />
+                        <Route path="/statistics" element={<Statistics />} />
+                        <Route
+                          path="/web-activity"
+                          element={<WebAnalytics />}
+                        />
+                        <Route path="/profile" element={<Profile />} />
+                        <Route
+                          path="/meditation"
+                          element={<MeditationPage />}
+                        />
 
-                                  <Route path="/logs" element={<SystemLogs />} />
-                                  <Route path="/settings" element={<Settings />} />
-                                  <Route path="/sprints" element={<SprintsPage />} />
-                                  <Route path="/sprints/:sprintId" element={<SprintDetail />} />
-                                  <Route path="/task/:taskId" element={<TaskDetail />} />
-                  <Route path="/" element={<Dashboard />} />
-                </Routes>
-              </Layout>
-            </TimerProvider>
-          </GamificationProvider>
-        </SettingsProvider>
-      </Router>
-    </ThemeProvider>
+                        <Route path="/logs" element={<SystemLogs />} />
+                        <Route path="/settings" element={<Settings />} />
+                        <Route path="/about" element={<About />} />
+                        <Route path="/sprints" element={<SprintsPage />} />
+                        <Route
+                          path="/sprints/:sprintId"
+                          element={<SprintDetail />}
+                        />
+                        <Route path="/task/:taskId" element={<TaskDetail />} />
+                        <Route path="/" element={<Dashboard />} />
+                      </Routes>
+                    </Layout>
+                  </ErrorBoundary>
+                </TimerProvider>
+              </GamificationProvider>
+            </SettingsProvider>
+          </ErrorBoundary>
+        </Router>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }

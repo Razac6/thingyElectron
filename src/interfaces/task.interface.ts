@@ -1,12 +1,12 @@
-import { TaskTypeEnum } from "../enums/task-type.enum";
+import { TaskTypeEnum } from '../enums/task-type.enum';
 
 export interface Task {
   id: number;
   title: string;
   description: string;
   status: string;
-  updateStatusDate: string
-  estimate: number | string;
+  updateStatusDate: string;
+  estimate: number;
   priority: string;
   link: string;
   createdAt: string;
@@ -16,6 +16,9 @@ export interface Task {
   type: TaskTypeEnum;
   storyPoints?: number;
   subtasks?: string; // JSON string of Subtask[]
+  sprintId?: number | null;
+  tags?: string[];
+  displayOrder?: number;
 }
 
 export interface Subtask {

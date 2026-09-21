@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
 
 interface TimerProps {
-  startTimer: number | null;
+  startTimer: string | number | null;
   spendTime: number;
   estimate: number; // Estimate in hours
   context: 'list' | 'header';
 }
 
-function formatTime(seconds: number): string {
-  if (seconds < 0) seconds = 0;
+function formatTime(rawSeconds: number): string {
+  const seconds = Number.isNaN(rawSeconds) || rawSeconds < 0 ? 0 : rawSeconds;
 
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
@@ -31,9 +31,20 @@ function Timer({ startTimer, spendTime, estimate, context }: TimerProps) {
       const spendTimeInSeconds = (spendTime || 0) / 1000;
       let totalSpent = spendTimeInSeconds;
 
-      if (startTimer) {
-        const elapsed = (Date.now() - startTimer) / 1000;
-        totalSpent += elapsed;
+      if (
+        startTimer &&
+        String(startTimer).trim() !== 'null' &&
+        String(startTimer).trim() !== ''
+      ) {
+        let startTime = Number(startTimer);
+        if (Number.isNaN(startTime)) {
+          startTime = new Date(startTimer).getTime();
+        }
+
+        if (!Number.isNaN(startTime) && startTime > 0) {
+          const elapsed = (Date.now() - startTime) / 1000;
+          totalSpent += elapsed;
+        }
       }
 
       const overtime = totalSpent > estimateInSeconds;
@@ -50,7 +61,11 @@ function Timer({ startTimer, spendTime, estimate, context }: TimerProps) {
     calculateTime();
 
     // Set up interval only if timer is running
-    if (startTimer) {
+    if (
+      startTimer &&
+      String(startTimer).trim() !== 'null' &&
+      String(startTimer).trim() !== ''
+    ) {
       const interval = setInterval(calculateTime, 1000);
       return () => clearInterval(interval);
     }
@@ -64,10 +79,11 @@ function Timer({ startTimer, spendTime, estimate, context }: TimerProps) {
     textColor = 'red'; // Overtime is always red, regardless of context
   }
 
-
   return (
     <div style={{ color: textColor }}>
-      {isOvertime ? `+${formatTime(displaySeconds)}` : formatTime(displaySeconds)}
+      {isOvertime
+        ? `+${formatTime(displaySeconds)}`
+        : formatTime(displaySeconds)}
     </div>
   );
 }

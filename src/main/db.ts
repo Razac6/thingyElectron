@@ -10,10 +10,10 @@ let db: Database | null = null;
 const dbPath = path.join(app.getPath('userData'), 'thingy.sqlite');
 
 const saveDB = () => {
-  if (!db) return;
-  const data = db.export();
-  const buffer = Buffer.from(data);
-  fs.writeFileSync(dbPath, buffer);
+  const database = db;
+  if (!database) return;
+  const data = database.export();
+  fs.writeFileSync(dbPath, data);
   console.log('[DB] Database saved to disk.');
 };
 
@@ -23,36 +23,71 @@ const hashPassword = (password: string) => {
 
 export const initDB = async () => {
   const wasmPath = app.isPackaged
-    ? path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm')
+    ? path.join(
+        process.resourcesPath,
+        'app.asar.unpacked',
+        'node_modules',
+        'sql.js',
+        'dist',
+        'sql-wasm.wasm',
+      )
     : path.join(require.resolve('sql.js'), '..', 'sql-wasm.wasm');
 
   const SQL = await initSqlJs({ locateFile: () => wasmPath });
 
-  db = fs.existsSync(dbPath) ? new SQL.Database(fs.readFileSync(dbPath)) : new SQL.Database();
+  const dbBuffer = fs.existsSync(dbPath) ? fs.readFileSync(dbPath) : null;
+  db = dbBuffer
+    ? new SQL.Database(new Uint8Array(dbBuffer))
+    : new SQL.Database();
+  const database: Database = db!;
 
   // Enable Foreign Keys
-  db.run('PRAGMA foreign_keys = ON;');
+  database.run('PRAGMA foreign_keys = ON;');
 
   // Cleanup orphaned logs (Fix for phantom streaks)
   try {
-      db.run('DELETE FROM habit_logs WHERE habitId NOT IN (SELECT id FROM habits)');
+    database.run(
+      'DELETE FROM habit_logs WHERE habitId NOT IN (SELECT id FROM habits)',
+    );
   } catch (e) {
-      console.error('[DB] Failed to cleanup orphaned logs:', e);
+    console.error('[DB] Failed to cleanup orphaned logs:', e);
   }
 
   // --- Schema Migrations & Table Creation ---
-  db.run(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT)`);
-  db.run(`CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY, title TEXT, description TEXT, status TEXT, updateStatusDate TEXT, estimate INTEGER, priority TEXT, link TEXT, createdAt TEXT, spendTime INTEGER, startTimer TEXT, type TEXT DEFAULT 'TASK', userId INTEGER, sprintId INTEGER, displayOrder INTEGER, storyPoints INTEGER DEFAULT 0, FOREIGN KEY(userId) REFERENCES users(id), FOREIGN KEY(sprintId) REFERENCES sprints(id) ON DELETE SET NULL)`);
-  db.run(`CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, title TEXT, content TEXT, createdAt TEXT, userId INTEGER, FOREIGN KEY(userId) REFERENCES users(id))`);
-  db.run(`CREATE TABLE IF NOT EXISTS sprints (id INTEGER PRIMARY KEY, name TEXT NOT NULL, startDate TEXT, endDate TEXT, status TEXT NOT NULL DEFAULT 'UPCOMING')`);
-  db.run(`CREATE TABLE IF NOT EXISTS user_profile (userId INTEGER PRIMARY KEY, level INTEGER DEFAULT 1, xp INTEGER DEFAULT 0, FOREIGN KEY(userId) REFERENCES users(id))`);
-  db.run(`CREATE TABLE IF NOT EXISTS achievements (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL, xp INTEGER DEFAULT 0)`);
-  db.run(`CREATE TABLE IF NOT EXISTS user_achievements (userId INTEGER, achievementId TEXT, earnedAt TEXT NOT NULL, PRIMARY KEY (userId, achievementId), FOREIGN KEY(userId) REFERENCES users(id), FOREIGN KEY(achievementId) REFERENCES achievements(id))`);
-  db.run(`CREATE TABLE IF NOT EXISTS tags (id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL)`);
-  db.run(`CREATE TABLE IF NOT EXISTS task_tags (taskId INTEGER, tagId INTEGER, PRIMARY KEY (taskId, tagId), FOREIGN KEY(taskId) REFERENCES tasks(id) ON DELETE CASCADE, FOREIGN KEY(tagId) REFERENCES tags(id) ON DELETE CASCADE)`);
-  db.run(`CREATE TABLE IF NOT EXISTS work_sessions (id INTEGER PRIMARY KEY, taskId INTEGER, startTime TEXT, endTime TEXT, duration INTEGER, FOREIGN KEY(taskId) REFERENCES tasks(id) ON DELETE CASCADE)`);
-  db.run(`CREATE TABLE IF NOT EXISTS daily_challenges (id INTEGER PRIMARY KEY, userId INTEGER, date TEXT, type TEXT, target INTEGER, progress INTEGER DEFAULT 0, description TEXT, xpReward INTEGER, status TEXT DEFAULT 'ACTIVE', FOREIGN KEY(userId) REFERENCES users(id))`);
-  db.run(`
+  database.run(
+    `CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT)`,
+  );
+  database.run(
+    `CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY, title TEXT, description TEXT, status TEXT, updateStatusDate TEXT, estimate INTEGER, priority TEXT, link TEXT, createdAt TEXT, spendTime INTEGER, startTimer TEXT, type TEXT DEFAULT 'TASK', userId INTEGER, sprintId INTEGER, displayOrder INTEGER, storyPoints INTEGER DEFAULT 0, FOREIGN KEY(userId) REFERENCES users(id), FOREIGN KEY(sprintId) REFERENCES sprints(id) ON DELETE SET NULL)`,
+  );
+  database.run(
+    `CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, title TEXT, content TEXT, createdAt TEXT, userId INTEGER, FOREIGN KEY(userId) REFERENCES users(id))`,
+  );
+  database.run(
+    `CREATE TABLE IF NOT EXISTS sprints (id INTEGER PRIMARY KEY, name TEXT NOT NULL, startDate TEXT, endDate TEXT, status TEXT NOT NULL DEFAULT 'UPCOMING')`,
+  );
+  database.run(
+    `CREATE TABLE IF NOT EXISTS user_profile (userId INTEGER PRIMARY KEY, level INTEGER DEFAULT 1, xp INTEGER DEFAULT 0, FOREIGN KEY(userId) REFERENCES users(id))`,
+  );
+  database.run(
+    `CREATE TABLE IF NOT EXISTS achievements (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL, xp INTEGER DEFAULT 0)`,
+  );
+  database.run(
+    `CREATE TABLE IF NOT EXISTS user_achievements (userId INTEGER, achievementId TEXT, earnedAt TEXT NOT NULL, PRIMARY KEY (userId, achievementId), FOREIGN KEY(userId) REFERENCES users(id), FOREIGN KEY(achievementId) REFERENCES achievements(id))`,
+  );
+  database.run(
+    `CREATE TABLE IF NOT EXISTS tags (id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL)`,
+  );
+  database.run(
+    `CREATE TABLE IF NOT EXISTS task_tags (taskId INTEGER, tagId INTEGER, PRIMARY KEY (taskId, tagId), FOREIGN KEY(taskId) REFERENCES tasks(id) ON DELETE CASCADE, FOREIGN KEY(tagId) REFERENCES tags(id) ON DELETE CASCADE)`,
+  );
+  database.run(
+    `CREATE TABLE IF NOT EXISTS work_sessions (id INTEGER PRIMARY KEY, taskId INTEGER, startTime TEXT, endTime TEXT, duration INTEGER, FOREIGN KEY(taskId) REFERENCES tasks(id) ON DELETE CASCADE)`,
+  );
+  database.run(
+    `CREATE TABLE IF NOT EXISTS daily_challenges (id INTEGER PRIMARY KEY, userId INTEGER, date TEXT, type TEXT, target INTEGER, progress INTEGER DEFAULT 0, description TEXT, xpReward INTEGER, status TEXT DEFAULT 'ACTIVE', FOREIGN KEY(userId) REFERENCES users(id))`,
+  );
+  database.run(`
     CREATE TABLE IF NOT EXISTS tag_analytics (
       tag_id INTEGER PRIMARY KEY,
       ema REAL DEFAULT 0,
@@ -62,93 +97,252 @@ export const initDB = async () => {
       FOREIGN KEY(tag_id) REFERENCES tags(id) ON DELETE CASCADE
     )
   `);
-  db.run(`CREATE TABLE IF NOT EXISTS system_logs (id INTEGER PRIMARY KEY, timestamp TEXT, event_type TEXT, message TEXT)`);
-  db.run(`CREATE TABLE IF NOT EXISTS task_checklist_items (id INTEGER PRIMARY KEY, taskId INTEGER, text TEXT, isCompleted INTEGER DEFAULT 0, FOREIGN KEY(taskId) REFERENCES tasks(id) ON DELETE CASCADE)`);
-  db.run(`CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)`);
-  db.run(`CREATE TABLE IF NOT EXISTS daily_energy_logs (date TEXT PRIMARY KEY, mode TEXT, sleepScore INTEGER)`);
-  db.run(`CREATE TABLE IF NOT EXISTS habits (id INTEGER PRIMARY KEY, userId INTEGER, title TEXT NOT NULL, description TEXT, frequency TEXT NOT NULL, category TEXT, targetStreak INTEGER DEFAULT 0, reminderTime TEXT, createdAt TEXT, isFavorite INTEGER DEFAULT 0, FOREIGN KEY(userId) REFERENCES users(id))`);
-  db.run(`CREATE TABLE IF NOT EXISTS habit_logs (id INTEGER PRIMARY KEY, habitId INTEGER, date TEXT NOT NULL, value INTEGER DEFAULT 1, notes TEXT, FOREIGN KEY(habitId) REFERENCES habits(id) ON DELETE CASCADE)`);
-  db.run(`CREATE TABLE IF NOT EXISTS web_stats (id INTEGER PRIMARY KEY, domain TEXT, url TEXT, duration INTEGER, timestamp INTEGER)`);
-  db.run(`CREATE TABLE IF NOT EXISTS domain_categories (domain TEXT PRIMARY KEY, category TEXT)`);
-  db.run(`CREATE TABLE IF NOT EXISTS app_activity (id INTEGER PRIMARY KEY, app_name TEXT, window_title TEXT, duration INTEGER, timestamp INTEGER)`);
-  db.run(`CREATE TABLE IF NOT EXISTS app_categories (app_name TEXT PRIMARY KEY, category TEXT)`);
+  database.run(
+    `CREATE TABLE IF NOT EXISTS system_logs (id INTEGER PRIMARY KEY, timestamp TEXT, event_type TEXT, message TEXT)`,
+  );
+  database.run(
+    `CREATE TABLE IF NOT EXISTS task_checklist_items (id INTEGER PRIMARY KEY, taskId INTEGER, text TEXT, isCompleted INTEGER DEFAULT 0, FOREIGN KEY(taskId) REFERENCES tasks(id) ON DELETE CASCADE)`,
+  );
+  database.run(
+    `CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)`,
+  );
+  database.run(
+    `CREATE TABLE IF NOT EXISTS daily_energy_logs (date TEXT PRIMARY KEY, mode TEXT, sleepScore INTEGER)`,
+  );
+  database.run(
+    `CREATE TABLE IF NOT EXISTS habits (id INTEGER PRIMARY KEY, userId INTEGER, title TEXT NOT NULL, description TEXT, frequency TEXT NOT NULL, category TEXT, targetStreak INTEGER DEFAULT 0, reminderTime TEXT, createdAt TEXT, isFavorite INTEGER DEFAULT 0, FOREIGN KEY(userId) REFERENCES users(id))`,
+  );
+  database.run(
+    `CREATE TABLE IF NOT EXISTS habit_logs (id INTEGER PRIMARY KEY, habitId INTEGER, date TEXT NOT NULL, value INTEGER DEFAULT 1, notes TEXT, FOREIGN KEY(habitId) REFERENCES habits(id) ON DELETE CASCADE)`,
+  );
+  database.run(
+    `CREATE TABLE IF NOT EXISTS web_stats (id INTEGER PRIMARY KEY, domain TEXT, url TEXT, duration INTEGER, timestamp INTEGER)`,
+  );
+  database.run(
+    `CREATE TABLE IF NOT EXISTS domain_categories (domain TEXT PRIMARY KEY, category TEXT)`,
+  );
+  database.run(
+    `CREATE TABLE IF NOT EXISTS app_activity (id INTEGER PRIMARY KEY, app_name TEXT, window_title TEXT, duration INTEGER, timestamp INTEGER)`,
+  );
+  database.run(
+    `CREATE TABLE IF NOT EXISTS app_categories (app_name TEXT PRIMARY KEY, category TEXT)`,
+  );
 
   // Performance Indexes
-  db.run(`CREATE INDEX IF NOT EXISTS idx_web_stats_timestamp ON web_stats(timestamp)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_app_activity_timestamp ON app_activity(timestamp)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_system_logs_timestamp ON system_logs(timestamp)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_work_sessions_start ON work_sessions(startTime)`); 
+  database.run(
+    `CREATE INDEX IF NOT EXISTS idx_web_stats_timestamp ON web_stats(timestamp)`,
+  );
+  database.run(
+    `CREATE INDEX IF NOT EXISTS idx_app_activity_timestamp ON app_activity(timestamp)`,
+  );
+  database.run(
+    `CREATE INDEX IF NOT EXISTS idx_system_logs_timestamp ON system_logs(timestamp)`,
+  );
+  database.run(
+    `CREATE INDEX IF NOT EXISTS idx_work_sessions_start ON work_sessions(startTime)`,
+  );
 
   // Robust Migrations
   try {
-    try { db.run('ALTER TABLE tasks ADD COLUMN displayOrder INTEGER'); } catch(e) {}
-    try { db.run('UPDATE tasks SET displayOrder = id WHERE displayOrder IS NULL'); } catch(e) {}
-    try { db.run("ALTER TABLE tasks ADD COLUMN type TEXT DEFAULT 'TASK'"); } catch(e) {}
-    try { db.run("ALTER TABLE tasks ADD COLUMN storyPoints INTEGER DEFAULT 0"); } catch(e) {}
-    try { db.run("ALTER TABLE tasks ADD COLUMN subtasks TEXT DEFAULT '[]'"); } catch(e) {}
-    try { db.run("ALTER TABLE tasks ADD COLUMN pomodoroCount INTEGER DEFAULT 0"); } catch(e) {}
-    try { db.run("ALTER TABLE tasks ADD COLUMN timerMode TEXT"); } catch(e) {}
+    try {
+      database.run('ALTER TABLE tasks ADD COLUMN displayOrder INTEGER');
+    } catch (e) {}
+    try {
+      database.run(
+        'UPDATE tasks SET displayOrder = id WHERE displayOrder IS NULL',
+      );
+    } catch (e) {}
+    try {
+      database.run("ALTER TABLE tasks ADD COLUMN type TEXT DEFAULT 'TASK'");
+    } catch (e) {}
+    try {
+      database.run(
+        'ALTER TABLE tasks ADD COLUMN storyPoints INTEGER DEFAULT 0',
+      );
+    } catch (e) {}
+    try {
+      database.run("ALTER TABLE tasks ADD COLUMN subtasks TEXT DEFAULT '[]'");
+    } catch (e) {}
+    try {
+      database.run(
+        'ALTER TABLE tasks ADD COLUMN pomodoroCount INTEGER DEFAULT 0',
+      );
+    } catch (e) {}
+    try {
+      database.run('ALTER TABLE tasks ADD COLUMN timerMode TEXT');
+    } catch (e) {}
 
     // Habit migration
-    try { db.run('ALTER TABLE habits ADD COLUMN isFavorite INTEGER DEFAULT 0'); } catch(e) {}
+    try {
+      database.run(
+        'ALTER TABLE habits ADD COLUMN isFavorite INTEGER DEFAULT 0',
+      );
+    } catch (e) {}
 
     // Sprints migration
-    try { db.run('ALTER TABLE sprints ADD COLUMN capacity INTEGER DEFAULT 0'); } catch(e) {}
-    try { db.run("ALTER TABLE sprints ADD COLUMN excludedDates TEXT DEFAULT '[]'"); } catch(e) {}
+    try {
+      database.run('ALTER TABLE sprints ADD COLUMN capacity INTEGER DEFAULT 0');
+    } catch (e) {}
+    try {
+      database.run(
+        "ALTER TABLE sprints ADD COLUMN excludedDates TEXT DEFAULT '[]'",
+      );
+    } catch (e) {}
 
     // Bio logs migration
-    try { db.run('ALTER TABLE daily_energy_logs ADD COLUMN sleepScore INTEGER'); } catch(e) {}
-    try { db.run('ALTER TABLE daily_energy_logs ADD COLUMN meetingTime INTEGER DEFAULT 0'); } catch(e) {}
-    try { db.run('ALTER TABLE daily_energy_logs ADD COLUMN waterIntake INTEGER DEFAULT 0'); } catch(e) {}
-    try { db.run('ALTER TABLE daily_energy_logs ADD COLUMN meditationMinutes INTEGER DEFAULT 0'); } catch(e) {}
-    try { db.run('ALTER TABLE daily_energy_logs ADD COLUMN stretchingMinutes INTEGER DEFAULT 0'); } catch(e) {}
-    
-    // Fix Status Casing
-    db.run("UPDATE tasks SET status = 'Completed' WHERE status = 'COMPLETED'");
-  } catch (e) { console.error('[DB] Migration Error:', e); }
+    try {
+      database.run(
+        'ALTER TABLE daily_energy_logs ADD COLUMN sleepScore INTEGER',
+      );
+    } catch (e) {}
+    try {
+      database.run(
+        'ALTER TABLE daily_energy_logs ADD COLUMN meetingTime INTEGER DEFAULT 0',
+      );
+    } catch (e) {}
+    try {
+      database.run(
+        'ALTER TABLE daily_energy_logs ADD COLUMN waterIntake INTEGER DEFAULT 0',
+      );
+    } catch (e) {}
+    try {
+      database.run(
+        'ALTER TABLE daily_energy_logs ADD COLUMN meditationMinutes INTEGER DEFAULT 0',
+      );
+    } catch (e) {}
+    try {
+      database.run(
+        'ALTER TABLE daily_energy_logs ADD COLUMN stretchingMinutes INTEGER DEFAULT 0',
+      );
+    } catch (e) {}
+
+    // Aggressive Status Normalization (Fix for Board View visibility)
+    database.run(
+      "UPDATE tasks SET status = 'Completed' WHERE TRIM(LOWER(status)) IN ('completed', 'done', 'finished', 'archived', '3')",
+    );
+    database.run(
+      "UPDATE tasks SET status = 'To Do' WHERE TRIM(LOWER(status)) IN ('todo', 'to do', '0', 'backlog') OR status IS NULL OR TRIM(status) = ''",
+    );
+    database.run(
+      "UPDATE tasks SET status = 'In Progress' WHERE TRIM(LOWER(status)) IN ('inprogress', 'in progress', '1')",
+    );
+    database.run(
+      "UPDATE tasks SET status = 'In Review' WHERE TRIM(LOWER(status)) IN ('inreview', 'in review', '2')",
+    );
+  } catch (e) {
+    console.error('[DB] Migration Error:', e);
+  }
 
   // Seed Default Settings
   const defaultSettings = [
-      { key: 'complexityThreshold', value: '8' },
-      { key: 'enableRewardAnimations', value: 'true' },
-      { key: 'enableFatigueWarnings', value: 'true' },
-      { key: 'workDayStart', value: '09:00' },
-      { key: 'workDayEnd', value: '17:00' },
-      { key: 'idleTimeout', value: '600' },
-      { key: 'aiEngine', value: 'local' },
-      { key: 'geminiApiKey', value: '' },
-      { key: 'meditation_time', value: '09:00' },
-      { key: 'stretching_interval', value: '60' },
-      { key: 'water_interval', value: '90' },
-      { key: 'water_goal', value: '8' },
-      { key: 'meditation_duration', value: '10' },
-      { key: 'pomodoro_duration', value: '25' },
-      { key: 'shutdown_checklist', value: JSON.stringify([
-          "Skrzynka odbiorcza i komunikatory sprawdzone (Inbox Zero)",
-          "Plan na jutro przygotowany i zapisany",
-          "Biurko / Pulpit uporządkowane",
-          "Ostatnie spojrzenie na kalendarz"
-      ])}
+    { key: 'complexityThreshold', value: '8' },
+    { key: 'enableRewardAnimations', value: 'true' },
+    { key: 'enableFatigueWarnings', value: 'true' },
+    { key: 'workDayStart', value: '09:00' },
+    { key: 'workDayEnd', value: '17:00' },
+    { key: 'idleTimeout', value: '600' },
+    { key: 'aiEngine', value: 'local' },
+    { key: 'geminiApiKey', value: '' },
+    { key: 'meditation_time', value: '09:00' },
+    { key: 'stretching_interval', value: '60' },
+    { key: 'water_interval', value: '90' },
+    { key: 'water_goal', value: '8' },
+    { key: 'meditation_duration', value: '10' },
+    { key: 'pomodoro_duration', value: '25' },
+    { key: 'mountain_climb_enabled', value: 'true' },
+    {
+      key: 'current_expedition',
+      value: JSON.stringify({
+        seed: Math.random(),
+        targetMinutes: 240,
+        accumulatedMinutes: 0,
+        status: 'active',
+      }),
+    },
+    {
+      key: 'shutdown_checklist',
+      value: JSON.stringify([
+        'Skrzynka odbiorcza i komunikatory sprawdzone (Inbox Zero)',
+        'Plan na jutro przygotowany i zapisany',
+        'Biurko / Pulpit uporządkowane',
+        'Ostatnie spojrzenie na kalendarz',
+      ]),
+    },
   ];
-  const settingStmt = db.prepare('INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)');
-  defaultSettings.forEach(s => settingStmt.run([s.key, s.value]));
+  const settingStmt = database.prepare(
+    'INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)',
+  );
+  defaultSettings.forEach((s) => settingStmt.run([s.key, s.value]));
   settingStmt.free();
 
-
   const achievementsToSeed = [
-    { id: 'FIRST_TASK', name: 'First Step', description: 'Complete your first task.', xp: 10 },
-    { id: 'FIVE_TASKS', name: 'Apprentice', description: 'Complete 5 tasks.', xp: 50 },
-    { id: 'TEN_TASKS', name: 'Journeyman', description: 'Complete 10 tasks.', xp: 100 },
-    { id: 'BUG_SQUASHER', name: 'Bug Squasher', description: 'Complete your first bug task.', xp: 20 },
-    { id: 'THE_PLANNER', name: 'The Planner', description: 'Create your first sprint.', xp: 25 },
-    { id: 'DEEP_DIVE', name: 'Deep Dive', description: 'Spend over 2 hours on a single task.', xp: 50 },
-    { id: 'POMODORO_MASTER', name: 'Pomodoro Master', description: 'Complete your first Pomodoro session.', xp: 30 },
-    { id: 'ZEN_MASTER', name: 'Zen Master', description: 'Complete 5 meditation sessions.', xp: 40 },
-    { id: 'HYDRO_HOMIE', name: 'Hydro Homie', description: 'Log water intake 10 times.', xp: 25 },
-    { id: 'FLEXIBLE', name: 'Flexible', description: 'Complete 5 stretching sessions.', xp: 30 },
+    {
+      id: 'FIRST_TASK',
+      name: 'First Step',
+      description: 'Complete your first task.',
+      xp: 10,
+    },
+    {
+      id: 'FIVE_TASKS',
+      name: 'Apprentice',
+      description: 'Complete 5 tasks.',
+      xp: 50,
+    },
+    {
+      id: 'TEN_TASKS',
+      name: 'Journeyman',
+      description: 'Complete 10 tasks.',
+      xp: 100,
+    },
+    {
+      id: 'BUG_SQUASHER',
+      name: 'Bug Squasher',
+      description: 'Complete your first bug task.',
+      xp: 20,
+    },
+    {
+      id: 'THE_PLANNER',
+      name: 'The Planner',
+      description: 'Create your first sprint.',
+      xp: 25,
+    },
+    {
+      id: 'DEEP_DIVE',
+      name: 'Deep Dive',
+      description: 'Spend over 2 hours on a single task.',
+      xp: 50,
+    },
+    {
+      id: 'POMODORO_MASTER',
+      name: 'Pomodoro Master',
+      description: 'Complete your first Pomodoro session.',
+      xp: 30,
+    },
+    {
+      id: 'ZEN_MASTER',
+      name: 'Zen Master',
+      description: 'Complete 5 meditation sessions.',
+      xp: 40,
+    },
+    {
+      id: 'HYDRO_HOMIE',
+      name: 'Hydro Homie',
+      description: 'Log water intake 10 times.',
+      xp: 25,
+    },
+    {
+      id: 'FLEXIBLE',
+      name: 'Flexible',
+      description: 'Complete 5 stretching sessions.',
+      xp: 30,
+    },
   ];
-  const stmt = db.prepare('INSERT OR IGNORE INTO achievements (id, name, description, xp) VALUES (?, ?, ?, ?)');
-  achievementsToSeed.forEach(ach => stmt.run([ach.id, ach.name, ach.description, ach.xp]));
+  const stmt = database.prepare(
+    'INSERT OR IGNORE INTO achievements (id, name, description, xp) VALUES (?, ?, ?, ?)',
+  );
+  achievementsToSeed.forEach((ach) =>
+    stmt.run([ach.id, ach.name, ach.description, ach.xp]),
+  );
   stmt.free();
 
   saveDB();
@@ -158,7 +352,10 @@ export const initDB = async () => {
 export const logSystemEvent = (message: string, type: string = 'INFO') => {
   if (!db) return;
   const timestamp = new Date().toISOString();
-  db.run('INSERT INTO system_logs (timestamp, event_type, message) VALUES (?, ?, ?)', [timestamp, type, message]);
+  db.run(
+    'INSERT INTO system_logs (timestamp, event_type, message) VALUES (?, ?, ?)',
+    [timestamp, type, message],
+  );
   saveDB(); // Persist logs immediately
 };
 
@@ -174,91 +371,49 @@ export const getSystemLogs = (limit: number = 50) => {
   return logs;
 };
 
-export const getNeuralConfidence = () => {
-  if (!db) return 0;
-  
-  try {
-      // 1. Task Volume (Max 40 pts)
-      const taskCountStmt = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE status = 'Completed'");
-      let taskCount = 0;
-      if (taskCountStmt.step()) {
-          const row = taskCountStmt.getAsObject();
-          taskCount = Number(row.count) || 0;
-      }
-      taskCountStmt.free();
-      const taskScore = Math.min(40, taskCount * 2);
-
-      // 2. Tag Maturity (Max 25 pts)
-      const tagStmt = db.prepare("SELECT COUNT(*) as count FROM tag_analytics WHERE completed_count >= 3");
-      let matureTags = 0;
-      if (tagStmt.step()) {
-          const row = tagStmt.getAsObject();
-          matureTags = Number(row.count) || 0;
-      }
-      tagStmt.free();
-      const tagScore = Math.min(25, matureTags * 5);
-
-      // 3. Sprint History (Max 15 pts)
-      const sprintStmt = db.prepare("SELECT COUNT(*) as count FROM sprints WHERE status = 'COMPLETED'");
-      let sprintCount = 0;
-      if (sprintStmt.step()) {
-          const row = sprintStmt.getAsObject();
-          sprintCount = Number(row.count) || 0;
-      }
-      sprintStmt.free();
-      const sprintScore = Math.min(15, sprintCount * 5);
-
-      // 4. Habit History (Max 20 pts)
-      const habitStmt = db.prepare("SELECT COUNT(*) as count FROM habit_logs WHERE value >= 1");
-      let habitCount = 0;
-      if (habitStmt.step()) {
-          const row = habitStmt.getAsObject();
-          habitCount = Number(row.count) || 0;
-      }
-      habitStmt.free();
-      const habitScore = Math.min(20, habitCount);
-      
-      const total = Math.round(taskScore + tagScore + sprintScore + habitScore);
-      return Math.min(100, total);
-  } catch (error: any) {
-      console.error('[DB] Error calculating neural confidence:', error);
-      return 0;
-  }
-};
-
 export const getAiMaturity = () => {
   if (!db) return 0;
   const trainingCount = Number(getSetting('neural_training_count') || 0);
-  
+
   // Data Count comes from completed tasks
-  const taskCountStmt = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE status = 'Completed'");
+  const taskCountStmt = db.prepare(
+    "SELECT COUNT(*) as count FROM tasks WHERE status = 'Completed'",
+  );
   let dataCount = 0;
   if (taskCountStmt.step()) {
-      const row = taskCountStmt.getAsObject();
-      dataCount = Number(row.count) || 0;
+    const row = taskCountStmt.getAsObject();
+    dataCount = Number(row.count) || 0;
   }
   taskCountStmt.free();
-  
+
   // Maturity Score: Training (max 50) + Data Volume (max 50)
-  const trainingScore = Math.min(50, trainingCount * 2); 
-  const dataScore = Math.min(50, dataCount); 
-  
+  const trainingScore = Math.min(50, trainingCount * 2);
+  const dataScore = Math.min(50, dataCount);
+
   return Math.round(trainingScore + dataScore);
 };
 
 export const getAiStats = () => {
-  if (!db) return { maturity: 0, confidence: 0, trainingCount: 0, dataCount: 0 };
-  
+  if (!db) return { maturity: 0, trainingCount: 0, dataCount: 0 };
+
   const maturity = getAiMaturity();
-  const confidence = getNeuralConfidence();
   const trainingCount = Number(getSetting('neural_training_count') || 0);
-  const dataCount = Number(getSetting('neural_data_count') || 0);
+
+  // Real count of completed tasks (the actual training dataset), not the never-written
+  // 'neural_data_count' setting this used to read (always 0).
+  const taskCountStmt = db.prepare(
+    "SELECT COUNT(*) as count FROM tasks WHERE status = 'Completed'",
+  );
+  let dataCount = 0;
+  if (taskCountStmt.step()) {
+    dataCount = Number(taskCountStmt.getAsObject().count) || 0;
+  }
+  taskCountStmt.free();
 
   return {
     maturity,
-    confidence,
     trainingCount,
-    dataCount
+    dataCount,
   };
 };
 
@@ -269,11 +424,11 @@ export const getTagAnalytics = (tagId: number) => {
   stmt.bind([tagId]);
   let result: any = null;
   if (stmt.step()) {
-      result = stmt.getAsObject();
+    result = stmt.getAsObject();
   }
   stmt.free();
   if (result && result.tag_id) {
-      return result;
+    return result;
   }
   return { tag_id: tagId, ema: 0, std_dev: 0, variance: 0, completed_count: 0 };
 };
@@ -297,14 +452,17 @@ const updateTagAnalytics = (tagId: number, duration: number) => {
   if (!db) return;
   const safeDuration = Number(duration) || 0; // Ensure duration is a number
   const currentAnalytics: any = getTagAnalytics(tagId);
-  
+
   // Fetch tag name for logging
   const tagStmt = db.prepare('SELECT name FROM tags WHERE id = ?');
   const tagResult = tagStmt.get([tagId]);
   tagStmt.free();
   const tagName = tagResult ? tagResult[0] : 'Unknown';
 
-  logSystemEvent(`[DEBUG] Tag Update: ID=${tagId} (${tagName}), Count=${currentAnalytics.completed_count}, EMA=${currentAnalytics.ema}`, 'DEBUG');
+  logSystemEvent(
+    `[DEBUG] Tag Update: ID=${tagId} (${tagName}), Count=${currentAnalytics.completed_count}, EMA=${currentAnalytics.ema}`,
+    'DEBUG',
+  );
 
   const currentCount = Number(currentAnalytics.completed_count) || 0;
   const currentEma = Number(currentAnalytics.ema) || 0;
@@ -313,46 +471,52 @@ const updateTagAnalytics = (tagId: number, duration: number) => {
   const n = currentCount + 1;
   const alpha = 2 / (n + 1); // Smoothing factor
 
-  const newEma = (safeDuration * alpha) + (currentEma * (1 - alpha));
+  const newEma = safeDuration * alpha + currentEma * (1 - alpha);
 
   // Welford's online algorithm for variance
   const oldMean = currentEma;
   const oldVariance = currentVariance;
   const newMean = oldMean + (safeDuration - oldMean) / n;
-  const newVariance = ((n - 1) * oldVariance + (safeDuration - oldMean) * (safeDuration - newMean)) / n;
+  const newVariance =
+    ((n - 1) * oldVariance +
+      (safeDuration - oldMean) * (safeDuration - newMean)) /
+    n;
   const newStdDev = Math.sqrt(newVariance);
 
   db.run(
     'INSERT OR REPLACE INTO tag_analytics (tag_id, ema, std_dev, variance, completed_count) VALUES (?, ?, ?, ?, ?)',
-    [tagId, newEma, newStdDev, newVariance, n]
+    [tagId, newEma, newStdDev, newVariance, n],
   );
-  
+
   // Log the learning event
   const hours = (newEma / (1000 * 60 * 60)).toFixed(2);
-  logSystemEvent(`Analyzed #${tagName}: Updated EMA to ${hours}h (Samples: ${n})`, 'LEARNING');
+  logSystemEvent(
+    `Analyzed #${tagName}: Updated EMA to ${hours}h (Samples: ${n})`,
+    'LEARNING',
+  );
 };
 
 const recalcTagAnalytics = (tagId?: number) => {
   if (!db) return;
-  
+
   // 1. Determine which tags to recalculate
   let tagIds: number[] = [];
   if (tagId) {
-      tagIds = [tagId];
+    tagIds = [tagId];
   } else {
-      const stmt = db.prepare('SELECT id FROM tags');
-      while (stmt.step()) tagIds.push(stmt.get()[0] as number);
-      stmt.free();
+    const stmt = db.prepare('SELECT id FROM tags');
+    while (stmt.step()) tagIds.push(stmt.get()[0] as number);
+    stmt.free();
   }
 
   // 2. Reset analytics for these tags
   const resetStmt = db.prepare('DELETE FROM tag_analytics WHERE tag_id = ?');
-  tagIds.forEach(id => resetStmt.run([id]));
+  tagIds.forEach((id) => resetStmt.run([id]));
   resetStmt.free();
 
   // 3. Re-process all COMPLETED tasks for these tags
   // Collect data in memory first to avoid nested statement conflicts
-  const updates: { tagId: number, spendTime: number }[] = [];
+  const updates: { tagId: number; spendTime: number }[] = [];
 
   const tasksStmt = db.prepare(`
       SELECT t.spendTime, tt.tagId 
@@ -362,43 +526,58 @@ const recalcTagAnalytics = (tagId?: number) => {
       ORDER BY t.updateStatusDate ASC
   `);
 
-  tagIds.forEach(tid => {
-      tasksStmt.bind([tid]);
-      while(tasksStmt.step()) {
-          const row = tasksStmt.getAsObject();
-          updates.push({ tagId: row.tagId as number, spendTime: row.spendTime as number });
-      }
-      tasksStmt.reset();
+  tagIds.forEach((tid) => {
+    tasksStmt.bind([tid]);
+    while (tasksStmt.step()) {
+      const row = tasksStmt.getAsObject();
+      updates.push({
+        tagId: row.tagId as number,
+        spendTime: row.spendTime as number,
+      });
+    }
+    tasksStmt.reset();
   });
   tasksStmt.free();
-  
+
   // 4. Perform updates
-  updates.forEach(update => {
-      updateTagAnalytics(update.tagId, update.spendTime);
+  updates.forEach((update) => {
+    updateTagAnalytics(update.tagId, update.spendTime);
   });
-  
+
   logSystemEvent(`Recalculated analytics for ${tagIds.length} tags.`, 'SYSTEM');
 };
 
 // --- Work Session Logging ---
-export const logWorkSession = (session: { taskId: number, startTime: string, endTime: string, duration: number }) => {
+export const logWorkSession = (session: {
+  taskId: number;
+  startTime: string;
+  endTime: string;
+  duration: number;
+}) => {
   if (!db) throw new Error('DB not initialized');
-  db.run('INSERT INTO work_sessions (taskId, startTime, endTime, duration) VALUES (?, ?, ?, ?)', [session.taskId, session.startTime, session.endTime, session.duration]);
+  db.run(
+    'INSERT INTO work_sessions (taskId, startTime, endTime, duration) VALUES (?, ?, ?, ?)',
+    [session.taskId, session.startTime, session.endTime, session.duration],
+  );
   saveDB();
   console.log('[DB] Work session logged and DB saved.');
 };
 
-
 export const getTaskWorkSessions = (taskId: number) => {
   if (!db) return [];
-  const stmt = db.prepare('SELECT startTime, duration FROM work_sessions WHERE taskId = ? ORDER BY startTime ASC');
+  const stmt = db.prepare(
+    'SELECT startTime, duration FROM work_sessions WHERE taskId = ? ORDER BY startTime ASC',
+  );
   stmt.bind([taskId]);
   const sessions: any[] = [];
   while (stmt.step()) {
     sessions.push(stmt.getAsObject());
   }
   stmt.free();
-  logSystemEvent(`[DEBUG] getTaskWorkSessions(${taskId}) found ${sessions.length} sessions.`, 'DEBUG');
+  logSystemEvent(
+    `[DEBUG] getTaskWorkSessions(${taskId}) found ${sessions.length} sessions.`,
+    'DEBUG',
+  );
   return sessions;
 };
 
@@ -452,7 +631,7 @@ export const getDeepWorkHistory = (userId: number, days: number = 14) => {
   if (!db) return [];
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - days);
-  
+
   // Get all sessions in range
   const stmt = db.prepare(`
     SELECT ws.startTime, ws.duration
@@ -462,46 +641,54 @@ export const getDeepWorkHistory = (userId: number, days: number = 14) => {
     ORDER BY ws.startTime ASC
   `);
   stmt.bind({ ':userId': userId, ':cutoffDate': cutoffDate.toISOString() });
-  
-  const dailyStats: Record<string, { total: number, deep: number, maxSession: number }> = {};
-  
-  while(stmt.step()) {
-      const row = stmt.getAsObject();
-      // Date logic (4 AM cutoff)
-      const dateObj = new Date(row.startTime as string);
-      if (dateObj.getHours() < 4) dateObj.setDate(dateObj.getDate() - 1);
-      const dateStr = dateObj.toISOString().split('T')[0];
-      
-      if (!dailyStats[dateStr]) dailyStats[dateStr] = { total: 0, deep: 0, maxSession: 0 };
-      
-      const durationMin = (row.duration as number) / 60000;
-      dailyStats[dateStr].total += durationMin;
-      
-      if (durationMin > dailyStats[dateStr].maxSession) {
-          dailyStats[dateStr].maxSession = Math.round(durationMin);
-      }
-      
-      // Deep Work Logic (Simplified here, assumes >20m is deep for history chart)
-      // Ideally we would check FocusContext, but that's heavy for history. 
-      // Let's stick to duration proxy for history chart.
-      if (durationMin >= 20 && durationMin <= 120) {
-          dailyStats[dateStr].deep += durationMin;
-      }
+
+  const dailyStats: Record<
+    string,
+    { total: number; deep: number; maxSession: number }
+  > = {};
+
+  while (stmt.step()) {
+    const row = stmt.getAsObject();
+    // Date logic (4 AM cutoff)
+    const dateObj = new Date(row.startTime as string);
+    if (dateObj.getHours() < 4) dateObj.setDate(dateObj.getDate() - 1);
+    const dateStr = dateObj.toISOString().split('T')[0];
+
+    if (!dailyStats[dateStr])
+      dailyStats[dateStr] = { total: 0, deep: 0, maxSession: 0 };
+
+    const durationMin = (row.duration as number) / 60000;
+    dailyStats[dateStr].total += durationMin;
+
+    if (durationMin > dailyStats[dateStr].maxSession) {
+      dailyStats[dateStr].maxSession = Math.round(durationMin);
+    }
+
+    // Deep Work Logic (Simplified here, assumes >20m is deep for history chart)
+    // Ideally we would check FocusContext, but that's heavy for history.
+    // Let's stick to duration proxy for history chart.
+    if (durationMin >= 20 && durationMin <= 120) {
+      dailyStats[dateStr].deep += durationMin;
+    }
   }
   stmt.free();
-  
-  return Object.entries(dailyStats).map(([date, stats]) => ({
+
+  return Object.entries(dailyStats)
+    .map(([date, stats]) => ({
       date,
       totalDuration: Math.round(stats.total),
       deepWorkDuration: Math.round(stats.deep),
-      maxSession: stats.maxSession
-  })).sort((a, b) => a.date.localeCompare(b.date));
+      maxSession: stats.maxSession,
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
 };
 
 // --- Daily Challenges ---
 export const getDailyChallenge = (userId: number, date: string) => {
   if (!db) return null;
-  let stmt = db.prepare('SELECT * FROM daily_challenges WHERE userId = :userId AND date = :date');
+  const stmt = db.prepare(
+    'SELECT * FROM daily_challenges WHERE userId = :userId AND date = :date',
+  );
   stmt.bind({ ':userId': userId, ':date': date });
   if (stmt.step()) {
     const result = stmt.getAsObject();
@@ -512,12 +699,14 @@ export const getDailyChallenge = (userId: number, date: string) => {
 
   // Fallback: Try to find ANY challenge for today (Single User / Dev Mode fix)
   // This handles cases where frontend sends ID=1 but DB has UUID
-  const fallbackStmt = db.prepare('SELECT * FROM daily_challenges WHERE date = :date LIMIT 1');
+  const fallbackStmt = db.prepare(
+    'SELECT * FROM daily_challenges WHERE date = :date LIMIT 1',
+  );
   fallbackStmt.bind({ ':date': date });
   if (fallbackStmt.step()) {
-      const result = fallbackStmt.getAsObject();
-      fallbackStmt.free();
-      return result;
+    const result = fallbackStmt.getAsObject();
+    fallbackStmt.free();
+    return result;
   }
   fallbackStmt.free();
 
@@ -526,16 +715,35 @@ export const getDailyChallenge = (userId: number, date: string) => {
 
 export const createDailyChallenge = (challenge: any) => {
   if (!db) throw new Error('DB not initialized');
-  db.run('INSERT INTO daily_challenges (userId, date, type, target, progress, description, xpReward, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', 
-    [challenge.userId, challenge.date, challenge.type, challenge.target, challenge.progress || 0, challenge.description, challenge.xpReward, 'ACTIVE']);
+  db.run(
+    'INSERT INTO daily_challenges (userId, date, type, target, progress, description, xpReward, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [
+      challenge.userId,
+      challenge.date,
+      challenge.type,
+      challenge.target,
+      challenge.progress || 0,
+      challenge.description,
+      challenge.xpReward,
+      'ACTIVE',
+    ],
+  );
   const id = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
   saveDB();
   return { ...challenge, id, status: 'ACTIVE', progress: 0 };
 };
 
-export const updateDailyChallengeProgress = (id: number, progress: number, status: string) => {
+export const updateDailyChallengeProgress = (
+  id: number,
+  progress: number,
+  status: string,
+) => {
   if (!db) throw new Error('DB not initialized');
-  db.run('UPDATE daily_challenges SET progress = ?, status = ? WHERE id = ?', [progress, status, id]);
+  db.run('UPDATE daily_challenges SET progress = ?, status = ? WHERE id = ?', [
+    progress,
+    status,
+    id,
+  ]);
   saveDB();
 };
 
@@ -611,11 +819,13 @@ export const getHourlyProductivity = () => {
 
 export const getAverageTimeForTaskType = (taskType: string) => {
   if (!db) return 0;
-  const stmt = db.prepare(`SELECT AVG(spendTime) as avgTime FROM tasks WHERE type = :type AND status = 'COMPLETED'`);
+  const stmt = db.prepare(
+    `SELECT AVG(spendTime) as avgTime FROM tasks WHERE type = :type AND status = 'COMPLETED'`,
+  );
   stmt.bind({ ':type': taskType });
   let result = 0;
   if (stmt.step()) {
-    result = stmt.get()[0] as number || 0;
+    result = (stmt.get()[0] as number) || 0;
   }
   stmt.free();
 
@@ -624,7 +834,9 @@ export const getAverageTimeForTaskType = (taskType: string) => {
 
 export const getAverageSprintCapacity = () => {
   if (!db) return 0;
-  const sprintIdsStmt = db.prepare(`SELECT id FROM sprints WHERE status = 'COMPLETED' ORDER BY endDate DESC LIMIT 3`);
+  const sprintIdsStmt = db.prepare(
+    `SELECT id FROM sprints WHERE status = 'COMPLETED' ORDER BY endDate DESC LIMIT 3`,
+  );
   const sprintIds: number[] = [];
   while (sprintIdsStmt.step()) {
     sprintIds.push(sprintIdsStmt.get()[0] as number);
@@ -634,11 +846,13 @@ export const getAverageSprintCapacity = () => {
   if (sprintIds.length === 0) return 0;
 
   let totalCapacity = 0;
-  const taskSumStmt = db.prepare(`SELECT SUM(estimate) FROM tasks WHERE sprintId = ?`);
-  sprintIds.forEach(id => {
+  const taskSumStmt = db.prepare(
+    `SELECT SUM(estimate) FROM tasks WHERE sprintId = ?`,
+  );
+  sprintIds.forEach((id) => {
     taskSumStmt.bind([id]);
     if (taskSumStmt.step()) {
-      totalCapacity += taskSumStmt.get()[0] as number || 0;
+      totalCapacity += (taskSumStmt.get()[0] as number) || 0;
     }
     taskSumStmt.reset();
   });
@@ -646,7 +860,6 @@ export const getAverageSprintCapacity = () => {
 
   return totalCapacity / sprintIds.length;
 };
-
 
 // --- Global Search ---
 export const globalSearch = (userId: number, query: string) => {
@@ -681,7 +894,7 @@ export const globalSearch = (userId: number, query: string) => {
 
 export const deleteTask = (taskId: number) => {
   if (!db) throw new Error('DB not initialized');
-  
+
   // Check if task was completed before deleting to update analytics
   const taskStmt = db.prepare('SELECT status FROM tasks WHERE id = ?');
   const task = taskStmt.getAsObject([taskId]);
@@ -689,18 +902,18 @@ export const deleteTask = (taskId: number) => {
   const wasCompleted = task.status === 'Completed';
 
   // Get tags before deletion (cascade will remove links)
-  let tagIds: number[] = [];
+  const tagIds: number[] = [];
   if (wasCompleted) {
-      const tagsStmt = db.prepare('SELECT tagId FROM task_tags WHERE taskId = ?');
-      tagsStmt.bind([taskId]);
-      while (tagsStmt.step()) tagIds.push(tagsStmt.get()[0] as number);
-      tagsStmt.free();
+    const tagsStmt = db.prepare('SELECT tagId FROM task_tags WHERE taskId = ?');
+    tagsStmt.bind([taskId]);
+    while (tagsStmt.step()) tagIds.push(tagsStmt.get()[0] as number);
+    tagsStmt.free();
   }
 
   db.run('DELETE FROM tasks WHERE id = ?', [taskId]);
-  
+
   if (wasCompleted && tagIds.length > 0) {
-      tagIds.forEach(id => recalcTagAnalytics(id));
+    tagIds.forEach((id) => recalcTagAnalytics(id));
   }
 
   saveDB();
@@ -728,7 +941,6 @@ export const getAllTags = () => {
 
 // ... (rest of the file)
 
-
 // ... (rest of the file)
 export const updateTasksOrder = (taskIds: number[]) => {
   if (!db) throw new Error('DB not initialized');
@@ -746,7 +958,14 @@ export const updateTasksOrder = (taskIds: number[]) => {
   }
 };
 
-export const getTasks = (userId: number, includeMeetings: boolean = false) => {
+// TODO: includeMeetings is not yet wired into the query below - all tasks (including
+// MEETING type) are always returned regardless of this flag. Wiring it in isn't safe to do
+// blindly: MEETING is a selectable type in TaskDetail's type picker, and most callers
+// (TimerContext's main task list, TaskDetail's direct-fetch fallback, gamification/stats/
+// training) don't expect a task to silently disappear from them. Only List.tsx's own grid
+// currently hides meetings, via a separate client-side filter - that's the one place this
+// flag's "don't include" default already matches actual behavior.
+export const getTasks = (userId: number, _includeMeetings: boolean = false) => {
   if (!db) throw new Error('DB not initialized');
   const query = `
     SELECT
@@ -754,11 +973,11 @@ export const getTasks = (userId: number, includeMeetings: boolean = false) => {
       (SELECT GROUP_CONCAT(tags.name) FROM task_tags JOIN tags ON tags.id = task_tags.tagId WHERE task_tags.taskId = t.id) as tags
     FROM tasks t
     WHERE t.userId = :userId
-    ORDER BY 
-      CASE 
-        WHEN t.status = 'In Progress' THEN 1 
-        WHEN t.status = 'In Review' THEN 2 
-        WHEN t.status = 'To Do' THEN 3 
+    ORDER BY
+      CASE
+        WHEN t.status = 'In Progress' THEN 1
+        WHEN t.status = 'In Review' THEN 2
+        WHEN t.status = 'To Do' THEN 3
         ELSE 4 -- Completed or others
       END ASC,
       t.displayOrder ASC
@@ -767,15 +986,16 @@ export const getTasks = (userId: number, includeMeetings: boolean = false) => {
   stmt.bind({ ':userId': userId });
   const tasks: any[] = [];
   while (stmt.step()) {
-    const task = stmt.getAsObject();
+    const task = stmt.getAsObject() as any;
     task.tags = task.tags ? (task.tags as string).split(',') : [];
     try {
-        task.subtasks = task.subtasks ? JSON.parse(task.subtasks as string) : [];
+      task.subtasks = task.subtasks ? JSON.parse(task.subtasks as string) : [];
     } catch (e) {
-        task.subtasks = [];
+      task.subtasks = [];
     }
     tasks.push(task);
   }
+
   stmt.free();
 
   return tasks;
@@ -785,34 +1005,55 @@ export const createTask = (task: any, userId: number) => {
   if (!db) throw new Error('DB not initialized');
   const minOrderResult = db.exec('SELECT MIN(displayOrder) FROM tasks');
   const minOrder = minOrderResult[0]?.values[0][0] as number | null;
-  const newOrder = (minOrder === null) ? 0 : minOrder - 1;
+  const newOrder = minOrder === null ? 0 : minOrder - 1;
 
   const newTask = {
-      title: task.title,
-      description: task.description,
-      status: task.status,
-      updateStatusDate: new Date().toISOString(),
-      estimate: task.estimate,
-      priority: task.priority,
-      link: task.link,
-      createdAt: new Date().toISOString(),
-      spendTime: task.spendTime || 0,
-      startTimer: task.startTimer,
-      type: task.type || 'TASK',
-      userId: userId,
-      sprintId: task.sprintId || null,
-      displayOrder: newOrder,
-      storyPoints: task.storyPoints || 0,
-      subtasks: task.subtasks ? JSON.stringify(task.subtasks) : '[]',
-      timerMode: task.timerMode || null
+    title: task.title,
+    description: task.description,
+    status: task.status,
+    updateStatusDate: new Date().toISOString(),
+    estimate: task.estimate,
+    priority: task.priority,
+    link: task.link,
+    createdAt: new Date().toISOString(),
+    spendTime: task.spendTime || 0,
+    startTimer: task.startTimer,
+    type: task.type || 'TASK',
+    userId,
+    sprintId: task.sprintId || null,
+    displayOrder: newOrder,
+    storyPoints: task.storyPoints || 0,
+    subtasks: task.subtasks ? JSON.stringify(task.subtasks) : '[]',
+    timerMode: task.timerMode || null,
   };
 
-  const stmt = db.prepare(`INSERT INTO tasks (title, description, status, updateStatusDate, estimate, priority, link, createdAt, spendTime, startTimer, type, userId, sprintId, displayOrder, storyPoints, subtasks, timerMode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-  stmt.run([newTask.title, newTask.description, newTask.status, newTask.updateStatusDate, newTask.estimate, newTask.priority, newTask.link, newTask.createdAt, newTask.spendTime, newTask.startTimer, newTask.type, newTask.userId, newTask.sprintId, newTask.displayOrder, newTask.storyPoints, newTask.subtasks, newTask.timerMode]);
+  const stmt = db.prepare(
+    `INSERT INTO tasks (title, description, status, updateStatusDate, estimate, priority, link, createdAt, spendTime, startTimer, type, userId, sprintId, displayOrder, storyPoints, subtasks, timerMode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  stmt.run([
+    newTask.title,
+    newTask.description,
+    newTask.status,
+    newTask.updateStatusDate,
+    newTask.estimate,
+    newTask.priority,
+    newTask.link,
+    newTask.createdAt,
+    newTask.spendTime,
+    newTask.startTimer,
+    newTask.type,
+    newTask.userId,
+    newTask.sprintId,
+    newTask.displayOrder,
+    newTask.storyPoints,
+    newTask.subtasks,
+    newTask.timerMode,
+  ]);
   stmt.free();
 
-  const id = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
-  
+  const id = db.exec('SELECT last_insert_rowid() as id')[0]
+    .values[0][0] as number;
+
   // Set task tags if they exist
   if (task.tags && Array.isArray(task.tags) && task.tags.length > 0) {
     setTaskTags(id, task.tags);
@@ -825,52 +1066,130 @@ export const createTask = (task: any, userId: number) => {
 
 export const updateTask = (task: any) => {
   if (!db) throw new Error('DB not initialized');
-  
+
   const oldStatusStmt = db.prepare('SELECT status FROM tasks WHERE id = ?');
   const oldStatusResult = oldStatusStmt.get([task.id]);
   oldStatusStmt.free();
   const oldStatus = oldStatusResult ? oldStatusResult[0] : null;
 
-  let updateDate = task.updateStatusDate;
-  if (oldStatus !== task.status) {
-      updateDate = new Date().toISOString();
+  // Build dynamic UPDATE query only for fields that are defined
+  const updates: string[] = [];
+  const values: any[] = [];
+
+  // Always update updateStatusDate if status changed
+  if (task.status !== undefined && oldStatus !== task.status) {
+    task.updateStatusDate = new Date().toISOString();
   }
 
+  // Handle tags separately
   if (task.tags && Array.isArray(task.tags)) {
     setTaskTags(task.id, task.tags);
   }
-  
-  const subtasksStr = task.subtasks ? (typeof task.subtasks === 'string' ? task.subtasks : JSON.stringify(task.subtasks)) : '[]';
 
-  db.run(`UPDATE tasks SET title = ?, description = ?, status = ?, updateStatusDate = ?, estimate = ?, priority = ?, link = ?, spendTime = ?, startTimer = ?, sprintId = ?, type = ?, storyPoints = ?, subtasks = ?, timerMode = ?, pomodoroCount = ? WHERE id = ?`, [task.title, task.description, task.status, updateDate, task.estimate, task.priority, task.link, task.spendTime, task.startTimer, task.sprintId, task.type || 'TASK', task.storyPoints || 0, subtasksStr, task.timerMode || null, task.pomodoroCount || 0, task.id]);
+  // Build SET clauses only for defined fields
+  if (task.title !== undefined) {
+    updates.push('title = ?');
+    values.push(task.title);
+  }
+  if (task.description !== undefined) {
+    updates.push('description = ?');
+    values.push(task.description);
+  }
+  if (task.status !== undefined) {
+    updates.push('status = ?');
+    values.push(task.status);
+  }
+  if (task.updateStatusDate !== undefined) {
+    updates.push('updateStatusDate = ?');
+    values.push(task.updateStatusDate);
+  }
+  if (task.estimate !== undefined) {
+    updates.push('estimate = ?');
+    values.push(task.estimate);
+  }
+  if (task.priority !== undefined) {
+    updates.push('priority = ?');
+    values.push(task.priority);
+  }
+  if (task.link !== undefined) {
+    updates.push('link = ?');
+    values.push(task.link);
+  }
+  if (task.spendTime !== undefined) {
+    updates.push('spendTime = ?');
+    values.push(task.spendTime);
+  }
+  if (task.startTimer !== undefined) {
+    updates.push('startTimer = ?');
+    values.push(task.startTimer);
+  }
+  if (task.sprintId !== undefined) {
+    updates.push('sprintId = ?');
+    values.push(task.sprintId);
+  }
+  if (task.type !== undefined) {
+    updates.push('type = ?');
+    values.push(task.type);
+  }
+  if (task.storyPoints !== undefined) {
+    updates.push('storyPoints = ?');
+    values.push(task.storyPoints);
+  }
+  if (task.timerMode !== undefined) {
+    updates.push('timerMode = ?');
+    values.push(task.timerMode);
+  }
+  if (task.pomodoroCount !== undefined) {
+    updates.push('pomodoroCount = ?');
+    values.push(task.pomodoroCount);
+  }
+  if (task.subtasks !== undefined) {
+    const subtasksStr =
+      typeof task.subtasks === 'string'
+        ? task.subtasks
+        : JSON.stringify(task.subtasks);
+    updates.push('subtasks = ?');
+    values.push(subtasksStr);
+  }
+
+  // Only run UPDATE if there are fields to update
+  if (updates.length > 0) {
+    values.push(task.id); // Add id for WHERE clause
+    const query = `UPDATE tasks SET ${updates.join(', ')} WHERE id = ?`;
+    db.run(query, values);
+  }
 
   if (oldStatus !== 'Completed' && task.status === 'Completed') {
-    const tagIdsStmt = db.prepare('SELECT tagId FROM task_tags WHERE taskId = ?');
+    const tagIdsStmt = db.prepare(
+      'SELECT tagId FROM task_tags WHERE taskId = ?',
+    );
     tagIdsStmt.bind([task.id]);
     const tagIds: number[] = [];
     while (tagIdsStmt.step()) {
-        const row = tagIdsStmt.getAsObject();
-        tagIds.push(row.tagId as number);
+      const row = tagIdsStmt.getAsObject();
+      tagIds.push(row.tagId as number);
     }
     tagIdsStmt.free();
 
-    tagIds.forEach(tagId => {
+    tagIds.forEach((tagId) => {
       updateTagAnalytics(tagId, task.spendTime);
     });
   } else if (oldStatus === 'Completed' && task.status !== 'Completed') {
-      // Task was un-completed. We must recalculate analytics for its tags to remove the bias.
-      const tagIdsStmt = db.prepare('SELECT tagId FROM task_tags WHERE taskId = ?');
-      tagIdsStmt.bind([task.id]);
-      const tagIds: number[] = [];
-      while (tagIdsStmt.step()) {
-          const row = tagIdsStmt.getAsObject();
-          tagIds.push(row.tagId as number);
-      }
-      tagIdsStmt.free();
+    // Task was un-completed. We must recalculate analytics for its tags to remove the bias.
+    const tagIdsStmt = db.prepare(
+      'SELECT tagId FROM task_tags WHERE taskId = ?',
+    );
+    tagIdsStmt.bind([task.id]);
+    const tagIds: number[] = [];
+    while (tagIdsStmt.step()) {
+      const row = tagIdsStmt.getAsObject();
+      tagIds.push(row.tagId as number);
+    }
+    tagIdsStmt.free();
 
-      tagIds.forEach(tagId => {
-          recalcTagAnalytics(tagId);
-      });
+    tagIds.forEach((tagId) => {
+      recalcTagAnalytics(tagId);
+    });
   }
 
   saveDB();
@@ -890,8 +1209,10 @@ export const getOrCreateTag = (name: string): number => {
 export const setTaskTags = (taskId: number, tagNames: string[]) => {
   if (!db) throw new Error('DB not initialized');
   db.run('DELETE FROM task_tags WHERE taskId = ?', [taskId]);
-  const stmt = db.prepare('INSERT INTO task_tags (taskId, tagId) VALUES (?, ?)');
-  tagNames.forEach(name => {
+  const stmt = db.prepare(
+    'INSERT INTO task_tags (taskId, tagId) VALUES (?, ?)',
+  );
+  tagNames.forEach((name) => {
     const tagId = getOrCreateTag(name);
     stmt.run([taskId, tagId]);
   });
@@ -913,9 +1234,17 @@ export const getProfile = (userId: number) => {
   return profile;
 };
 
-export const updateProfile = (profile: { userId: number, level: number, xp: number }) => {
+export const updateProfile = (profile: {
+  userId: number;
+  level: number;
+  xp: number;
+}) => {
   if (!db) throw new Error('DB not initialized');
-  db.run('UPDATE user_profile SET level = ?, xp = ? WHERE userId = ?', [profile.level, profile.xp, profile.userId]);
+  db.run('UPDATE user_profile SET level = ?, xp = ? WHERE userId = ?', [
+    profile.level,
+    profile.xp,
+    profile.userId,
+  ]);
   saveDB();
   console.log('[DB] Profile updated and DB saved.');
   return profile;
@@ -923,10 +1252,14 @@ export const updateProfile = (profile: { userId: number, level: number, xp: numb
 
 export const getEarnedAchievements = (userId: number) => {
   if (!db) throw new Error('DB not initialized');
-  const stmt = db.prepare('SELECT achievementId FROM user_achievements WHERE userId = :userId');
+  const stmt = db.prepare(
+    'SELECT achievementId FROM user_achievements WHERE userId = :userId',
+  );
   stmt.bind({ ':userId': userId });
   const achievements: string[] = [];
-  while (stmt.step()) { achievements.push(stmt.get()[0] as string); }
+  while (stmt.step()) {
+    achievements.push(stmt.get()[0] as string);
+  }
   stmt.free();
 
   return achievements;
@@ -934,7 +1267,10 @@ export const getEarnedAchievements = (userId: number) => {
 
 export const grantAchievement = (userId: number, achievementId: string) => {
   if (!db) throw new Error('DB not initialized');
-  db.run('INSERT OR IGNORE INTO user_achievements (userId, achievementId, earnedAt) VALUES (?, ?, ?)', [userId, achievementId, new Date().toISOString()]);
+  db.run(
+    'INSERT OR IGNORE INTO user_achievements (userId, achievementId, earnedAt) VALUES (?, ?, ?)',
+    [userId, achievementId, new Date().toISOString()],
+  );
   logSystemEvent(`Achievement Unlocked: ${achievementId}`, 'GAMIFICATION');
   saveDB();
   console.log('[DB] Achievement granted and DB saved.');
@@ -945,15 +1281,18 @@ export const getSprints = () => {
   if (!db) throw new Error('DB not initialized');
   const stmt = db.prepare('SELECT * FROM sprints ORDER BY startDate DESC');
   const sprints: any[] = [];
-  while (stmt.step()) { 
-    const s = stmt.getAsObject();
+  while (stmt.step()) {
+    const s = stmt.getAsObject() as any;
     try {
-        s.excludedDates = s.excludedDates ? JSON.parse(s.excludedDates as string) : [];
-    } catch(e) {
-        s.excludedDates = [];
+      s.excludedDates = s.excludedDates
+        ? JSON.parse(s.excludedDates as string)
+        : [];
+    } catch (e) {
+      s.excludedDates = [];
     }
-    sprints.push(s); 
+    sprints.push(s);
   }
+
   stmt.free();
 
   return sprints;
@@ -961,10 +1300,12 @@ export const getSprints = () => {
 
 export const getActiveSprint = () => {
   if (!db) return null;
-  const stmt = db.prepare("SELECT * FROM sprints WHERE status = 'ACTIVE' LIMIT 1");
+  const stmt = db.prepare(
+    "SELECT * FROM sprints WHERE status = 'ACTIVE' LIMIT 1",
+  );
   let sprint = null;
   if (stmt.step()) {
-    sprint = stmt.getAsObject();
+    sprint = stmt.getAsObject() as any;
   }
   stmt.free();
   return sprint;
@@ -980,7 +1321,7 @@ export const getSprintTasks = (sprintId: number) => {
   stmt.bind([sprintId]);
   const tasks: any[] = [];
   while (stmt.step()) {
-    const task = stmt.getAsObject();
+    const task = stmt.getAsObject() as any;
     task.tags = task.tags ? (task.tags as string).split(',') : [];
     tasks.push(task);
   }
@@ -988,11 +1329,28 @@ export const getSprintTasks = (sprintId: number) => {
   return tasks;
 };
 
-export const createSprint = (sprint: { name: string, startDate: string, endDate: string, capacity?: number, excludedDates?: string[] }) => {
+export const createSprint = (sprint: {
+  name: string;
+  startDate: string;
+  endDate: string;
+  capacity?: number;
+  excludedDates?: string[];
+}) => {
   if (!db) throw new Error('DB not initialized');
-  const excludedDatesStr = sprint.excludedDates ? JSON.stringify(sprint.excludedDates) : '[]';
-  db.run('INSERT INTO sprints (name, startDate, endDate, status, capacity, excludedDates) VALUES (?, ?, ?, ?, ?, ?)', 
-    [sprint.name, sprint.startDate, sprint.endDate, 'UPCOMING', sprint.capacity || 0, excludedDatesStr]);
+  const excludedDatesStr = sprint.excludedDates
+    ? JSON.stringify(sprint.excludedDates)
+    : '[]';
+  db.run(
+    'INSERT INTO sprints (name, startDate, endDate, status, capacity, excludedDates) VALUES (?, ?, ?, ?, ?, ?)',
+    [
+      sprint.name,
+      sprint.startDate,
+      sprint.endDate,
+      'UPCOMING',
+      sprint.capacity || 0,
+      excludedDatesStr,
+    ],
+  );
   const id = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
   saveDB();
   console.log('[DB] Sprint created and DB saved.');
@@ -1009,9 +1367,21 @@ export const updateSprintStatus = (sprintId: number, status: string) => {
 
 export const updateSprint = (sprint: any) => {
   if (!db) throw new Error('DB not initialized');
-  const excludedDatesStr = sprint.excludedDates ? JSON.stringify(sprint.excludedDates) : '[]';
-  db.run('UPDATE sprints SET name = ?, startDate = ?, endDate = ?, status = ?, capacity = ?, excludedDates = ? WHERE id = ?', 
-    [sprint.name, sprint.startDate, sprint.endDate, sprint.status, sprint.capacity || 0, excludedDatesStr, sprint.id]);
+  const excludedDatesStr = sprint.excludedDates
+    ? JSON.stringify(sprint.excludedDates)
+    : '[]';
+  db.run(
+    'UPDATE sprints SET name = ?, startDate = ?, endDate = ?, status = ?, capacity = ?, excludedDates = ? WHERE id = ?',
+    [
+      sprint.name,
+      sprint.startDate,
+      sprint.endDate,
+      sprint.status,
+      sprint.capacity || 0,
+      excludedDatesStr,
+      sprint.id,
+    ],
+  );
   saveDB();
   console.log('[DB] Sprint updated and DB saved.');
   return sprint;
@@ -1022,7 +1392,9 @@ export const getNotes = (userId: number) => {
   const stmt = db.prepare('SELECT * FROM notes WHERE userId = :userId');
   stmt.bind({ ':userId': userId });
   const notes: any[] = [];
-  while (stmt.step()) { notes.push(stmt.getAsObject()); }
+  while (stmt.step()) {
+    notes.push(stmt.getAsObject());
+  }
   stmt.free();
 
   return notes;
@@ -1030,7 +1402,10 @@ export const getNotes = (userId: number) => {
 
 export const createNote = (note: any, userId: number) => {
   if (!db) throw new Error('DB not initialized');
-  db.run('INSERT INTO notes (title, content, createdAt, userId) VALUES (?, ?, ?, ?)', [note.title, note.content, note.createdAt, userId]);
+  db.run(
+    'INSERT INTO notes (title, content, createdAt, userId) VALUES (?, ?, ?, ?)',
+    [note.title, note.content, note.createdAt, userId],
+  );
   const id = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
   saveDB();
   console.log('[DB] Note created and DB saved.');
@@ -1039,7 +1414,11 @@ export const createNote = (note: any, userId: number) => {
 
 export const updateNote = (note: any) => {
   if (!db) throw new Error('DB not initialized');
-  db.run('UPDATE notes SET title = ?, content = ? WHERE id = ?', [note.title, note.content, note.id]);
+  db.run('UPDATE notes SET title = ?, content = ? WHERE id = ?', [
+    note.title,
+    note.content,
+    note.id,
+  ]);
   saveDB();
   console.log('[DB] Note updated and DB saved.');
   return note;
@@ -1056,7 +1435,10 @@ export const deleteNote = (noteId: number) => {
 export const registerUser = (username: string, password: string) => {
   if (!db) throw new Error('DB not initialized');
   try {
-    db.run('INSERT INTO users (username, password) VALUES (?, ?)', [username, hashPassword(password)]);
+    db.run('INSERT INTO users (username, password) VALUES (?, ?)', [
+      username,
+      hashPassword(password),
+    ]);
     saveDB();
     console.log('[DB] User registered and DB saved.');
     return true;
@@ -1068,12 +1450,14 @@ export const registerUser = (username: string, password: string) => {
 
 export const loginUser = (username: string, password: string) => {
   if (!db) throw new Error('DB not initialized');
-  const stmt = db.prepare('SELECT id, username FROM users WHERE username = :username AND password = :password');
+  const stmt = db.prepare(
+    'SELECT id, username FROM users WHERE username = :username AND password = :password',
+  );
   stmt.bind({ ':username': username, ':password': hashPassword(password) });
   if (stmt.step()) {
     const user = stmt.getAsObject();
     stmt.free();
-  
+
     return user;
   }
   stmt.free();
@@ -1084,7 +1468,9 @@ export const loginUser = (username: string, password: string) => {
 // --- Checklist Helpers ---
 export const getChecklistItems = (taskId: number) => {
   if (!db) return [];
-  const stmt = db.prepare('SELECT * FROM task_checklist_items WHERE taskId = ? ORDER BY id ASC');
+  const stmt = db.prepare(
+    'SELECT * FROM task_checklist_items WHERE taskId = ? ORDER BY id ASC',
+  );
   stmt.bind([taskId]);
   const items: any[] = [];
   while (stmt.step()) {
@@ -1096,37 +1482,47 @@ export const getChecklistItems = (taskId: number) => {
 
 export const addChecklistItem = (taskId: number, text: string) => {
   if (!db) throw new Error('DB not initialized');
-  db.run('INSERT INTO task_checklist_items (taskId, text, isCompleted) VALUES (?, ?, 0)', [taskId, text]);
+  db.run(
+    'INSERT INTO task_checklist_items (taskId, text, isCompleted) VALUES (?, ?, 0)',
+    [taskId, text],
+  );
   saveDB();
   return getChecklistItems(taskId);
 };
 
 export const toggleChecklistItem = (itemId: number, isCompleted: boolean) => {
   if (!db) throw new Error('DB not initialized');
-  db.run('UPDATE task_checklist_items SET isCompleted = ? WHERE id = ?', [isCompleted ? 1 : 0, itemId]);
+  db.run('UPDATE task_checklist_items SET isCompleted = ? WHERE id = ?', [
+    isCompleted ? 1 : 0,
+    itemId,
+  ]);
   saveDB();
   // Get taskId to return fresh list
-  const idStmt = db.prepare('SELECT taskId FROM task_checklist_items WHERE id = ?');
+  const idStmt = db.prepare(
+    'SELECT taskId FROM task_checklist_items WHERE id = ?',
+  );
   const result = idStmt.get([itemId]);
   idStmt.free();
   if (result) {
-      return getChecklistItems(result[0] as number);
+    return getChecklistItems(result[0] as number);
   }
   return [];
 };
 
 export const deleteChecklistItem = (itemId: number) => {
   if (!db) throw new Error('DB not initialized');
-  
+
   // Get taskId first to return list later
-  const idStmt = db.prepare('SELECT taskId FROM task_checklist_items WHERE id = ?');
+  const idStmt = db.prepare(
+    'SELECT taskId FROM task_checklist_items WHERE id = ?',
+  );
   const result = idStmt.get([itemId]);
   idStmt.free();
   const taskId = result ? (result[0] as number) : null;
 
   db.run('DELETE FROM task_checklist_items WHERE id = ?', [itemId]);
   saveDB();
-  
+
   if (taskId) return getChecklistItems(taskId);
   return [];
 };
@@ -1154,7 +1550,10 @@ export const getSetting = (key: string) => {
 
 export const setSetting = (key: string, value: string) => {
   if (!db) throw new Error('DB not initialized');
-  db.run('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)', [key, value]);
+  db.run('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)', [
+    key,
+    value,
+  ]);
   saveDB();
   return getAllSettings();
 };
@@ -1166,42 +1565,79 @@ export const getDailyBio = (date: string) => {
   stmt.bind([date]);
   let result: any = null;
   if (stmt.step()) {
-      result = stmt.getAsObject();
+    result = stmt.getAsObject();
   }
   stmt.free();
-  if (!result || !result.date) return { mode: 'normal', sleepScore: null, meetingTime: 30, waterIntake: 0 }; 
-  return { 
-      mode: result.mode || 'normal', 
-      sleepScore: result.sleepScore, 
-      meetingTime: result.meetingTime !== null ? result.meetingTime : 30,
-      waterIntake: result.waterIntake || 0,
-      meditationMinutes: result.meditationMinutes || 0,
-      stretchingMinutes: result.stretchingMinutes || 0
+  if (!result || !result.date)
+    return {
+      mode: 'normal',
+      sleepScore: null,
+      meetingTime: 30,
+      waterIntake: 0,
+    };
+  return {
+    mode: result.mode || 'normal',
+    sleepScore: result.sleepScore,
+    meetingTime: result.meetingTime !== null ? result.meetingTime : 30,
+    waterIntake: result.waterIntake || 0,
+    meditationMinutes: result.meditationMinutes || 0,
+    stretchingMinutes: result.stretchingMinutes || 0,
   };
 };
 
-export const updateDailyBio = (date: string, data: { mode?: string, sleepScore?: number, meetingTime?: number, waterIntake?: number, meditationMinutes?: number, stretchingMinutes?: number }) => {
+export const updateDailyBio = (
+  date: string,
+  data: {
+    mode?: string;
+    sleepScore?: number;
+    meetingTime?: number;
+    waterIntake?: number;
+    meditationMinutes?: number;
+    stretchingMinutes?: number;
+  },
+) => {
   if (!db) throw new Error('DB not initialized');
-  
+
   const current = getDailyBio(date);
   const newMode = data.mode !== undefined ? data.mode : current.mode;
-  const newSleep = data.sleepScore !== undefined ? data.sleepScore : current.sleepScore;
-  const newMeetingTime = data.meetingTime !== undefined ? data.meetingTime : current.meetingTime;
-  const newWater = data.waterIntake !== undefined ? data.waterIntake : (current.waterIntake || 0);
-  const newMeditation = data.meditationMinutes !== undefined ? data.meditationMinutes : (current.meditationMinutes || 0);
-  const newStretching = data.stretchingMinutes !== undefined ? data.stretchingMinutes : (current.stretchingMinutes || 0);
+  const newSleep =
+    data.sleepScore !== undefined ? data.sleepScore : current.sleepScore;
+  const newMeetingTime =
+    data.meetingTime !== undefined ? data.meetingTime : current.meetingTime;
+  const newWater =
+    data.waterIntake !== undefined
+      ? data.waterIntake
+      : current.waterIntake || 0;
+  const newMeditation =
+    data.meditationMinutes !== undefined
+      ? data.meditationMinutes
+      : current.meditationMinutes || 0;
+  const newStretching =
+    data.stretchingMinutes !== undefined
+      ? data.stretchingMinutes
+      : current.stretchingMinutes || 0;
 
-  db.run('INSERT OR REPLACE INTO daily_energy_logs (date, mode, sleepScore, meetingTime, waterIntake, meditationMinutes, stretchingMinutes) VALUES (?, ?, ?, ?, ?, ?, ?)', 
-    [date, newMode, newSleep, newMeetingTime, newWater, newMeditation, newStretching]);
-  
+  db.run(
+    'INSERT OR REPLACE INTO daily_energy_logs (date, mode, sleepScore, meetingTime, waterIntake, meditationMinutes, stretchingMinutes) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [
+      date,
+      newMode,
+      newSleep,
+      newMeetingTime,
+      newWater,
+      newMeditation,
+      newStretching,
+    ],
+  );
+
   if (newMode === 'boost' || newMode === 'BOOST') {
-      const currentWeb = getWebBlockingSettings();
-      saveWebBlockingSettings({ 
-          ...currentWeb, 
-          integrationEnabled: true,
-          blockingEnabled: true 
-      });
-      logSystemEvent('Boost Mode Activated: Web Blocking Enabled.', 'SYSTEM');
+    const currentWeb = getWebBlockingSettings();
+    saveWebBlockingSettings({
+      ...currentWeb,
+      integrationEnabled: true,
+      blockingEnabled: true,
+    });
+    logSystemEvent('Boost Mode Activated: Web Blocking Enabled.', 'SYSTEM');
   }
 
   saveDB();
@@ -1211,11 +1647,13 @@ export const updateDailyBio = (date: string, data: { mode?: string, sleepScore?:
 // --- Habit Tracker Helpers ---
 export const getHabits = (userId: number) => {
   if (!db) return [];
-  const stmt = db.prepare('SELECT * FROM habits WHERE userId = ? ORDER BY createdAt DESC');
+  const stmt = db.prepare(
+    'SELECT * FROM habits WHERE userId = ? ORDER BY createdAt DESC',
+  );
   stmt.bind([userId]);
   const habits: any[] = [];
   while (stmt.step()) {
-    const habit = stmt.getAsObject();
+    const habit = stmt.getAsObject() as any;
     try {
       habit.frequency = JSON.parse(habit.frequency as string);
     } catch (e) {
@@ -1231,7 +1669,17 @@ export const createHabit = (habit: any, userId: number) => {
   if (!db) throw new Error('DB not initialized');
   db.run(
     'INSERT INTO habits (userId, title, description, frequency, category, targetStreak, reminderTime, createdAt, isFavorite) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [userId, habit.title, habit.description, JSON.stringify(habit.frequency), habit.category, habit.targetStreak, habit.reminderTime, new Date().toISOString(), habit.isFavorite || 0]
+    [
+      userId,
+      habit.title,
+      habit.description,
+      JSON.stringify(habit.frequency),
+      habit.category,
+      habit.targetStreak,
+      habit.reminderTime,
+      new Date().toISOString(),
+      habit.isFavorite || 0,
+    ],
   );
   const id = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
   saveDB();
@@ -1243,20 +1691,29 @@ export const updateHabit = (habit: any) => {
   if (!db) throw new Error('DB not initialized');
   db.run(
     'UPDATE habits SET title = ?, description = ?, frequency = ?, category = ?, targetStreak = ?, reminderTime = ?, isFavorite = ? WHERE id = ?',
-    [habit.title, habit.description, JSON.stringify(habit.frequency), habit.category, habit.targetStreak, habit.reminderTime, habit.isFavorite, habit.id]
+    [
+      habit.title,
+      habit.description,
+      JSON.stringify(habit.frequency),
+      habit.category,
+      habit.targetStreak,
+      habit.reminderTime,
+      habit.isFavorite,
+      habit.id,
+    ],
   );
   saveDB();
   return habit;
 };
 
 export const toggleHabitFavorite = (habitId: number, userId: number) => {
-    if (!db) throw new Error('DB not initialized');
-    // Unset all favorites for this user first
-    db.run('UPDATE habits SET isFavorite = 0 WHERE userId = ?', [userId]);
-    // Set this one
-    db.run('UPDATE habits SET isFavorite = 1 WHERE id = ?', [habitId]);
-    saveDB();
-    return true;
+  if (!db) throw new Error('DB not initialized');
+  // Unset all favorites for this user first
+  db.run('UPDATE habits SET isFavorite = 0 WHERE userId = ?', [userId]);
+  // Set this one
+  db.run('UPDATE habits SET isFavorite = 1 WHERE id = ?', [habitId]);
+  saveDB();
+  return true;
 };
 
 export const deleteHabit = (habitId: number) => {
@@ -1269,19 +1726,29 @@ export const deleteHabit = (habitId: number) => {
 export const logHabit = (habitId: number, date: string, value: number = 1) => {
   if (!db) throw new Error('DB not initialized');
   // Check if already logged for this date
-  const existingStmt = db.prepare('SELECT id FROM habit_logs WHERE habitId = ? AND date = ?');
+  const existingStmt = db.prepare(
+    'SELECT id FROM habit_logs WHERE habitId = ? AND date = ?',
+  );
   existingStmt.bind([habitId, date]);
-  
+
   if (existingStmt.step()) {
     // Update existing
-    db.run('UPDATE habit_logs SET value = ? WHERE habitId = ? AND date = ?', [value, habitId, date]);
+    db.run('UPDATE habit_logs SET value = ? WHERE habitId = ? AND date = ?', [
+      value,
+      habitId,
+      date,
+    ]);
   } else {
     // Insert new
-    db.run('INSERT INTO habit_logs (habitId, date, value) VALUES (?, ?, ?)', [habitId, date, value]);
+    db.run('INSERT INTO habit_logs (habitId, date, value) VALUES (?, ?, ?)', [
+      habitId,
+      date,
+      value,
+    ]);
   }
   existingStmt.free();
   saveDB();
-  
+
   // Calculate Streak
   // (Simple implementation: count consecutive days backwards from today or provided date)
   // For now, we'll just return the log. Advanced streak calculation can be done on read.
@@ -1300,11 +1767,11 @@ export const getHabitLogs = (userId: number, fromDate?: string) => {
   if (fromDate) {
     query += ` AND hl.date >= :fromDate`;
   }
-  
+
   const stmt = db.prepare(query);
   const params: any = { ':userId': userId };
   if (fromDate) params[':fromDate'] = fromDate;
-  
+
   stmt.bind(params);
   const logs: any[] = [];
   while (stmt.step()) {
@@ -1314,21 +1781,118 @@ export const getHabitLogs = (userId: number, fromDate?: string) => {
   return logs;
 };
 
+// Current consecutive-day streak across all of the user's habits (any habit logged >= 1 counts
+// for that day). Mirrors the algorithm in src/renderer/util/dateUtils.ts:calculateStreak.
+export const getCurrentStreak = (userId: number): number => {
+  const logs = getHabitLogs(userId);
+  const completedDates = [
+    ...new Set(
+      logs.filter((l: any) => l.value >= 1).map((l: any) => l.date as string),
+    ),
+  ].sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+
+  if (completedDates.length === 0) return 0;
+
+  const today = new Date().toISOString().split('T')[0];
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000)
+    .toISOString()
+    .split('T')[0];
+  if (completedDates[0] !== today && completedDates[0] !== yesterday) return 0;
+
+  let streak = 0;
+  let expected = new Date(completedDates[0]);
+  for (const dateStr of completedDates) {
+    const expectedStr = expected.toISOString().split('T')[0];
+    if (dateStr !== expectedStr) break;
+    streak += 1;
+    expected = new Date(expected.getTime() - 24 * 60 * 60 * 1000);
+  }
+  return streak;
+};
+
+// Per-day habit completion ratio (0-1) over the last `days` (default 30), for
+// ProductivityAnalyst.analyzeHabitCorrelation. Only days with at least one logged habit appear.
+export const getDailyHabitScores = (
+  userId: number,
+  days: number = 30,
+): { date: string; score: number }[] => {
+  const habitsCount = getHabits(userId).length;
+  if (habitsCount === 0) return [];
+
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+  const sinceStr = since.toISOString().split('T')[0];
+
+  const logs = getHabitLogs(userId, sinceStr);
+  const completedPerDay: Record<string, Set<number>> = {};
+  logs.forEach((l: any) => {
+    if (l.value >= 1) {
+      if (!completedPerDay[l.date]) completedPerDay[l.date] = new Set();
+      completedPerDay[l.date].add(l.habitId);
+    }
+  });
+
+  return Object.entries(completedPerDay).map(([date, habitIds]) => ({
+    date,
+    score: Math.min(1, habitIds.size / habitsCount),
+  }));
+};
+
+// Average story points completed per active day over the last `days` (default 30) - only days
+// with at least one completed task count, consistent with the velocity fallback in
+// ProductivityAnalyst.analyzeSprintRisk.
+export const getAverageVelocity = (
+  userId: number,
+  days: number = 30,
+): number => {
+  if (!db) return 0;
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+  const sinceStr = since.toISOString().split('T')[0];
+
+  try {
+    const stmt = db.prepare(`
+        SELECT substr(updateStatusDate, 1, 10) as day, SUM(storyPoints) as points
+        FROM tasks
+        WHERE userId = ? AND status = 'Completed' AND updateStatusDate >= ?
+        GROUP BY day
+    `);
+    stmt.bind([userId, sinceStr]);
+
+    const dailyPoints: number[] = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      dailyPoints.push(Number(row.points) || 0);
+    }
+    stmt.free();
+
+    if (dailyPoints.length === 0) return 0;
+    return dailyPoints.reduce((a, b) => a + b, 0) / dailyPoints.length;
+  } catch (e) {
+    console.error('Failed to compute average velocity', e);
+    return 0;
+  }
+};
+
 export const getTopHabit = (userId: number) => {
   if (!db) return null;
-  
+
   // 1. Try to get favorite habit first
-  const favStmt = db.prepare('SELECT * FROM habits WHERE userId = ? AND isFavorite = 1 LIMIT 1');
+  const favStmt = db.prepare(
+    'SELECT * FROM habits WHERE userId = ? AND isFavorite = 1 LIMIT 1',
+  );
   favStmt.bind([userId]);
   let result: any = null;
   if (favStmt.step()) {
-      result = favStmt.getAsObject();
+    result = favStmt.getAsObject();
   }
   favStmt.free();
 
   if (result && result.id) {
-      try { result.frequency = JSON.parse(result.frequency as string); } catch(e) {}
-      return result;
+    try {
+      result.frequency = JSON.parse(result.frequency as string);
+    } catch (e) {}
+    return result;
   }
 
   // 2. Fallback to most consistent
@@ -1345,116 +1909,140 @@ export const getTopHabit = (userId: number) => {
     ORDER BY recent_count DESC
     LIMIT 1
   `);
-  
+
   stmt.bind([dateStr, userId]);
   if (stmt.step()) {
-      result = stmt.getAsObject();
+    result = stmt.getAsObject();
   } else {
-      result = null;
+    result = null;
   }
   stmt.free();
-  
+
   if (!result || !result.id) return null;
-  try { result.frequency = JSON.parse(result.frequency as string); } catch(e) {}
+  try {
+    result.frequency = JSON.parse(result.frequency as string);
+  } catch (e) {}
   return result;
 };
 
 export const getDailyStandupData = (userId: number) => {
-    if (!db) return null;
+  if (!db) return null;
 
-    const todayStr = new Date().toISOString().split('T')[0];
-    let lastActiveDateStr = todayStr;
+  const todayStr = new Date().toISOString().split('T')[0];
+  let lastActiveDateStr = todayStr;
 
-    // 1. Find the last active day BEFORE today (to show "Yesterday's" progress)
-    const prevSessionStmt = db.prepare(`
+  // 1. Find the last active day BEFORE today (to show "Yesterday's" progress)
+  const prevSessionStmt = db.prepare(`
         SELECT startTime FROM work_sessions 
         JOIN tasks ON work_sessions.taskId = tasks.id 
         WHERE tasks.userId = ? AND startTime < ?
         ORDER BY startTime DESC LIMIT 1
     `);
-    prevSessionStmt.bind([userId, todayStr]);
-    
-    if (prevSessionStmt.step()) {
-         const row = prevSessionStmt.getAsObject();
-         if (row.startTime) {
-             lastActiveDateStr = (row.startTime as string).split('T')[0];
-         }
-    } else {
-         // Fallback to actual yesterday if no history found
-         const d = new Date();
-         d.setDate(d.getDate() - 1);
-         lastActiveDateStr = d.toISOString().split('T')[0];
-    }
-    prevSessionStmt.free();
+  prevSessionStmt.bind([userId, todayStr]);
 
-    // 2. Fetch stats for that specific day
-    
-    // A. Focus Time (from work_sessions) - REAL time spent that day
-    const timeStmt = db.prepare(`
+  if (prevSessionStmt.step()) {
+    const row = prevSessionStmt.getAsObject();
+    if (row.startTime) {
+      lastActiveDateStr = (row.startTime as string).split('T')[0];
+    }
+  } else {
+    // Fallback to actual yesterday if no history found
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    lastActiveDateStr = d.toISOString().split('T')[0];
+  }
+  prevSessionStmt.free();
+
+  // 2. Fetch stats for that specific day
+
+  // A. Focus Time (from work_sessions) - REAL time spent that day
+  const timeStmt = db.prepare(`
         SELECT SUM(ws.duration) as totalTime 
         FROM work_sessions ws
         JOIN tasks t ON ws.taskId = t.id
         WHERE t.userId = :userId AND ws.startTime LIKE :datePattern
     `);
-    const timeResult = timeStmt.getAsObject({ ':userId': userId, ':datePattern': `${lastActiveDateStr}%` });
-    timeStmt.free();
+  const timeResult = timeStmt.getAsObject({
+    ':userId': userId,
+    ':datePattern': `${lastActiveDateStr}%`,
+  });
+  timeStmt.free();
 
-    // B. Completed Tasks (from tasks table)
-    const completedStmt = db.prepare(`
+  // B. Completed Tasks (from tasks table)
+  const completedStmt = db.prepare(`
         SELECT COUNT(*) as count 
         FROM tasks 
         WHERE userId = :userId AND status = 'Completed' AND updateStatusDate LIKE :datePattern
     `);
-    const completedResult = completedStmt.getAsObject({ ':userId': userId, ':datePattern': `${lastActiveDateStr}%` });
-    completedStmt.free();
+  const completedResult = completedStmt.getAsObject({
+    ':userId': userId,
+    ':datePattern': `${lastActiveDateStr}%`,
+  });
+  completedStmt.free();
 
-    const topHabit = getTopHabit(userId);
+  const topHabit = getTopHabit(userId);
 
-    return {
-        lastActiveDate: lastActiveDateStr,
-        yesterday: { 
-            completedCount: completedResult.count || 0,
-            totalTimeMs: timeResult.totalTime || 0
-        },
-        topHabit
-    };
+  return {
+    lastActiveDate: lastActiveDateStr,
+    yesterday: {
+      completedCount: completedResult.count || 0,
+      totalTimeMs: timeResult.totalTime || 0,
+    },
+    topHabit,
+  };
 };
 
-export const getLifetimeStats = (userId: number) => {
-    if (!db) return { water: 0, meditationSessions: 0, stretchingSessions: 0, pomodoros: 0 };
-    
-    // Water (sum of all waterIntake)
-    const waterStmt = db.prepare('SELECT SUM(waterIntake) as total FROM daily_energy_logs');
-    const waterTotal = waterStmt.get()[0] as number || 0;
-    waterStmt.free();
+export const getLifetimeStats = (_userId: number) => {
+  if (!db)
+    return {
+      water: 0,
+      meditationSessions: 0,
+      stretchingSessions: 0,
+      pomodoros: 0,
+    };
 
-    // Meditation (count sessions from system_logs - reliable)
-    const medStmt = db.prepare("SELECT COUNT(*) FROM system_logs WHERE message LIKE 'Meditation Session%'");
-    const medCount = medStmt.get()[0] as number || 0;
-    medStmt.free();
+  // Water (sum of all waterIntake)
+  const waterStmt = db.prepare(
+    'SELECT SUM(waterIntake) as total FROM daily_energy_logs',
+  );
+  const waterTotal = (waterStmt.get()[0] as number) || 0;
+  waterStmt.free();
 
-    // Stretching (count from system_logs)
-    const stretchStmt = db.prepare("SELECT COUNT(*) FROM system_logs WHERE message LIKE '%Czas na ruch%' OR message LIKE '%Stretching%'"); // Adjust pattern based on exact log message
-    // Actually, we log "Sent reminder for habit" or generic system logs. 
-    // Let's rely on daily_energy_logs for stretching minutes > 0 count
-    const stretchDaysStmt = db.prepare("SELECT COUNT(*) FROM daily_energy_logs WHERE stretchingMinutes > 0");
-    const stretchCount = stretchDaysStmt.get()[0] as number || 0;
-    stretchDaysStmt.free();
+  // Meditation (count sessions from system_logs - reliable)
+  const medStmt = db.prepare(
+    "SELECT COUNT(*) FROM system_logs WHERE message LIKE 'Meditation Session%'",
+  );
+  const medCount = (medStmt.get()[0] as number) || 0;
+  medStmt.free();
 
-    // Pomodoro (count from system_logs)
-    const pomStmt = db.prepare("SELECT COUNT(*) FROM system_logs WHERE message LIKE 'Pomodoro Completed%'");
-    const pomCount = pomStmt.get()[0] as number || 0;
-    pomStmt.free();
+  // Stretching (count from daily_energy_logs for stretching minutes > 0)
+  const stretchDaysStmt = db.prepare(
+    'SELECT COUNT(*) FROM daily_energy_logs WHERE stretchingMinutes > 0',
+  );
+  const stretchCount = (stretchDaysStmt.get()[0] as number) || 0;
+  stretchDaysStmt.free();
 
-    return { water: waterTotal, meditationSessions: medCount, stretchingSessions: stretchCount, pomodoros: pomCount };
+  // Pomodoro (count from system_logs)
+  const pomStmt = db.prepare(
+    "SELECT COUNT(*) FROM system_logs WHERE message LIKE 'Pomodoro Completed%'",
+  );
+  const pomCount = (pomStmt.get()[0] as number) || 0;
+  pomStmt.free();
+
+  return {
+    water: waterTotal,
+    meditationSessions: medCount,
+    stretchingSessions: stretchCount,
+    pomodoros: pomCount,
+  };
 };
 
 export const getRecentDistraction = (minutes: number = 5) => {
-    if (!db) return null;
-    const cutoff = Date.now() - (minutes * 60 * 1000);
-    
-    // Find visited domains categorised as 'Social' or 'Entertainment' or just from the default blocklist
-    const stmt = db.prepare(`
+  if (!db) return null;
+  const cutoff = Date.now() - minutes * 60 * 1000;
+
+  // Find visited domains categorised as 'Social' or 'Entertainment' or just from the default blocklist
+  const stmt = db.prepare(`
         SELECT ws.domain, dc.category 
         FROM web_stats ws
         LEFT JOIN domain_categories dc ON ws.domain = dc.domain
@@ -1463,106 +2051,166 @@ export const getRecentDistraction = (minutes: number = 5) => {
         ORDER BY ws.timestamp DESC 
         LIMIT 1
     `);
-    
-    stmt.bind([cutoff]);
-    let result = null;
-    if (stmt.step()) {
-        result = stmt.getAsObject();
-    }
-    stmt.free();
-    return result; // { domain: 'facebook.com', category: 'Social' }
+
+  stmt.bind([cutoff]);
+  let result = null;
+  if (stmt.step()) {
+    result = stmt.getAsObject();
+  }
+  stmt.free();
+  return result; // { domain: 'facebook.com', category: 'Social' }
 };
 
 export const getDailyReportData = (userId: number) => {
-    if (!db) return null;
+  if (!db) return null;
 
-    const todayStr = new Date().toISOString().split('T')[0];
-    
-    // 1. Stats Today
-    const timeStmt = db.prepare(`
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  // 1. Stats Today
+  const timeStmt = db.prepare(`
         SELECT SUM(ws.duration) as totalTime 
         FROM work_sessions ws
         JOIN tasks t ON ws.taskId = t.id
         WHERE t.userId = :userId AND ws.startTime LIKE :datePattern
     `);
-    const timeResult = timeStmt.getAsObject({ ':userId': userId, ':datePattern': `${todayStr}%` });
-    timeStmt.free();
+  const timeResult = timeStmt.getAsObject({
+    ':userId': userId,
+    ':datePattern': `${todayStr}%`,
+  });
+  timeStmt.free();
 
-    const completedStmt = db.prepare(`
+  const completedStmt = db.prepare(`
         SELECT COUNT(*) as count 
         FROM tasks 
         WHERE userId = :userId AND status = 'Completed' AND updateStatusDate LIKE :datePattern
     `);
-    const completedResult = completedStmt.getAsObject({ ':userId': userId, ':datePattern': `${todayStr}%` });
-    completedStmt.free();
+  const completedResult = completedStmt.getAsObject({
+    ':userId': userId,
+    ':datePattern': `${todayStr}%`,
+  });
+  completedStmt.free();
 
-    // 2. Distractions (Top 3)
-    const webStats = getWebStats(1);
-    const topDistractions = webStats.topDomains.slice(0, 3).map((d: any) => ({
-        name: d.domain,
-        duration: d.totalTime
-    }));
+  const pomStmt = db.prepare(
+    "SELECT COUNT(*) FROM system_logs WHERE message LIKE 'Pomodoro Completed%' AND timestamp LIKE ?",
+  );
+  pomStmt.bind([`${todayStr}%`]);
+  let pomCount = 0;
+  if (pomStmt.step()) pomCount = (pomStmt.get()[0] as number) || 0;
+  pomStmt.free();
 
-    // 3. Top Tasks Worked On Today
-    const topTasksStmt = db.prepare(`
+  return {
+    completedCount: completedResult.count || 0,
+    totalTimeMs: timeResult.totalTime || 0,
+    pomodoroCount: pomCount,
+  };
+};
+
+// Aggregated work stats over the trailing window (days, default 7 - includes today).
+// Currently unused anywhere in the app.
+export const getWorkStats = (days: number = 7) => {
+  if (!db) return null;
+  const since = new Date();
+  since.setDate(since.getDate() - (days - 1));
+  const sinceStr = since.toISOString().split('T')[0];
+  const userId = 1;
+
+  // 1. Stats over the window
+  const timeStmt = db.prepare(`
+        SELECT SUM(ws.duration) as totalTime
+        FROM work_sessions ws
+        JOIN tasks t ON ws.taskId = t.id
+        WHERE t.userId = :userId AND ws.startTime >= :sinceDate
+    `);
+  timeStmt.bind({ ':userId': userId, ':sinceDate': sinceStr });
+  let timeResult: any = { totalTime: 0 };
+  if (timeStmt.step()) timeResult = timeStmt.getAsObject();
+  timeStmt.free();
+
+  const completedStmt = db.prepare(`
+        SELECT COUNT(*) as count
+        FROM tasks
+        WHERE userId = :userId AND status = 'Completed' AND updateStatusDate >= :sinceDate
+    `);
+  completedStmt.bind({ ':userId': userId, ':sinceDate': sinceStr });
+  let completedResult: any = { count: 0 };
+  if (completedStmt.step()) completedResult = completedStmt.getAsObject();
+  completedStmt.free();
+
+  // 2. Distractions (Top 3)
+  const webStats = getWebStats(days);
+  const topDistractions = webStats.topDomains.slice(0, 3).map((d: any) => ({
+    name: d.domain,
+    duration: d.totalTime,
+  }));
+
+  // 3. Top Tasks Worked On over the window
+  const topTasksStmt = db.prepare(`
         SELECT t.title, SUM(ws.duration) as duration
         FROM work_sessions ws
         JOIN tasks t ON ws.taskId = t.id
-        WHERE t.userId = :userId AND ws.startTime LIKE :datePattern
+        WHERE t.userId = :userId AND ws.startTime >= :sinceDate
         GROUP BY t.id
         ORDER BY duration DESC
         LIMIT 3
     `);
-    topTasksStmt.bind({ ':userId': userId, ':datePattern': `${todayStr}%` });
-    const topTasks: any[] = [];
-    while(topTasksStmt.step()) {
-        topTasks.push(topTasksStmt.getAsObject());
-    }
-    topTasksStmt.free();
+  topTasksStmt.bind({ ':userId': userId, ':sinceDate': sinceStr });
+  const topTasks: any[] = [];
+  while (topTasksStmt.step()) {
+    topTasks.push(topTasksStmt.getAsObject());
+  }
+  topTasksStmt.free();
 
-    // 4. Trend Analysis (Simple)
-    const productivity = getDailyProductivity(userId);
-    let trend = 'stable';
-    if (productivity.length >= 2) {
-        const last = productivity[productivity.length - 1].totalDuration as number;
-        const prev = productivity[productivity.length - 2].totalDuration as number;
-        if (last > prev * 1.1) trend = 'increasing';
-        else if (last < prev * 0.9) trend = 'decreasing';
-    }
+  // 4. Trend Analysis (Simple)
+  const productivity = getDailyProductivity(userId);
+  let trend = 'stable';
+  if (productivity.length >= 2) {
+    const last = productivity[productivity.length - 1].totalDuration as number;
+    const prev = productivity[productivity.length - 2].totalDuration as number;
+    if (last > prev * 1.1) trend = 'increasing';
+    else if (last < prev * 0.9) trend = 'decreasing';
+  }
 
-    // 5. Pomodoro Count Today (Simple ISO Match)
-    const todayISO = new Date().toISOString().split('T')[0];
-    const pomodoroStmt = db.prepare(`
-        SELECT COUNT(*) as count 
-        FROM system_logs 
-        WHERE message LIKE 'Pomodoro Completed%' 
-        AND timestamp LIKE ?
+  // 5. Pomodoro Count over the window
+  const pomodoroStmt = db.prepare(`
+        SELECT COUNT(*) as count
+        FROM system_logs
+        WHERE message LIKE 'Pomodoro Completed%'
+        AND timestamp >= ?
     `);
-    const pomodoroResult = pomodoroStmt.getAsObject([`${todayISO}%`]);
-    pomodoroStmt.free();
+  pomodoroStmt.bind([sinceStr]);
+  let pomodoroResult: any = { count: 0 };
+  if (pomodoroStmt.step()) pomodoroResult = pomodoroStmt.getAsObject();
+  pomodoroStmt.free();
 
-    return {
-        totalTimeMs: timeResult.totalTime || 0,
-        completedCount: completedResult.count || 0,
-        pomodoroCount: pomodoroResult.count || 0,
-        topDistractions,
-        topTasks,
-        trend,
-        productivityData: productivity.slice(-7) // Last 7 days for chart
-    };
+  return {
+    totalTimeMs: timeResult.totalTime || 0,
+    completedCount: completedResult.count || 0,
+    pomodoroCount: pomodoroResult.count || 0,
+    topDistractions,
+    topTasks,
+    trend,
+    productivityData: productivity.slice(-7), // Last 7 days for chart
+  };
 };
 
 // --- Web Integration ---
 
-export const logWebActivity = (data: { domain: string, url: string, duration: number, timestamp: number }) => {
+export const logWebActivity = (data: {
+  domain: string;
+  url: string;
+  duration: number;
+  timestamp: number;
+}) => {
   if (!db) return;
   try {
-    const stmt = db.prepare(`INSERT INTO web_stats (domain, url, duration, timestamp) VALUES (:domain, :url, :duration, :timestamp)`);
+    const stmt = db.prepare(
+      `INSERT INTO web_stats (domain, url, duration, timestamp) VALUES (:domain, :url, :duration, :timestamp)`,
+    );
     stmt.run({
       ':domain': data.domain,
       ':url': data.url,
       ':duration': data.duration,
-      ':timestamp': data.timestamp
+      ':timestamp': data.timestamp,
     });
     stmt.free();
   } catch (e) {
@@ -1570,25 +2218,36 @@ export const logWebActivity = (data: { domain: string, url: string, duration: nu
   }
 };
 
-export const logWebActivityBulk = (items: Array<{ domain: string, url: string, duration: number, timestamp: number }>) => {
+export const logWebActivityBulk = (
+  items: Array<{
+    domain: string;
+    url: string;
+    duration: number;
+    timestamp: number;
+  }>,
+) => {
   if (!db || items.length === 0) return;
   try {
-    const stmt = db.prepare(`INSERT INTO web_stats (domain, url, duration, timestamp) VALUES (:domain, :url, :duration, :timestamp)`);
-    db.run("BEGIN TRANSACTION");
-    items.forEach(item => {
-        stmt.run({
-            ':domain': item.domain,
-            ':url': item.url,
-            ':duration': item.duration,
-            ':timestamp': item.timestamp
-        });
+    const stmt = db.prepare(
+      `INSERT INTO web_stats (domain, url, duration, timestamp) VALUES (:domain, :url, :duration, :timestamp)`,
+    );
+    db.run('BEGIN TRANSACTION');
+    items.forEach((item) => {
+      stmt.run({
+        ':domain': item.domain,
+        ':url': item.url,
+        ':duration': item.duration,
+        ':timestamp': item.timestamp,
+      });
     });
-    db.run("COMMIT");
+    db.run('COMMIT');
     stmt.free();
     console.log(`[DB] Bulk inserted ${items.length} web activity records.`);
   } catch (e) {
     console.error('Failed to bulk log web activity', e);
-    try { db.run("ROLLBACK"); } catch (r) {}
+    try {
+      db.run('ROLLBACK');
+    } catch (r) {}
   }
 };
 
@@ -1597,7 +2256,13 @@ export const getWebBlockingSettings = () => {
     integrationEnabled: false,
     blockingEnabled: false,
     blockOnlyInFocus: true,
-    blockedSites: ['youtube.com/shorts', 'facebook.com', 'instagram.com', 'twitter.com', 'tiktok.com']
+    blockedSites: [
+      'youtube.com/shorts',
+      'facebook.com',
+      'instagram.com',
+      'twitter.com',
+      'tiktok.com',
+    ],
   };
 
   const integrationEnabled = getSetting('browser_integration_enabled');
@@ -1608,42 +2273,84 @@ export const getWebBlockingSettings = () => {
   const alwaysSites = getSetting('web_blocking_always_sites');
   const managedSitesStr = getSetting('web_managed_sites');
 
-  const defaultSites = ['youtube.com/shorts', 'facebook.com', 'instagram.com', 'twitter.com', 'tiktok.com', 'onet.pl', 'lowcygier.pl'];
-  const managedSites = (managedSitesStr && managedSitesStr !== 'undefined') 
-    ? (() => { try { return JSON.parse(managedSitesStr); } catch(e) { return defaultSites; } })() 
-    : defaultSites;
+  const defaultSites = [
+    'youtube.com/shorts',
+    'facebook.com',
+    'instagram.com',
+    'twitter.com',
+    'tiktok.com',
+    'onet.pl',
+    'lowcygier.pl',
+  ];
+  const managedSites =
+    managedSitesStr && managedSitesStr !== 'undefined'
+      ? (() => {
+          try {
+            return JSON.parse(managedSitesStr as string);
+          } catch (e) {
+            return defaultSites;
+          }
+        })()
+      : defaultSites;
 
   return {
-    integrationEnabled: integrationEnabled ? integrationEnabled === 'true' : defaults.integrationEnabled,
+    integrationEnabled: integrationEnabled
+      ? integrationEnabled === 'true'
+      : defaults.integrationEnabled,
     appMonitoringEnabled: appMonitoring !== 'false',
     blockingEnabled: enabled ? enabled === 'true' : defaults.blockingEnabled,
-    blockOnlyInFocus: onlyFocus ? onlyFocus === 'true' : defaults.blockOnlyInFocus,
-    blockedSites: (sites && sites !== 'undefined') ? (() => {
-        try { return JSON.parse(sites); } catch(e) { return defaults.blockedSites; }
-    })() : defaults.blockedSites,
-    alwaysBlockedSites: (alwaysSites && alwaysSites !== 'undefined') ? (() => {
-        try { return JSON.parse(alwaysSites); } catch(e) { return []; }
-    })() : [],
-    managedSites
+    blockOnlyInFocus: onlyFocus
+      ? onlyFocus === 'true'
+      : defaults.blockOnlyInFocus,
+    blockedSites:
+      sites && sites !== 'undefined'
+        ? (() => {
+            try {
+              return JSON.parse(sites as string);
+            } catch (e) {
+              return defaults.blockedSites;
+            }
+          })()
+        : defaults.blockedSites,
+    alwaysBlockedSites:
+      alwaysSites && alwaysSites !== 'undefined'
+        ? (() => {
+            try {
+              return JSON.parse(alwaysSites as string);
+            } catch (e) {
+              return [];
+            }
+          })()
+        : [],
+    managedSites,
   };
 };
 
 export const saveWebBlockingSettings = (settings: any) => {
-  setSetting('browser_integration_enabled', String(settings.integrationEnabled));
-  setSetting('desktop_app_monitoring_enabled', String(settings.appMonitoringEnabled));
+  setSetting(
+    'browser_integration_enabled',
+    String(settings.integrationEnabled),
+  );
+  setSetting(
+    'desktop_app_monitoring_enabled',
+    String(settings.appMonitoringEnabled),
+  );
   setSetting('web_blocking_enabled', String(settings.blockingEnabled));
   setSetting('web_blocking_only_focus', String(settings.blockOnlyInFocus));
   setSetting('web_blocking_sites', JSON.stringify(settings.blockedSites));
-  setSetting('web_blocking_always_sites', JSON.stringify(settings.alwaysBlockedSites || []));
+  setSetting(
+    'web_blocking_always_sites',
+    JSON.stringify(settings.alwaysBlockedSites || []),
+  );
   setSetting('web_managed_sites', JSON.stringify(settings.managedSites));
 };
 
 export const getWebStats = (days: number = 1) => {
   if (!db) return { topDomains: [], totalDuration: 0 };
-  
+
   // Get start timestamp
   const start = new Date();
-  start.setHours(0,0,0,0);
+  start.setHours(0, 0, 0, 0);
   start.setDate(start.getDate() - (days - 1)); // if days=1, today. if days=7, 6 days ago.
   const startTimestamp = start.getTime();
 
@@ -1657,19 +2364,22 @@ export const getWebStats = (days: number = 1) => {
       ORDER BY totalTime DESC 
       LIMIT 10
     `);
-    
+
     // Bind parameters before executing
     stmt.bind({ ':start': startTimestamp });
-    
+
     const rows = [];
-    while(stmt.step()) {
-        rows.push(stmt.getAsObject());
+    while (stmt.step()) {
+      rows.push(stmt.getAsObject());
     }
     stmt.free();
 
     return {
-        topDomains: rows,
-        totalDuration: rows.reduce((acc: number, r: any) => acc + (r.totalTime as number), 0)
+      topDomains: rows,
+      totalDuration: rows.reduce(
+        (acc: number, r: any) => acc + (r.totalTime as number),
+        0,
+      ),
     };
   } catch (e) {
     console.error('Failed to get web stats', e);
@@ -1680,7 +2390,7 @@ export const getWebStats = (days: number = 1) => {
 export const getDistractionStats = (days: number = 1) => {
   if (!db) return [];
   const start = new Date();
-  start.setHours(0,0,0,0);
+  start.setHours(0, 0, 0, 0);
   start.setDate(start.getDate() - (days - 1));
   const startTimestamp = start.getTime();
 
@@ -1695,11 +2405,11 @@ export const getDistractionStats = (days: number = 1) => {
       ORDER BY totalTime DESC 
       LIMIT 5
     `);
-    
+
     stmt.bind({ ':start': startTimestamp });
     const rows = [];
-    while(stmt.step()) {
-        rows.push(stmt.getAsObject());
+    while (stmt.step()) {
+      rows.push(stmt.getAsObject());
     }
     stmt.free();
     return rows;
@@ -1709,85 +2419,109 @@ export const getDistractionStats = (days: number = 1) => {
 };
 
 export const getDailyDeepWorkStats = (userId: number) => {
-    if (!db) return { score: 0, duration: 0, longestSession: 0 };
-    const todayStart = new Date();
-    todayStart.setHours(0,0,0,0);
-    const startIso = todayStart.toISOString();
-    
-    // Fetch sessions for today
-    const stmt = db.prepare(`
+  if (!db) return { score: 0, duration: 0, longestSession: 0 };
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const startIso = todayStart.toISOString();
+
+  const stmt = db.prepare(`
         SELECT ws.* 
         FROM work_sessions ws
         JOIN tasks t ON ws.taskId = t.id
         WHERE t.userId = ? AND ws.startTime >= ?
     `);
-    
-    const sessions = [];
-    stmt.bind([userId, startIso]);
-    while(stmt.step()) sessions.push(stmt.getAsObject());
-    stmt.free();
-    
-    // Reuse analyst logic but for today only
-    // Circular dependency issue? No, db.ts doesn't import ProductivityAnalyst.
-    // We have to reimplement logic or move logic to db.ts.
-    // Better: Reimplement simple logic here to avoid circular dep with Analysis module.
-    
-    let totalDur = 0;
-    let deepDur = 0;
-    let longestSession = 0;
-    
-    sessions.forEach((s: any) => {
-        const durMin = s.duration / 60000;
-        totalDur += durMin;
-        if (durMin > longestSession) longestSession = Math.round(durMin);
 
-        if (durMin >= 20 && durMin <= 120) {
-             const endT = s.startTime + s.duration;
-             const ctx = getFocusContext(endT);
-             if (ctx > 0.75) deepDur += durMin;
-        }
-    });
-    
-    return {
-        score: totalDur > 0 ? Math.round((deepDur / totalDur) * 100) : 0,
-        duration: Math.round(deepDur),
-        longestSession: longestSession
-    };
+  const sessions = [];
+  stmt.bind([userId, startIso]);
+  while (stmt.step()) sessions.push(stmt.getAsObject());
+  stmt.free();
+
+  let totalDur = 0;
+  let deepDur = 0;
+  let longestSession = 0;
+
+  sessions.forEach((s: any) => {
+    const durMin = s.duration / 60000;
+    totalDur += durMin;
+    if (durMin > longestSession) longestSession = Math.round(durMin);
+
+    if (durMin >= 20 && durMin <= 120) {
+      const startTs = new Date(s.startTime).getTime();
+      const endTs = new Date(s.endTime).getTime() || startTs + s.duration;
+      const ctx = getFocusContext(endTs, startTs);
+      if (ctx > 0.75) deepDur += durMin;
+    }
+  });
+
+  return {
+    score: totalDur > 0 ? Math.round((deepDur / totalDur) * 100) : 0,
+    duration: Math.round(deepDur),
+    longestSession,
+  };
+};
+
+export const getSuggestedCommitMessage = (taskId: number) => {
+  if (!db) return 'fix: update';
+  const stmt = db.prepare('SELECT title FROM tasks WHERE id = ?');
+  stmt.bind([taskId]);
+  let message = 'fix: update';
+  if (stmt.step()) {
+    const row = stmt.getAsObject();
+    message = `fix: ${(row.title as string).toLowerCase()}`;
+  }
+  stmt.free();
+  return message;
 };
 
 export const setDomainCategory = (domain: string, category: string) => {
-    if (!db) return;
-    try {
-        const stmt = db.prepare("INSERT OR REPLACE INTO domain_categories (domain, category) VALUES (?, ?)");
-        stmt.run([domain, category]);
-        stmt.free();
-        logSystemEvent(`Context Updated: Domain '${domain}' categorized as ${category}.`, 'LEARNING');
-    } catch (e) { console.error(e); }
+  if (!db) return;
+  try {
+    const stmt = db.prepare(
+      'INSERT OR REPLACE INTO domain_categories (domain, category) VALUES (?, ?)',
+    );
+    stmt.run([domain, category]);
+    stmt.free();
+    logSystemEvent(
+      `Context Updated: Domain '${domain}' categorized as ${category}.`,
+      'LEARNING',
+    );
+  } catch (e) {
+    console.error(e);
+  }
 };
 
 export const getAllDomainCategories = () => {
-    if (!db) return {};
-    try {
-        const stmt = db.prepare("SELECT domain, category FROM domain_categories");
-        const categories: Record<string, string> = {};
-        while (stmt.step()) {
-            const row = stmt.getAsObject();
-            categories[row.domain as string] = row.category as string;
-        }
-        stmt.free();
-        return categories;
-    } catch (e) { return {}; }
+  if (!db) return {};
+  try {
+    const stmt = db.prepare('SELECT domain, category FROM domain_categories');
+    const categories: Record<string, string> = {};
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      categories[row.domain as string] = row.category as string;
+    }
+    stmt.free();
+    return categories;
+  } catch (e) {
+    return {};
+  }
 };
 
-export const logAppActivity = (data: { appName: string, windowTitle: string, duration: number, timestamp: number }) => {
+export const logAppActivity = (data: {
+  appName: string;
+  windowTitle: string;
+  duration: number;
+  timestamp: number;
+}) => {
   if (!db) return;
   try {
-    const stmt = db.prepare(`INSERT INTO app_activity (app_name, window_title, duration, timestamp) VALUES (:app, :title, :duration, :timestamp)`);
+    const stmt = db.prepare(
+      `INSERT INTO app_activity (app_name, window_title, duration, timestamp) VALUES (:app, :title, :duration, :timestamp)`,
+    );
     stmt.run({
       ':app': data.appName,
       ':title': data.windowTitle,
       ':duration': data.duration,
-      ':timestamp': data.timestamp
+      ':timestamp': data.timestamp,
     });
     stmt.free();
   } catch (e) {
@@ -1796,19 +2530,26 @@ export const logAppActivity = (data: { appName: string, windowTitle: string, dur
 };
 
 export const setAppCategory = (appName: string, category: string) => {
-    if (!db) return;
-    try {
-        const stmt = db.prepare("INSERT OR REPLACE INTO app_categories (app_name, category) VALUES (?, ?)");
-        stmt.run([appName, category]);
-        stmt.free();
-        logSystemEvent(`Context Updated: App '${appName}' categorized as ${category}.`, 'LEARNING');
-    } catch (e) { console.error(e); }
+  if (!db) return;
+  try {
+    const stmt = db.prepare(
+      'INSERT OR REPLACE INTO app_categories (app_name, category) VALUES (?, ?)',
+    );
+    stmt.run([appName, category]);
+    stmt.free();
+    logSystemEvent(
+      `Context Updated: App '${appName}' categorized as ${category}.`,
+      'LEARNING',
+    );
+  } catch (e) {
+    console.error(e);
+  }
 };
 
 export const getAppStats = (days: number = 1) => {
   if (!db) return [];
   const start = new Date();
-  start.setHours(0,0,0,0);
+  start.setHours(0, 0, 0, 0);
   start.setDate(start.getDate() - (days - 1));
   const startTimestamp = start.getTime();
 
@@ -1824,7 +2565,7 @@ export const getAppStats = (days: number = 1) => {
     `);
     stmt.bind({ ':start': startTimestamp });
     const rows = [];
-    while(stmt.step()) rows.push(stmt.getAsObject());
+    while (stmt.step()) rows.push(stmt.getAsObject());
     stmt.free();
     return rows;
   } catch (e) {
@@ -1832,40 +2573,145 @@ export const getAppStats = (days: number = 1) => {
   }
 };
 
-export const getFocusContext = (timestamp: number): number => {
-  if (!db) return 1.0;
-  
-  const oneHourAgo = timestamp - (60 * 60 * 1000);
+// Shared by getFocusContext and getWebDistractionRatio: how much web_stats time in a
+// window was spent on blocked/distracting sites vs total tracked web time.
+const getWebDistractionDuration = (
+  startTime: number,
+  endTime: number,
+): { distractionDuration: number; totalDuration: number } => {
   let distractionDuration = 0;
   let totalDuration = 0;
+  if (!db) return { distractionDuration, totalDuration };
 
-  // 1. Web Analysis
   const webSettings = getWebBlockingSettings();
   const blockedSites = new Set(webSettings.blockedSites || []);
-  
-  // Get web activity in the last hour
+
   const webStmt = db.prepare(`
       SELECT ws.domain, ws.duration, dc.category
       FROM web_stats ws
       LEFT JOIN domain_categories dc ON ws.domain = dc.domain
       WHERE ws.timestamp >= ? AND ws.timestamp <= ?
   `);
-  webStmt.bind([oneHourAgo, timestamp]);
-  
-  while(webStmt.step()) {
-      const row = webStmt.getAsObject();
-      const domain = row.domain as string;
-      const duration = row.duration as number;
-      const category = row.category as string;
-      
-      totalDuration += duration;
+  webStmt.bind([startTime, endTime]);
 
-      // Check explicit blocklist or negative categories
-      if (blockedSites.has(domain) || category === 'Social' || category === 'Entertainment') {
-          distractionDuration += duration;
-      }
+  while (webStmt.step()) {
+    const row = webStmt.getAsObject();
+    const domain = row.domain as string;
+    const duration = row.duration as number;
+    const category = row.category as string;
+
+    totalDuration += duration;
+
+    if (
+      blockedSites.has(domain) ||
+      category === 'Social' ||
+      category === 'Entertainment' ||
+      category === 'Shopping'
+    ) {
+      distractionDuration += duration;
+    }
   }
   webStmt.free();
+
+  return { distractionDuration, totalDuration };
+};
+
+// Ratio (0-1) of tracked web time in the window spent on distracting sites.
+export const getWebDistractionRatio = (
+  startTime: number,
+  endTime: number,
+): number => {
+  if (!db) return 0;
+  const { distractionDuration, totalDuration } = getWebDistractionDuration(
+    startTime,
+    endTime,
+  );
+  if (totalDuration === 0) return 0;
+  return Math.max(0, Math.min(1, distractionDuration / totalDuration));
+};
+
+// Counts how many times the active app changed within the window - a proxy for context switching.
+export const getAppSwitchCount = (
+  startTime: number,
+  endTime: number,
+): number => {
+  if (!db) return 0;
+  try {
+    const stmt = db.prepare(`
+        SELECT app_name FROM app_activity
+        WHERE timestamp >= ? AND timestamp <= ?
+        ORDER BY timestamp ASC
+    `);
+    stmt.bind([startTime, endTime]);
+
+    let switches = 0;
+    let lastApp: string | null = null;
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      const appName = row.app_name as string;
+      if (lastApp !== null && appName !== lastApp) switches += 1;
+      lastApp = appName;
+    }
+    stmt.free();
+    return switches;
+  } catch (e) {
+    console.error('Failed to compute app switch count', e);
+    return 0;
+  }
+};
+
+// Days since the user last created a task of the same type (excludeTaskId skips the task itself).
+// asOfTimestamp lets callers ask "as of this point in time" (e.g. a historical task's own
+// createdAt when building training data) instead of always "as of now" - and only considers
+// tasks created strictly before it, so training features can't leak information from the future.
+export const getDaysSinceLastSimilarTask = (
+  userId: number,
+  taskType: string,
+  excludeTaskId?: number,
+  asOfTimestamp: number = Date.now(),
+): number => {
+  if (!db) return 14;
+  try {
+    const asOfIso = new Date(asOfTimestamp).toISOString();
+    const stmt = db.prepare(`
+        SELECT createdAt FROM tasks
+        WHERE userId = ? AND type = ? AND id != ? AND createdAt < ?
+        ORDER BY createdAt DESC
+        LIMIT 1
+    `);
+    stmt.bind([userId, taskType, excludeTaskId ?? -1, asOfIso]);
+
+    let lastCreatedAt: string | null = null;
+    if (stmt.step()) {
+      lastCreatedAt = stmt.getAsObject().createdAt as string;
+    }
+    stmt.free();
+
+    if (!lastCreatedAt) return 14;
+    const days =
+      (asOfTimestamp - new Date(lastCreatedAt).getTime()) /
+      (1000 * 60 * 60 * 24);
+    return Number.isFinite(days) && days >= 0 ? days : 14;
+  } catch (e) {
+    console.error('Failed to compute days since last similar task', e);
+    return 14;
+  }
+};
+
+export const getFocusContext = (
+  timestamp: number,
+  startTime?: number,
+): number => {
+  if (!db) return 1.0;
+
+  const analysisStart = startTime || timestamp - 60 * 60 * 1000;
+  const analysisEnd = timestamp;
+
+  // 1. Web Analysis
+  let { distractionDuration, totalDuration } = getWebDistractionDuration(
+    analysisStart,
+    analysisEnd,
+  );
 
   // 2. App Analysis
   const appStmt = db.prepare(`
@@ -1874,27 +2720,45 @@ export const getFocusContext = (timestamp: number): number => {
       LEFT JOIN app_categories ac ON aa.app_name = ac.app_name
       WHERE aa.timestamp >= ? AND aa.timestamp <= ?
   `);
-  appStmt.bind([oneHourAgo, timestamp]);
+  appStmt.bind([analysisStart, analysisEnd]);
 
-  while(appStmt.step()) {
-      const row = appStmt.getAsObject();
-      const duration = row.duration as number;
-      const category = row.category as string;
+  while (appStmt.step()) {
+    const row = appStmt.getAsObject();
+    const duration = row.duration as number;
+    const category = row.category as string;
 
-      totalDuration += duration;
+    totalDuration += duration;
 
-      if (category === 'Game' || category === 'Entertainment') {
-          distractionDuration += duration;
-      }
+    if (
+      category === 'Game' ||
+      category === 'Entertainment' ||
+      category === 'Social'
+    ) {
+      distractionDuration += duration;
+    }
   }
   appStmt.free();
 
-  if (totalDuration === 0) return 1.0; // Assume focused if no logs (or idle)
+  if (totalDuration === 0) return 1.0;
 
-  // Focus Score = 1 - (Distraction Ratio)
-  // Example: 15 mins distracting out of 60 mins activity = 1 - 0.25 = 0.75 score
-  const score = 1 - (distractionDuration / totalDuration);
+  const score = 1 - distractionDuration / totalDuration;
   return Math.max(0, Math.min(1, score));
+};
+
+export const startNewExpedition = () => {
+  const targetMinutes = 120 + Math.floor(Math.random() * 240); // 2h to 6h
+  const newExpedition = {
+    seed: Math.random(),
+    targetMinutes,
+    accumulatedMinutes: 0,
+    status: 'active',
+  };
+  setSetting('current_expedition', JSON.stringify(newExpedition));
+  logSystemEvent(
+    `New Expedition Started: Target ${targetMinutes}m.`,
+    'GAMIFICATION',
+  );
+  return newExpedition;
 };
 
 export const closeDB = () => {

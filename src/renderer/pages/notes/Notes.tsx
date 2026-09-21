@@ -105,11 +105,19 @@ function Notes() {
   };
 
   if (isLoading) {
-    return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}><CircularProgress /></Box>;
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+        <CircularProgress />
+      </Box>
+    );
   }
 
   if (error) {
-    return <Typography color="error" sx={{ textAlign: 'center', mt: 4 }}>{error}</Typography>;
+    return (
+      <Typography color="error" sx={{ textAlign: 'center', mt: 4 }}>
+        {error}
+      </Typography>
+    );
   }
 
   return (

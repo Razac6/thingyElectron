@@ -29,3 +29,14 @@ npm-debug.log.*
 *.sass.d.ts
 *.scss.d.ts
 .env
+
+# Scratch sqlite dir used by db.test.ts (regenerated fresh on every run)
+temp_db_test/
+
+# Internal business/planning docs - not meant to be version controlled
+CHROME_INTEGRATION_PLAN.pl.md
+FUTURE_ROADMAP.md
+MARKET_STRATEGY.md
+MILESTONES.md
+MONETIZATION_PLAN.md
+PROJECTS_FEATURE.md

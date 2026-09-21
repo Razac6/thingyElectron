@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Paper, Typography, LinearProgress } from '@mui/material';
-import { getSystemLogs, getNeuralConfidence, getAiMaturity } from '../../services/DatabaseService';
+import {
+  getSystemLogs,
+  getNeuralConfidence,
+  getAiMaturity,
+} from '../../services/DatabaseService';
 
 function SystemLogs() {
   const [logs, setLogs] = useState<any[]>([]);
@@ -17,7 +21,7 @@ function SystemLogs() {
       setAiMaturity(aiScore);
     };
     fetchLogs();
-    
+
     // Optional: Refresh logs periodically or listen for an event
     const interval = setInterval(fetchLogs, 5000);
     return () => clearInterval(interval);
@@ -25,103 +29,180 @@ function SystemLogs() {
 
   const getLogColor = (type: string) => {
     switch (type) {
-        case 'LEARNING': return '#00bcd4'; // Cyan
-        case 'SYSTEM': return '#f44336';   // Red
-        case 'DEBUG': return '#9e9e9e';    // Grey
-        case 'GAMIFICATION': return '#ffca28'; // Amber/Gold
-        case 'PRODUCTIVITY': return '#ab47bc'; // Purple
-        case 'WEB': return '#2196f3';      // Blue
-        default: return '#ffeb3b'; // Default Yellow
+      case 'LEARNING':
+        return '#00bcd4'; // Cyan
+      case 'SYSTEM':
+        return '#f44336'; // Red
+      case 'DEBUG':
+        return '#9e9e9e'; // Grey
+      case 'GAMIFICATION':
+        return '#ffca28'; // Amber/Gold
+      case 'PRODUCTIVITY':
+        return '#ab47bc'; // Purple
+      case 'WEB':
+        return '#2196f3'; // Blue
+      default:
+        return '#ffeb3b'; // Default Yellow
     }
   };
 
   return (
-    <Box sx={{ height: 'calc(100vh - 100px)', display: 'flex', flexDirection: 'column' }}>
-        <Typography variant="h4" gutterBottom>
-            Neural System Logs
-        </Typography>
-        
-        {/* Confidence Bars */}
-        <Box sx={{ mb: 2, p: 2, bgcolor: '#1e1e1e', border: '1px solid #333', borderRadius: 1 }}>
-             <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                <Typography variant="caption" sx={{ color: '#00e5ff', fontFamily: 'monospace', flexGrow: 1 }}>
-                    {'>'} ALGORITHMIC_CONFIDENCE
-                </Typography>
-                <Typography variant="caption" sx={{ color: '#00e5ff', fontFamily: 'monospace' }}>
-                    {Number.isNaN(confidence) ? 0 : confidence}%
-                </Typography>
-             </Box>
-             <LinearProgress 
-                variant="determinate" 
-                value={confidence} 
-                sx={{ 
-                  height: 6, 
-                  mb: 2,
-                  bgcolor: '#333',
-                  borderRadius: 1,
-                  '& .MuiLinearProgress-bar': { 
-                      bgcolor: confidence > 70 ? '#00e5ff' : '#f44336' 
-                  }
-                }} 
-              />
+    <Box
+      sx={{
+        height: 'calc(100vh - 100px)',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
+      <Typography variant="h4" gutterBottom>
+        Neural System Logs
+      </Typography>
 
-             <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                <Typography variant="caption" sx={{ color: '#ab47bc', fontFamily: 'monospace', flexGrow: 1 }}>
-                    {'>'} NEURAL_NET_MATURITY
-                </Typography>
-                <Typography variant="caption" sx={{ color: '#ab47bc', fontFamily: 'monospace' }}>
-                    {Number.isNaN(aiMaturity) ? 0 : aiMaturity}%
-                </Typography>
-             </Box>
-             <LinearProgress 
-                variant="determinate" 
-                value={aiMaturity} 
-                sx={{ 
-                  height: 6, 
-                  bgcolor: '#333',
-                  borderRadius: 1,
-                  '& .MuiLinearProgress-bar': { 
-                      bgcolor: aiMaturity > 50 ? '#ab47bc' : '#ffca28' 
-                  }
-                }} 
-              />
-              
-              <Typography variant="caption" sx={{ color: '#666', fontFamily: 'monospace', mt: 1, display: 'block' }}>
-                  {aiMaturity < 20 ? 'STATUS: NEURAL_INIT' : 'STATUS: NEURAL_ACTIVE'}
-              </Typography>
+      {/* Confidence Bars */}
+      <Box
+        sx={{
+          mb: 2,
+          p: 2,
+          bgcolor: '#1e1e1e',
+          border: '1px solid #333',
+          borderRadius: 1,
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+          <Typography
+            variant="caption"
+            sx={{ color: '#00e5ff', fontFamily: 'monospace', flexGrow: 1 }}
+          >
+            {'>'} ALGORITHMIC_CONFIDENCE
+          </Typography>
+          <Typography
+            variant="caption"
+            sx={{ color: '#00e5ff', fontFamily: 'monospace' }}
+          >
+            {Number.isNaN(confidence) ? 0 : confidence}%
+          </Typography>
         </Box>
+        <LinearProgress
+          variant="determinate"
+          value={confidence}
+          sx={{
+            height: 6,
+            mb: 2,
+            bgcolor: '#333',
+            borderRadius: 1,
+            '& .MuiLinearProgress-bar': {
+              bgcolor: confidence > 70 ? '#00e5ff' : '#f44336',
+            },
+          }}
+        />
 
-        <Paper sx={{ 
-            flexGrow: 1, 
-            padding: 3, 
-            bgcolor: '#1e1e1e', 
-            color: '#4caf50', 
-            fontFamily: 'monospace', 
-            border: '1px solid #333',
-            overflow: 'hidden',
-            display: 'flex',
-            flexDirection: 'column'
-        }}>
-            <Typography variant="subtitle2" sx={{ borderBottom: '1px solid #333', mb: 2, pb: 1, color: '#66bb6a' }}>
-                {'>'} SYSTEM_NEURAL_LOGS // FULL_HISTORY_MODE
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+          <Typography
+            variant="caption"
+            sx={{ color: '#ab47bc', fontFamily: 'monospace', flexGrow: 1 }}
+          >
+            {'>'} NEURAL_NET_MATURITY
+          </Typography>
+          <Typography
+            variant="caption"
+            sx={{ color: '#ab47bc', fontFamily: 'monospace' }}
+          >
+            {Number.isNaN(aiMaturity) ? 0 : aiMaturity}%
+          </Typography>
+        </Box>
+        <LinearProgress
+          variant="determinate"
+          value={aiMaturity}
+          sx={{
+            height: 6,
+            bgcolor: '#333',
+            borderRadius: 1,
+            '& .MuiLinearProgress-bar': {
+              bgcolor: aiMaturity > 50 ? '#ab47bc' : '#ffca28',
+            },
+          }}
+        />
+
+        <Typography
+          variant="caption"
+          sx={{
+            color: '#666',
+            fontFamily: 'monospace',
+            mt: 1,
+            display: 'block',
+          }}
+        >
+          {aiMaturity < 20 ? 'STATUS: NEURAL_INIT' : 'STATUS: NEURAL_ACTIVE'}
+        </Typography>
+      </Box>
+
+      <Paper
+        sx={{
+          flexGrow: 1,
+          padding: 3,
+          bgcolor: '#1e1e1e',
+          color: '#4caf50',
+          fontFamily: 'monospace',
+          border: '1px solid #333',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        <Typography
+          variant="subtitle2"
+          sx={{
+            borderBottom: '1px solid #333',
+            mb: 2,
+            pb: 1,
+            color: '#66bb6a',
+          }}
+        >
+          {'>'} SYSTEM_NEURAL_LOGS // FULL_HISTORY_MODE
+        </Typography>
+        <Box
+          sx={{
+            flexGrow: 1,
+            overflow: 'auto',
+            '&::-webkit-scrollbar': { width: '8px' },
+            '&::-webkit-scrollbar-thumb': {
+              backgroundColor: '#333',
+              borderRadius: '4px',
+            },
+          }}
+        >
+          {logs.length > 0 ? (
+            logs.map((log) => (
+              <Typography
+                key={log.id}
+                variant="body2"
+                display="block"
+                sx={{ fontFamily: 'monospace', mb: 0.5 }}
+              >
+                <span style={{ color: '#666' }}>
+                  [{new Date(log.timestamp).toLocaleString()}]
+                </span>{' '}
+                <span
+                  style={{
+                    color: getLogColor(log.event_type),
+                    fontWeight: 'bold',
+                  }}
+                >
+                  [{log.event_type}]
+                </span>{' '}
+                {log.message}
+              </Typography>
+            ))
+          ) : (
+            <Typography
+              variant="body2"
+              sx={{ color: '#666', fontStyle: 'italic' }}
+            >
+              _waiting for system events...
             </Typography>
-            <Box sx={{ 
-                flexGrow: 1, 
-                overflow: 'auto', 
-                '&::-webkit-scrollbar': { width: '8px' }, 
-                '&::-webkit-scrollbar-thumb': { backgroundColor: '#333', borderRadius: '4px' } 
-            }}>
-                {logs.length > 0 ? logs.map(log => (
-                    <Typography key={log.id} variant="body2" display="block" sx={{ fontFamily: 'monospace', mb: 0.5 }}>
-                        <span style={{ color: '#666' }}>[{new Date(log.timestamp).toLocaleString()}]</span> <span style={{ color: getLogColor(log.event_type), fontWeight: 'bold' }}>[{log.event_type}]</span> {log.message}
-                    </Typography>
-                )) : (
-                    <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
-                        _waiting for system events...
-                    </Typography>
-                )}
-            </Box>
-        </Paper>
+          )}
+        </Box>
+      </Paper>
     </Box>
   );
 }

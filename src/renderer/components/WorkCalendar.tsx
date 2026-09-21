@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import Calendar from 'react-calendar';
+import { DayPicker } from 'react-day-picker';
+import 'react-day-picker/dist/style.css';
 import {
   Box,
   Typography,
@@ -20,7 +21,7 @@ function formatTime(ms: number): string {
   if (ms <= 0) return 'No time tracked';
   let seconds = Math.floor(ms / 1000);
   let minutes = Math.floor(seconds / 60);
-  let hours = Math.floor(minutes / 60);
+  const hours = Math.floor(minutes / 60);
 
   seconds %= 60;
   minutes %= 60;
@@ -34,18 +35,21 @@ function formatTime(ms: number): string {
 }
 
 function WorkCalendar() {
-  const [activeDate, setActiveDate] = useState(new Date());
+  const [selectedDay, setSelectedDay] = useState<Date | undefined>(new Date());
   const [modalOpen, setModalOpen] = useState(false);
-  const [selectedDayData, setSelectedDayData] = useState<{ date: string; time: string } | null>(null);
+  const [selectedDayData, setSelectedDayData] = useState<{
+    date: string;
+    time: string;
+  } | null>(null);
 
   const dailyProgress: DailyProgressEntry[] = useMemo(() => {
     const storedData = localStorage.getItem('dailyProgress');
     return storedData ? JSON.parse(storedData) : [];
   }, []);
 
-  const handleDayClick = (value: Date) => {
-    const dateString = value.toLocaleDateString();
-    const dayData = dailyProgress.find(d => d.date === dateString);
+  const handleDayClick = (day: Date) => {
+    const dateString = day.toLocaleDateString();
+    const dayData = dailyProgress.find((d) => d.date === dateString);
 
     if (dayData) {
       setSelectedDayData({
@@ -61,31 +65,42 @@ function WorkCalendar() {
     setModalOpen(true);
   };
 
-  const handleCloseModal = () => {
-    setModalOpen(false);
+  const hasActivityDays = useMemo(() => {
+    return dailyProgress
+      .filter((d) => d.dayTimeSpend > 0)
+      .map((d) => new Date(d.date));
+  }, [dailyProgress]);
+
+  const modifiers = {
+    hasActivity: hasActivityDays,
   };
 
-  const getTileClassName = ({ date, view }: { date: Date, view: string }) => {
-    if (view === 'month') {
-      const dateString = date.toLocaleDateString();
-      const dayData = dailyProgress.find(d => d.date === dateString);
-      if (dayData && dayData.dayTimeSpend > 0) {
-        return 'has-activity';
-      }
-    }
-    return null;
+  const modifiersStyles = {
+    hasActivity: {
+      fontWeight: 'bold',
+      backgroundColor: '#8ecae6',
+      borderRadius: '50%',
+    },
   };
 
   return (
-    <Box>
-      <Typography variant="h6" gutterBottom>Work Activity Calendar</Typography>
-      <Calendar
-        onChange={setActiveDate}
-        value={activeDate}
-        onClickDay={handleDayClick}
-        tileClassName={getTileClassName}
+    <Box
+      sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}
+    >
+      <Typography variant="h6" gutterBottom>
+        Work Activity Calendar
+      </Typography>
+      <DayPicker
+        mode="single"
+        selected={selectedDay}
+        onSelect={(day) => {
+          setSelectedDay(day);
+          if (day) handleDayClick(day);
+        }}
+        modifiers={modifiers}
+        modifiersStyles={modifiersStyles}
       />
-      <Dialog open={modalOpen} onClose={handleCloseModal}>
+      <Dialog open={modalOpen} onClose={() => setModalOpen(false)}>
         <DialogTitle>Activity Details</DialogTitle>
         {selectedDayData && (
           <DialogContent>
@@ -96,7 +111,7 @@ function WorkCalendar() {
           </DialogContent>
         )}
         <DialogActions>
-          <Button onClick={handleCloseModal}>Close</Button>
+          <Button onClick={() => setModalOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
     </Box>

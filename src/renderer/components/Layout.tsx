@@ -17,14 +17,9 @@ import {
   CSSObject,
 } from '@mui/material';
 import { useNavigate, useLocation } from 'react-router-dom';
-import Lottie from "lottie-react";
+import Lottie from 'lottie-react';
 
 // Import all animations
-import catMovement from '../../../assets/Cat Movement.json';
-import flirtingDog from '../../../assets/Flirting Dog.json';
-import meditatingFox from '../../../assets/Meditating Fox.json';
-import catRocket from '../../../assets/Cat in a rocket.json';
-import trophyAnimation from '../../../assets/Trophy.json';
 
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import AssignmentIcon from '@mui/icons-material/Assignment';
@@ -39,6 +34,12 @@ import StopIcon from '@mui/icons-material/Stop'; // Use the square Stop icon
 import SearchIcon from '@mui/icons-material/Search';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import DvrIcon from '@mui/icons-material/Dvr';
+import InfoIcon from '@mui/icons-material/Info';
+import trophyAnimation from '../../../assets/Trophy.json';
+import catRocket from '../../../assets/Cat in a rocket.json';
+import meditatingFox from '../../../assets/Meditating Fox.json';
+import flirtingDog from '../../../assets/Flirting Dog.json';
+import catMovement from '../../../assets/Cat Movement.json';
 import { useTimer } from '../context/TimerContext';
 import { useGamification } from '../context/GamificationContext';
 import Timer from './Timer';
@@ -71,6 +72,7 @@ const menuItems = [
 
 const bottomMenuItems = [
   { text: 'System Logs', path: '/logs', icon: <TerminalIcon /> },
+  { text: 'About', path: '/about', icon: <InfoIcon /> },
 ];
 
 const openedMixin = (theme: Theme): CSSObject => ({
@@ -120,22 +122,22 @@ const AppBar = styled(MuiAppBar, {
   }),
 }));
 
-const Drawer = styled(MuiDrawer, { shouldForwardProp: (prop) => prop !== 'open' })(
-  ({ theme, open }) => ({
-    width: drawerWidth,
-    flexShrink: 0,
-    whiteSpace: 'nowrap',
-    boxSizing: 'border-box',
-    ...(open && {
-      ...openedMixin(theme),
-      '& .MuiDrawer-paper': openedMixin(theme),
-    }),
-    ...(!open && {
-      ...closedMixin(theme),
-      '& .MuiDrawer-paper': closedMixin(theme),
-    }),
+const Drawer = styled(MuiDrawer, {
+  shouldForwardProp: (prop) => prop !== 'open',
+})(({ theme, open }) => ({
+  width: drawerWidth,
+  flexShrink: 0,
+  whiteSpace: 'nowrap',
+  boxSizing: 'border-box',
+  ...(open && {
+    ...openedMixin(theme),
+    '& .MuiDrawer-paper': openedMixin(theme),
   }),
-);
+  ...(!open && {
+    ...closedMixin(theme),
+    '& .MuiDrawer-paper': closedMixin(theme),
+  }),
+}));
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -146,26 +148,36 @@ export default function Layout({ children }: LayoutProps) {
   const location = useLocation();
   const [open, setOpen] = React.useState(false);
   const [searchOpen, setSearchOpen] = React.useState(false);
-  const { tasks, stopTimer, idlePrompt, handleKeepIdleTime, handleDiscardIdleTime, isBoostMode, toggleBoostMode, dailyMode } = useTimer();
+  const {
+    tasks,
+    stopTimer,
+    idlePrompt,
+    handleKeepIdleTime,
+    handleDiscardIdleTime,
+    isBoostMode,
+    toggleBoostMode,
+    dailyMode,
+  } = useTimer();
   const { rewardAnimation, hideRewardAnimation } = useGamification();
   const { settings } = useSettings();
 
-  const activeTask = tasks.find(task => task.startTimer !== null);
+  const activeTask = tasks.find((task) => task.startTimer !== null);
 
   // Auto-activate Boost Overlay if mode is Boost and timer is running
   useEffect(() => {
-      if (dailyMode === 'boost' && activeTask) {
-          if (!isBoostMode) toggleBoostMode(true);
-      } else {
-          if (isBoostMode) toggleBoostMode(false);
-      }
+    if (dailyMode === 'boost' && activeTask) {
+      if (!isBoostMode) toggleBoostMode(true);
+    } else if (isBoostMode) toggleBoostMode(false);
   }, [dailyMode, activeTask, isBoostMode]);
 
-  const visibleMenuItems = menuItems.filter(item => {
-      if (item.text === 'Monitoring') {
-          return settings.browser_integration_enabled === 'true' || settings.desktop_app_monitoring_enabled !== 'false';
-      }
-      return true;
+  const visibleMenuItems = menuItems.filter((item) => {
+    if (item.text === 'Monitoring') {
+      return (
+        settings.browser_integration_enabled === 'true' ||
+        settings.desktop_app_monitoring_enabled !== 'false'
+      );
+    }
+    return true;
   });
 
   useEffect(() => {
@@ -178,9 +190,18 @@ export default function Layout({ children }: LayoutProps) {
       navigate('/list', { state: { draftTask: draft } });
     };
 
-    const unsubSearch = window.electron.ipcRenderer.on('open-search', handleOpenSearch);
-    const unsubSettings = window.electron.ipcRenderer.on('open-settings', handleOpenSettings);
-    const unsubDraft = window.electron.ipcRenderer.on('task:draft-received', handleTaskDraft);
+    const unsubSearch = window.electron.ipcRenderer.on(
+      'open-search',
+      handleOpenSearch,
+    );
+    const unsubSettings = window.electron.ipcRenderer.on(
+      'open-settings',
+      handleOpenSettings,
+    );
+    const unsubDraft = window.electron.ipcRenderer.on(
+      'task:draft-received',
+      handleTaskDraft,
+    );
 
     return () => {
       if (unsubSearch) unsubSearch();
@@ -194,11 +215,15 @@ export default function Layout({ children }: LayoutProps) {
 
   const getPageTitle = () => {
     const allItems = [...menuItems, ...bottomMenuItems];
-    const currentItem = allItems.find(item => item.path === location.pathname);
+    const currentItem = allItems.find(
+      (item) => item.path === location.pathname,
+    );
     return currentItem ? currentItem.text : 'Thingy';
   };
 
-  const currentAnimationData = rewardAnimation ? animationMap[rewardAnimation] : null;
+  const currentAnimationData = rewardAnimation
+    ? animationMap[rewardAnimation]
+    : null;
 
   return (
     <Box sx={{ display: 'flex' }}>
@@ -206,7 +231,17 @@ export default function Layout({ children }: LayoutProps) {
       <BoostOverlay open={isBoostMode} onClose={() => toggleBoostMode(false)} />
       <AiCompanion />
       {currentAnimationData && (
-        <Box sx={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', zIndex: 9999, pointerEvents: 'none' }}>
+        <Box
+          sx={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            zIndex: 9999,
+            pointerEvents: 'none',
+          }}
+        >
           <Lottie
             animationData={currentAnimationData}
             loop={false}
@@ -227,20 +262,40 @@ export default function Layout({ children }: LayoutProps) {
       <AppBar position="fixed" open={open}>
         <Toolbar sx={{ display: 'flex', justifyContent: 'space-between' }}>
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <IconButton color="inherit" aria-label="open drawer" onClick={handleDrawerOpen} edge="start" sx={{ marginRight: 5, ...(open && { display: 'none' }) }}>
+            <IconButton
+              color="inherit"
+              aria-label="open drawer"
+              onClick={handleDrawerOpen}
+              edge="start"
+              sx={{ marginRight: 5, ...(open && { display: 'none' }) }}
+            >
               <MenuIcon />
             </IconButton>
-            <Typography variant="h6" noWrap component="div">{getPageTitle()}</Typography>
+            <Typography variant="h6" noWrap component="div">
+              {getPageTitle()}
+            </Typography>
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <IconButton color="inherit" onClick={() => setSearchOpen(true)}><SearchIcon /></IconButton>
+            <IconButton color="inherit" onClick={() => setSearchOpen(true)}>
+              <SearchIcon />
+            </IconButton>
             {activeTask && (
               <>
-                <Typography variant="body1" noWrap sx={{ color: 'white' }}>{activeTask.title}</Typography>
+                <Typography variant="body1" noWrap sx={{ color: 'white' }}>
+                  {activeTask.title}
+                </Typography>
                 <Box sx={{ color: 'white', minWidth: '110px' }}>
-                   <Timer startTimer={activeTask.startTimer} spendTime={activeTask.spendTime} estimate={activeTask.estimate} context="header" />
+                  <Timer
+                    startTimer={activeTask.startTimer}
+                    spendTime={activeTask.spendTime}
+                    estimate={activeTask.estimate}
+                    context="header"
+                  />
                 </Box>
-                <IconButton onClick={() => stopTimer(activeTask.id)} sx={{ color: '#ef476f' }}>
+                <IconButton
+                  onClick={() => stopTimer(activeTask.id)}
+                  sx={{ color: '#ef476f' }}
+                >
                   <StopIcon />
                 </IconButton>
               </>
@@ -249,29 +304,79 @@ export default function Layout({ children }: LayoutProps) {
         </Toolbar>
       </AppBar>
       <Drawer variant="permanent" open={open}>
-        <DrawerHeader><IconButton onClick={handleDrawerClose}><ChevronLeftIcon /></IconButton></DrawerHeader>
+        <DrawerHeader>
+          <IconButton onClick={handleDrawerClose}>
+            <ChevronLeftIcon />
+          </IconButton>
+        </DrawerHeader>
         <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-            <List>
-              {visibleMenuItems.map((item) => (
-                <ListItem key={item.text} disablePadding sx={{ display: 'block' }}>
-                  <ListItemButton sx={{ minHeight: 48, justifyContent: open ? 'initial' : 'center', px: 2.5 }} selected={location.pathname === item.path} onClick={() => navigate(item.path)}>
-                    <ListItemIcon sx={{ minWidth: 0, mr: open ? 3 : 'auto', justifyContent: 'center' }}>{item.icon}</ListItemIcon>
-                    <ListItemText primary={item.text} sx={{ opacity: open ? 1 : 0 }} />
-                  </ListItemButton>
-                </ListItem>
-              ))}
-            </List>
-            <Box sx={{ flexGrow: 1 }} />
-            <List>
-              {bottomMenuItems.map((item) => (
-                <ListItem key={item.text} disablePadding sx={{ display: 'block' }}>
-                  <ListItemButton sx={{ minHeight: 48, justifyContent: open ? 'initial' : 'center', px: 2.5 }} selected={location.pathname === item.path} onClick={() => navigate(item.path)}>
-                    <ListItemIcon sx={{ minWidth: 0, mr: open ? 3 : 'auto', justifyContent: 'center' }}>{item.icon}</ListItemIcon>
-                    <ListItemText primary={item.text} sx={{ opacity: open ? 1 : 0 }} />
-                  </ListItemButton>
-                </ListItem>
-              ))}
-            </List>
+          <List>
+            {visibleMenuItems.map((item) => (
+              <ListItem
+                key={item.text}
+                disablePadding
+                sx={{ display: 'block' }}
+              >
+                <ListItemButton
+                  sx={{
+                    minHeight: 48,
+                    justifyContent: open ? 'initial' : 'center',
+                    px: 2.5,
+                  }}
+                  selected={location.pathname === item.path}
+                  onClick={() => navigate(item.path)}
+                >
+                  <ListItemIcon
+                    sx={{
+                      minWidth: 0,
+                      mr: open ? 3 : 'auto',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {item.icon}
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={item.text}
+                    sx={{ opacity: open ? 1 : 0 }}
+                  />
+                </ListItemButton>
+              </ListItem>
+            ))}
+          </List>
+          <Box sx={{ flexGrow: 1 }} />
+          <List>
+            {bottomMenuItems.map((item) => (
+              <ListItem
+                key={item.text}
+                disablePadding
+                sx={{ display: 'block' }}
+              >
+                <ListItemButton
+                  sx={{
+                    minHeight: 48,
+                    justifyContent: open ? 'initial' : 'center',
+                    px: 2.5,
+                  }}
+                  selected={location.pathname === item.path}
+                  onClick={() => navigate(item.path)}
+                >
+                  <ListItemIcon
+                    sx={{
+                      minWidth: 0,
+                      mr: open ? 3 : 'auto',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {item.icon}
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={item.text}
+                    sx={{ opacity: open ? 1 : 0 }}
+                  />
+                </ListItemButton>
+              </ListItem>
+            ))}
+          </List>
         </Box>
       </Drawer>
       <Box component="main" sx={{ flexGrow: 1, p: 3 }}>

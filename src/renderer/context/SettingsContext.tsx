@@ -7,9 +7,13 @@ interface SettingsContextType {
   loading: boolean;
 }
 
-const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
+const SettingsContext = createContext<SettingsContextType | undefined>(
+  undefined,
+);
 
-export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const [settings, setSettings] = useState<any>({});
   const [loading, setLoading] = useState(true);
 
@@ -17,11 +21,11 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const loadSettings = async () => {
       // Default fallback if DB is empty/init
       const defaults = {
-          complexityThreshold: '8',
-          enableRewardAnimations: 'true',
-          enableFatigueWarnings: 'true'
+        complexityThreshold: '8',
+        enableRewardAnimations: 'true',
+        enableFatigueWarnings: 'true',
       };
-      
+
       const data = await getAllSettings();
       setSettings({ ...defaults, ...data });
       setLoading(false);

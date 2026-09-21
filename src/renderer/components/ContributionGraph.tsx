@@ -26,11 +26,11 @@ const formatTooltipContent = (value: any) => {
   return `${date}: ${remainingMinutes}m`;
 };
 
-const ContributionGraph = () => {
+function ContributionGraph() {
   const { contributionData } = useTimer();
 
   const data = useMemo(() => {
-     return contributionData.map((r: any) => ({
+    return contributionData.map((r: any) => ({
       date: r.date,
       count: Math.ceil(r.totalDuration / (1000 * 60)), // Convert to minutes
     }));
@@ -74,18 +74,20 @@ const ContributionGraph = () => {
             }
             if (value.count > 480) return 'color-scale-4'; // 8+ hours
             if (value.count > 240) return 'color-scale-3'; // 4+ hours
-            if (value.count > 60) return 'color-scale-2';  // 1+ hour
-            return 'color-scale-1';   // Any work
+            if (value.count > 60) return 'color-scale-2'; // 1+ hour
+            return 'color-scale-1'; // Any work
           }}
-          tooltipDataAttrs={(value: any) => ({
-            'data-tooltip-id': 'contribution-tooltip',
-            'data-tooltip-content': formatTooltipContent(value),
-          })}
+          tooltipDataAttrs={(value: any) =>
+            ({
+              'data-tooltip-id': 'contribution-tooltip',
+              'data-tooltip-content': formatTooltipContent(value),
+            }) as any
+          }
         />
       </Box>
       <Tooltip id="contribution-tooltip" />
     </Paper>
   );
-};
+}
 
 export default ContributionGraph;

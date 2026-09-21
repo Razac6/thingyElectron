@@ -23,12 +23,12 @@ function ProductivityChart({ chartData }: ProductivityChartProps) {
       y: {
         beginAtZero: true,
         ticks: {
-          callback: function(value: number) {
-            return value + ' min';
-          }
-        }
-      }
-    }
+          callback(value: number) {
+            return `${value} min`;
+          },
+        },
+      },
+    },
   };
 
   // The chart can be quite large, so we wrap it in a container

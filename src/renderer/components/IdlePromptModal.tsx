@@ -1,19 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import {
   Dialog,
-  DialogTitle,
   DialogContent,
-  DialogActions,
   Button,
   Typography,
   Box,
   Stack,
   Avatar,
-  LinearProgress
+  LinearProgress,
 } from '@mui/material';
 import SelfImprovementIcon from '@mui/icons-material/SelfImprovement'; // Deep work/Thinking
 import CoffeeIcon from '@mui/icons-material/Coffee'; // Break
-import WorkIcon from '@mui/icons-material/Work';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 
 interface IdlePromptModalProps {
@@ -64,7 +61,7 @@ export default function IdlePromptModal({
       maxWidth="xs"
       fullWidth
       PaperProps={{
-        sx: { borderRadius: 3, p: 1 }
+        sx: { borderRadius: 3, p: 1 },
       }}
     >
       <Box sx={{ textAlign: 'center', mt: 2 }}>
@@ -75,7 +72,7 @@ export default function IdlePromptModal({
             width: 56,
             height: 56,
             mx: 'auto',
-            mb: 2
+            mb: 2,
           }}
         >
           <AccessTimeIcon fontSize="large" />
@@ -83,7 +80,11 @@ export default function IdlePromptModal({
         <Typography variant="h6" fontWeight="bold">
           You were away for {formatDuration(idleTimeMs)}
         </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 1, px: 2 }}>
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          sx={{ mt: 1, px: 2 }}
+        >
           Task: <strong>{taskTitle}</strong>
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
@@ -103,12 +104,12 @@ export default function IdlePromptModal({
               py: 1.5,
               bgcolor: '#023047',
               '&:hover': { bgcolor: '#219ebc' },
-              borderRadius: 2
+              borderRadius: 2,
             }}
           >
             I was working (Keep Time)
           </Button>
-          
+
           <Button
             variant="outlined"
             color="warning"
@@ -120,25 +121,35 @@ export default function IdlePromptModal({
               borderColor: '#fb8500',
               color: '#fb8500',
               '&:hover': { borderColor: '#e65100', bgcolor: '#fff3e0' },
-              borderRadius: 2
+              borderRadius: 2,
             }}
           >
             I took a break (Discard)
           </Button>
         </Stack>
-        
+
         <Box sx={{ mt: 3, display: 'flex', alignItems: 'center', gap: 1 }}>
-            <LinearProgress 
-                variant="determinate" 
-                value={(timeLeft / 60) * 100} 
-                sx={{ flex: 1, height: 4, borderRadius: 2 }} 
-            />
-            <Typography variant="caption" color="text.disabled" sx={{ minWidth: 20 }}>
-                {timeLeft}s
-            </Typography>
+          <LinearProgress
+            variant="determinate"
+            value={(timeLeft / 60) * 100}
+            sx={{ flex: 1, height: 4, borderRadius: 2 }}
+          />
+          <Typography
+            variant="caption"
+            color="text.disabled"
+            sx={{ minWidth: 20 }}
+          >
+            {timeLeft}s
+          </Typography>
         </Box>
-        <Typography variant="caption" color="text.disabled" display="block" textAlign="center" mt={0.5}>
-            Auto-discarding in {timeLeft} seconds...
+        <Typography
+          variant="caption"
+          color="text.disabled"
+          display="block"
+          textAlign="center"
+          mt={0.5}
+        >
+          Auto-discarding in {timeLeft} seconds...
         </Typography>
       </DialogContent>
     </Dialog>

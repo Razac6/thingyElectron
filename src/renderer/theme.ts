@@ -16,7 +16,7 @@ const theme = createTheme({
     },
     background: {
       default: '#f0f4f8', // A very light, cool grey
-      paper: '#ffffff',   // White for cards, drawers, etc.
+      paper: '#ffffff', // White for cards, drawers, etc.
     },
     text: {
       primary: '#023047', // Dark blue for primary text
@@ -44,13 +44,35 @@ const theme = createTheme({
     button: { fontWeight: 500, textTransform: 'none' },
   },
   components: {
+    MuiCssBaseline: {
+      styleOverrides: {
+        '*': {
+          scrollbarWidth: 'thin', // Firefox
+          scrollbarColor: '#c1ccd4 transparent',
+        },
+        '*::-webkit-scrollbar': {
+          width: '8px',
+          height: '8px',
+        },
+        '*::-webkit-scrollbar-track': {
+          background: 'transparent',
+        },
+        '*::-webkit-scrollbar-thumb': {
+          backgroundColor: '#c1ccd4',
+          borderRadius: '8px',
+        },
+        '*::-webkit-scrollbar-thumb:hover': {
+          backgroundColor: '#9fb0bc',
+        },
+      },
+    },
     MuiAppBar: {
       styleOverrides: {
         root: {
           backgroundColor: '#023047', // Deep blue for the AppBar
-          color: '#ffffff'
-        }
-      }
+          color: '#ffffff',
+        },
+      },
     },
     MuiDrawer: {
       styleOverrides: {
@@ -63,10 +85,10 @@ const theme = createTheme({
           '& .MuiListItemIcon-root': {
             color: '#ef476f', // New icon color
           },
-        }
-      }
-    }
-  }
+        },
+      },
+    },
+  },
 });
 
 export default theme;

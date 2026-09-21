@@ -1,3 +1,5 @@
+import { Task } from '../../interfaces/task.interface';
+
 const getToken = async (username: string, password: string) => {
   try {
     const responseData = await window.electron.database.login({
@@ -46,7 +48,10 @@ const createTask = async (task: any): Promise<Task> => {
     const userStr = localStorage.getItem('userId');
     const userId = userStr ? JSON.parse(userStr) : null;
     if (!userId) throw new Error('User not logged in');
-    const created: Task = await window.electron.database.createTask(task, userId);
+    const created: Task = await window.electron.database.createTask(
+      task,
+      userId,
+    );
     return created;
   } catch (error) {
     console.error('[DatabaseService] Error creating task:', error);
@@ -124,7 +129,10 @@ const deleteNote = async (noteId: number) => {
 
 const register = async (username: string, password: string) => {
   try {
-    const registered = await window.electron.database.register({ username, password });
+    const registered = await window.electron.database.register({
+      username,
+      password,
+    });
     return registered;
   } catch (error) {
     console.error('[DatabaseService] Error registering:', error);
@@ -147,12 +155,16 @@ const globalSearch = async (query: string) => {
   }
 };
 
-const logWorkSession = async (session: { taskId: number, startTime: string, endTime: string, duration: number }) => {
+const logWorkSession = async (session: {
+  taskId: number;
+  startTime: string;
+  endTime: string;
+  duration: number;
+}) => {
   try {
     const logged = await window.electron.database.logWorkSession(session);
     return logged;
-  }
-  catch (error) {
+  } catch (error) {
     console.error('[DatabaseService] Error logging work session:', error);
     throw error;
   }
@@ -168,7 +180,10 @@ const getDailyProductivity = async () => {
     const data = await window.electron.database.getDailyProductivity(userId);
     return data;
   } catch (error) {
-    console.error('[DatabaseService] Error fetching daily productivity:', error);
+    console.error(
+      '[DatabaseService] Error fetching daily productivity:',
+      error,
+    );
     return [];
   }
 };
@@ -180,7 +195,10 @@ const getContributionData = async (days: number = 365) => {
     if (!userId) {
       return [];
     }
-    const data = await window.electron.database.getContributionData(userId, days);
+    const data = await window.electron.database.getContributionData(
+      userId,
+      days,
+    );
     return data;
   } catch (error) {
     console.error('[DatabaseService] Error fetching contribution data:', error);
@@ -193,7 +211,10 @@ const getHourlyProductivity = async () => {
     const data = await window.electron.database.getHourlyProductivity();
     return data;
   } catch (error) {
-    console.error('[DatabaseService] Error fetching hourly productivity:', error);
+    console.error(
+      '[DatabaseService] Error fetching hourly productivity:',
+      error,
+    );
     return [];
   }
 };
@@ -206,7 +227,10 @@ const getProductivityInsights = async () => {
     const data = await window.electron.database.getProductivityInsights(userId);
     return data;
   } catch (error) {
-    console.error('[DatabaseService] Error fetching productivity insights:', error);
+    console.error(
+      '[DatabaseService] Error fetching productivity insights:',
+      error,
+    );
     return null;
   }
 };
@@ -233,6 +257,18 @@ const getTagAnalytics = async (tagId: number) => {
   } catch (error) {
     console.error('[DatabaseService] Error fetching tag analytics:', error);
     return null;
+  }
+};
+
+const getTagAnalyticsWithNames = async () => {
+  try {
+    return await window.electron.database.getTagAnalyticsWithNames();
+  } catch (error) {
+    console.error(
+      '[DatabaseService] Error fetching tag analytics with names:',
+      error,
+    );
+    return [];
   }
 };
 
@@ -286,6 +322,16 @@ const getAiMaturity = async () => {
   }
 };
 
+const getAiStats = async () => {
+  try {
+    const stats = await window.electron.database.getAiStats();
+    return stats;
+  } catch (error) {
+    console.error('[DatabaseService] Error fetching AI stats:', error);
+    return null;
+  }
+};
+
 const getChecklistItems = async (taskId: number) => {
   return await window.electron.database.getChecklistItems(taskId);
 };
@@ -295,7 +341,10 @@ const addChecklistItem = async (taskId: number, text: string) => {
 };
 
 const toggleChecklistItem = async (itemId: number, isCompleted: boolean) => {
-  return await window.electron.database.toggleChecklistItem(itemId, isCompleted);
+  return await window.electron.database.toggleChecklistItem(
+    itemId,
+    isCompleted,
+  );
 };
 
 const deleteChecklistItem = async (itemId: number) => {
@@ -339,6 +388,10 @@ const updateDailyBio = async (date: string, data: any) => {
   return await window.electron.database.updateDailyBio(date, data);
 };
 
+const startNewExpedition = async () => {
+  return await window.electron.database.startNewExpedition();
+};
+
 export {
   getToken,
   checkAuth,
@@ -359,11 +412,13 @@ export {
   getProductivityInsights,
   getDailyChallenge,
   getTagAnalytics,
+  getTagAnalyticsWithNames,
   getTagByName,
   getAllTags,
   getSystemLogs,
   getNeuralConfidence,
   getAiMaturity,
+  getAiStats,
   getChecklistItems,
   addChecklistItem,
   toggleChecklistItem,
@@ -374,4 +429,5 @@ export {
   updateDailyBio,
   predictDuration,
   forceNeuralTraining,
+  startNewExpedition,
 };

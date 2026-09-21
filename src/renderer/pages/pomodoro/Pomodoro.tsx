@@ -67,7 +67,9 @@ function Pomodoro() {
 
   useEffect(() => {
     const savedDuration = localStorage.getItem('pomodoroDuration');
-    const newDuration = savedDuration ? JSON.parse(savedDuration) * 60 : 25 * 60;
+    const newDuration = savedDuration
+      ? JSON.parse(savedDuration) * 60
+      : 25 * 60;
     setDuration(newDuration);
     setTimeRemaining(newDuration);
   }, []);
@@ -102,7 +104,10 @@ function Pomodoro() {
 
   return (
     <PomodoroContainer>
-      <IconButton onClick={() => navigate('/profile')} sx={{ position: 'absolute', top: 16, right: 16, color: 'white' }}>
+      <IconButton
+        onClick={() => navigate('/profile')}
+        sx={{ position: 'absolute', top: 16, right: 16, color: 'white' }}
+      >
         <SettingsIcon />
       </IconButton>
 
@@ -112,14 +117,35 @@ function Pomodoro() {
 
       <ClockFace>
         <ProgressSVG viewBox="0 0 350 350">
-          <circle cx="175" cy="175" r={radius} stroke="#ac3e33" strokeWidth="10" fill="transparent" />
-          <circle cx="175" cy="175" r={radius} stroke="white" strokeWidth="10" fill="transparent" strokeDasharray={circumference} strokeDashoffset={strokeDashoffset} strokeLinecap="round" />
+          <circle
+            cx="175"
+            cy="175"
+            r={radius}
+            stroke="#ac3e33"
+            strokeWidth="10"
+            fill="transparent"
+          />
+          <circle
+            cx="175"
+            cy="175"
+            r={radius}
+            stroke="white"
+            strokeWidth="10"
+            fill="transparent"
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+          />
         </ProgressSVG>
         <TimeDisplay>{formatTime(timeRemaining)}</TimeDisplay>
       </ClockFace>
 
       <ControlButton onClick={toggleTimer}>
-        {isActive ? <PauseIcon fontSize="large" /> : <PlayArrowIcon fontSize="large" />}
+        {isActive ? (
+          <PauseIcon fontSize="large" />
+        ) : (
+          <PlayArrowIcon fontSize="large" />
+        )}
       </ControlButton>
     </PomodoroContainer>
   );

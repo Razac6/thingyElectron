@@ -13,26 +13,32 @@ function HourlyProductivityChart() {
   const theme = useTheme();
 
   const chartData = useMemo(() => {
-      const labels = Array.from({ length: 24 }, (_, i) => `${i}:00`);
-      const datasetData = new Array(24).fill(0);
+    const labels = Array.from({ length: 24 }, (_, i) => `${i}:00`);
+    const datasetData = new Array(24).fill(0);
 
-      hourlyProductivity.forEach((item: HourlyProductivityData) => {
-        if (item.hour >= 0 && item.hour < 24) {
-             datasetData[item.hour] = Math.round(item.totalDuration / (1000 * 60)); // Convert ms to minutes
-        }
-      });
+    hourlyProductivity.forEach((item: HourlyProductivityData) => {
+      if (item.hour >= 0 && item.hour < 24) {
+        datasetData[item.hour] = Math.round(item.totalDuration / (1000 * 60)); // Convert ms to minutes
+      }
+    });
 
-      return {
-        labels,
-        datasets: [{
+    return {
+      labels,
+      datasets: [
+        {
           label: 'Minutes Worked',
           data: datasetData,
           backgroundColor: theme.palette.secondary.main,
           borderColor: theme.palette.secondary.dark,
           borderWidth: 1,
-        }],
-      };
-  }, [hourlyProductivity, theme.palette.secondary.main, theme.palette.secondary.dark]);
+        },
+      ],
+    };
+  }, [
+    hourlyProductivity,
+    theme.palette.secondary.main,
+    theme.palette.secondary.dark,
+  ]);
 
   const options = {
     responsive: true,
@@ -60,10 +66,10 @@ function HourlyProductivityChart() {
           text: 'Minutes Worked',
         },
         ticks: {
-          callback: function(value: number) {
-            return value + 'm';
-          }
-        }
+          callback(value: number) {
+            return `${value}m`;
+          },
+        },
       },
     },
   };

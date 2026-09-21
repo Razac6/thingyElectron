@@ -1,77 +1,44 @@
-# Algorytmy Produktywności w Thingy
+# Algorytmy Produktywności Thingy (Neural Core) 🧠
 
-Ten dokument opisuje zaawansowane algorytmy analityczne zaimplementowane w aplikacji Thingy, mające na celu poprawę planowania, estymacji i samoświadomości użytkownika.
+Dokumentacja logiki stojącej za analizą produktywności, inspirowana pracami Cala Newporta ("Deep Work") i badaniami nad rytmami ultradialnymi.
 
-## 1. Analityka Tagów (EMA i Odchylenie Standardowe)
+## 1. Deep Work (Praca Głęboka) - Model Newporta
 
-System śledzi wydajność użytkownika w kontekście poszczególnych tagów (np. `#backend`, `#design`, `#nauka`).
+### Definicja
+Sesja pracy jest uznawana za **Głęboką (Deep)**, jeśli spełnia łącznie dwa warunki:
+1.  **Czas trwania:** Minimum **20 minut** (czas potrzebny na wejście w *flow*) i maksimum **120 minut** (granica zmęczenia poznawczego).
+2.  **Kontekst Skupienia (Focus Context):** Wynik > 0.75. Oznacza to, że użytkownik spędził mniej niż 25% czasu na stronach/aplikacjach klasyfikowanych jako "Rozrywka" (Social Media, Gry, Newsy).
 
-### Jak to działa?
-*   **Aktualizacja w czasie rzeczywistym:** Za każdym razem, gdy zadanie zostaje oznaczone jako **UKOŃCZONE (COMPLETED)**, system analizuje czas spędzony na tym zadaniu (`spendTime`).
-*   **EMA (Wykładnicza Średnia Krocząca):** Obliczana jest średnia ważona czasu pracy dla danego tagu, gdzie nowsze zadania mają większą wagę. Dzięki temu średnia szybciej adaptuje się do zmian w Twoim tempie pracy.
-*   **Odchylenie Standardowe (Std Dev):** Równocześnie obliczana jest wariancja i odchylenie standardowe. Mierzy ono "rozrzut" czasów realizacji.
-    *   **Niskie odchylenie:** Zadania z tym tagiem zajmują zazwyczaj tyle samo czasu (są przewidywalne).
-    *   **Wysokie odchylenie:** Czas realizacji zadań z tym tagiem jest bardzo zmienny (trudne do estymowania).
-
-### Gdzie to widać?
-*   Wyniki te są prezentowane w widżecie **Smart Insights**.
-*   Sugestie w wyszukiwarce (`Ctrl+K`) mogą wyświetlać średni czas dla wpisywanego tagu.
+### Cel Dzienny (The 4-Hour Limit)
+Zgodnie z Calem Newportem, ludzki mózg jest zdolny do maksymalnie **4 godzin** intensywnej pracy głębokiej dziennie.
+- **100% Deep Work Score** = 4 godziny (240 minut) sesji głębokich.
+- Wynik powyżej 4h jest możliwy, ale obarczony ryzykiem wypalenia ("Junk Deep Work").
 
 ---
 
-## 2. Analiza Optymizmu (DDA - Dynamic Data Analysis)
+## 2. Max Focus & Fatigue (Zmęczenie)
 
-Algorytm ten pomaga w realistycznym planowaniu Sprintów, chroniąc przed nadmiernym optymizmem (planowaniem większej liczby zadań, niż jesteś w stanie zrealizować).
-
-### Jak to działa?
-1.  **Analiza Historyczna:** System pobiera dane z ostatnich **3 ukończonych sprintów**.
-2.  **Obliczenie Pojemności (Capacity):** Wyliczana jest średnia suma `estymat` (estimate) zadań ukończonych w tych sprintach. To jest Twoja "rzeczywista prędkość" (velocity).
-3.  **Porównanie:** Podczas planowania nowego sprintu, system sumuje estymaty dodanych do niego zadań.
-4.  **Ostrzeżenie:** Jeśli suma estymat w nowym sprincie znacząco przekracza Twoją historyczną średnią, system oflaguje to jako "Wysokie Ryzyko Optymizmu".
-
-### Gdzie to widać?
-*   Na stronie **Sprints**, w nagłówku aktywnego lub planowanego sprintu, jeśli wykryto ryzyko.
+### Rytmy Ultradialne
+Ludzki mózg pracuje w cyklach 90-minutowych. Po tym czasie następuje spadek koncentracji.
+- **Algorytm:** Analizuje historię Twoich sesji (średnia długość + odchylenie standardowe).
+- **Zalecenie:** Sugeruje długość kolejnej sesji.
+    - Domyślnie: **60 minut** (dla nowych użytkowników).
+    - Minimum: **30 minut**.
+    - Maksimum: **120 minut**.
 
 ---
 
-## 3. Spójność Tagów (Tag Consistency)
+## 3. Focus Context (Kontekst Skupienia)
 
-Jest to pochodna Analityki Tagów, która klasyfikuje Twoje obszary pracy na podstawie ich przewidywalności.
-
-### Jak to działa?
-Algorytm analizuje zgromadzone dane `tag_analytics` i dzieli tagi na dwie grupy:
-*   **Spójne (Consistent):** Tagi, dla których odchylenie standardowe jest niskie w stosunku do średniej. Oznacza to, że jesteś bardzo przewidywalny w tych zadaniach.
-*   **Zmienne (Volatile):** Tagi z wysokim odchyleniem standardowym. Oznacza to, że zadania tego typu raz zajmują 15 minut, a innym razem 4 godziny. Sugeruje to potrzebę rozbijania takich zadań na mniejsze lub lepszego ich definiowania.
-
-### Gdzie to widać?
-*   W sekcji "Tag Consistency" w widżecie **Smart Insights**.
+Analiza "tła" pracy w czasie rzeczywistym.
+- **Źródła:** `web_stats` (odwiedzone domeny) i `app_activity` (aktywne okna).
+- **Kategorie Rozpraszające:** Social, Entertainment, Shopping, Game.
+- **Obliczanie:** `1.0 - (Czas Rozproszeń / Czas Całkowity)`.
+    - *Przykład:* 60 min pracy, w tym 15 min na Facebooku = Score 0.75.
 
 ---
 
-## 4. Podstawowe Metryki Produktywności
+## 4. Wskaźniki Wizualne (Widgety)
 
-System agreguje również surowe dane o czasie pracy, aby pokazać Twój rytm dnia i tygodnia.
-
-### Jak to działa?
-*   **Dzienny Czas Pracy:** Suma czasu trwania wszystkich sesji pracy (od startu do stopu stopera) dla danego dnia.
-*   **Produktywność Godzinowa:** Agregacja czasu pracy w podziale na godziny doby (00:00 - 23:00), pokazująca, w jakich porach dnia pracujesz najintensywniej.
-
-### Gdzie to widać?
-*   Wykresy słupkowe i liniowe na **Dashboardzie** oraz w widżecie statystyk.
-
----
-
-## 5. Korelacja Nawyków (Habit Strength & Impact)
-
-Algorytm ten bada, jak Twoja rutyna (nawyki) wpływa na obiektywne wskaźniki produktywności.
-
-### Jak to działa?
-1.  **Habit Strength (Siła Nawyków):** Obliczana jako 7-dniowa średnia krocząca realizacji danego nawyku. Pozwala to na wizualizację trendu (czy budujesz nawyk, czy tracisz pęd).
-2.  **Analiza Wpływu:** System porównuje dni z "wysokim Habit Score" (>80%) oraz "niskim Habit Score" (<40%) pod kątem:
-    *   Procentu czasu spędzonego w sesjach **Deep Work**.
-    *   Odchylenia czasu realizacji zadań od predykcji AI.
-3.  **Wnioski:** Jeśli różnica w skupieniu między tymi dniami przekracza 10%, algorytm generuje wniosek o korelacji, który jest przekazywany do Neural Core.
-
-### Gdzie to widać?
-*   Wykresy "Habit Strength" po rozwinięciu karty nawyku.
-*   Dedykowane wskazówki AI w widżecie **Smart Insights**.
+- **Deep Work Today:** Ilość czasu głębokiego w dniu dzisiejszym.
+- **Max Focus:** Najdłuższa nieprzerwana sesja dzisiaj vs Zalecany Limit.
