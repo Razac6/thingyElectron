@@ -10,8 +10,11 @@ All data (including the AI model and activity logs) is stored and processed **lo
 
 Thingy learns how you work using a custom TensorFlow.js model trained on your history.
 
-### 8-Dimensional Prediction Model
-Unlike simple average calculators, Thingy considers 8 factors to predict task duration:
+### Multi-Factor Prediction Model
+Unlike simple average calculators, Thingy considers 8 factors (encoded into a 10-dimensional
+input vector - time of day and day of week are each cyclically sin/cos-encoded) to predict
+task duration, fed through a small, regularized network (8 → 4 → 1) sized for a personal
+tracker's realistic training volume:
 1.  **Time of Day:** Are you a night owl or an early bird?
 2.  **Day of Week:** Do Mondays drag on?
 3.  **Task Priority:** How does urgency affect your speed?
@@ -62,7 +65,7 @@ Toggle "Boost Mode" to enter a hyper-focused state.
 
 ## 🛠️ Tech Stack
 
-*   **Frontend:** React, Material UI (MUI), Framer Motion / Lottie.
+*   **Frontend:** React, Material UI (MUI), Lottie.
 *   **Backend:** Electron, Node.js.
 *   **Database:** SQLite (via `sql.js` - embedded).
 *   **AI:** TensorFlow.js (Linear Regression / Dense Layers).
@@ -75,7 +78,8 @@ Toggle "Boost Mode" to enter a hyper-focused state.
 1.  **Install:** Run `npm install`.
 2.  **Dev Mode:** Run `npm start`.
 3.  **Extension:** Load the `./chrome-extension/dist` folder in Chrome (Developer Mode).
-4.  **Version Management:** Use `npm run bump` for app and `npm run bump:plugin` for the extension.
+4.  **Testing:** Run `npm test` (type-checking and linting also run in CI on every push/PR).
+5.  **Version Management:** Use `npm run bump` for app and `npm run bump:plugin` for the extension.
 
 ## 🔒 Privacy First
 Thingy is designed for privacy. It does **not** send your task data, browsing history, or AI model to the cloud. Everything lives locally.
