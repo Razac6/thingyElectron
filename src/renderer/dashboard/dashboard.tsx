@@ -10,6 +10,7 @@ import ContributionGraph from '../components/ContributionGraph';
 import SmartInsightWidget from '../components/SmartInsightWidget';
 import FavoriteHabitWidget from '../components/FavoriteHabitWidget';
 import MountainClimbBeta from '../components/MountainClimbBeta';
+import DailyChallengeWidget from '../components/DailyChallengeWidget';
 import { useSettings } from '../context/SettingsContext';
 
 function formatTime(ms: number): string {
@@ -42,9 +43,13 @@ export default function Dashboard() {
   const isMountainClimbEnabled =
     settings && settings.mountain_climb_enabled !== 'false';
 
-  // Force back to first view if disabled
+  // View 1 (Mountain Climb) only exists when the setting is enabled - views 0 and 2 are
+  // always available.
+  const availableViews = isMountainClimbEnabled ? [0, 1, 2] : [0, 2];
+
+  // Force back to first view if the current view is the (now-disabled) Mountain Climb one
   React.useEffect(() => {
-    if (!isMountainClimbEnabled && activeView !== 0) {
+    if (!isMountainClimbEnabled && activeView === 1) {
       setActiveView(0);
     }
   }, [isMountainClimbEnabled, activeView]);
@@ -137,7 +142,23 @@ export default function Dashboard() {
           >
             {/* View Container */}
             <Box sx={{ flexGrow: 1, position: 'relative' }}>
-              {!isMountainClimbEnabled || activeView === 0 ? (
+              {activeView === 1 && isMountainClimbEnabled ? (
+                <Box
+                  sx={{ height: '320px', animation: 'fadeIn 0.4s ease-out' }}
+                >
+                  <MountainClimbBeta />
+                </Box>
+              ) : activeView === 2 ? (
+                <Box
+                  sx={{
+                    p: 2,
+                    height: '100%',
+                    animation: 'fadeIn 0.4s ease-out',
+                  }}
+                >
+                  <DailyChallengeWidget />
+                </Box>
+              ) : (
                 <Box
                   sx={{
                     p: 2,
@@ -157,57 +178,53 @@ export default function Dashboard() {
                   <SmartInsightWidget />
                   <FavoriteHabitWidget />
                 </Box>
-              ) : (
-                <Box
-                  sx={{ height: '320px', animation: 'fadeIn 0.4s ease-out' }}
-                >
-                  <MountainClimbBeta />
-                </Box>
               )}
             </Box>
 
             {/* Pagination Dots */}
-            {isMountainClimbEnabled && (
-              <Box
-                sx={{
-                  display: 'flex',
-                  justifyContent: 'center',
-                  gap: 1.5,
-                  py: 1.5,
-                  bgcolor:
-                    activeView === 1 ? 'transparent' : 'rgba(255,255,255,0.5)',
-                  borderTop:
-                    activeView === 1 ? 'none' : '1px solid rgba(0,0,0,0.05)',
-                  position: 'absolute',
-                  bottom: 0,
-                  width: '100%',
-                  zIndex: 20,
-                }}
-              >
-                {[0, 1].map((idx) => (
-                  <Box
-                    key={idx}
-                    onClick={() => handleViewChange(idx)}
-                    sx={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: '50%',
-                      bgcolor: activeView === idx ? '#023047' : '#cfd8dc',
-                      cursor: 'pointer',
-                      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                      '&:hover': {
-                        transform: 'scale(1.3)',
-                        bgcolor: '#219ebc',
-                      },
-                      boxShadow:
-                        activeView === idx
-                          ? '0 0 8px rgba(2, 48, 71, 0.3)'
-                          : 'none',
-                    }}
-                  />
-                ))}
-              </Box>
-            )}
+            <Box
+              sx={{
+                display: 'flex',
+                justifyContent: 'center',
+                gap: 1.5,
+                py: 1.5,
+                bgcolor:
+                  activeView === 1 && isMountainClimbEnabled
+                    ? 'transparent'
+                    : 'rgba(255,255,255,0.5)',
+                borderTop:
+                  activeView === 1 && isMountainClimbEnabled
+                    ? 'none'
+                    : '1px solid rgba(0,0,0,0.05)',
+                position: 'absolute',
+                bottom: 0,
+                width: '100%',
+                zIndex: 20,
+              }}
+            >
+              {availableViews.map((idx) => (
+                <Box
+                  key={idx}
+                  onClick={() => handleViewChange(idx)}
+                  sx={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: '50%',
+                    bgcolor: activeView === idx ? '#023047' : '#cfd8dc',
+                    cursor: 'pointer',
+                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    '&:hover': {
+                      transform: 'scale(1.3)',
+                      bgcolor: '#219ebc',
+                    },
+                    boxShadow:
+                      activeView === idx
+                        ? '0 0 8px rgba(2, 48, 71, 0.3)'
+                        : 'none',
+                  }}
+                />
+              ))}
+            </Box>
           </Item>
         </Grid>
         <Grid item xs={12} md={6}>

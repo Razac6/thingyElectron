@@ -220,7 +220,22 @@ function TaskDetail() {
       return;
     }
     const originalTask = tasks.find((t) => t.id === task.id);
-    await updateTask(task);
+
+    let taskToSave = task;
+    if (
+      task.startTimer &&
+      originalTask &&
+      task.spendTime !== originalTask.spendTime
+    ) {
+      // "Actual Time Spent" was manually overridden while the timer is still running.
+      // startTimer must be reset to now, otherwise every live Timer display (list row,
+      // header widget) keeps adding elapsed time since the old start on top of this
+      // correction, making the edit look like it "didn't take".
+      taskToSave = { ...task, startTimer: Date.now().toString() };
+      setTask(taskToSave);
+    }
+
+    await updateTask(taskToSave);
 
     if (
       originalTask &&

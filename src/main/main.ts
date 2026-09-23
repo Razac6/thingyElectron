@@ -1176,12 +1176,27 @@ setInterval(() => {
   }
 }, 300000);
 
+let hasNotifiedIdle = false;
+
 setInterval(() => {
   if (activeTaskInfo) {
     const idleThreshold = Number(getSetting('idleTimeout') || 300); // Default to 5 minutes
-    if (powerMonitor.getSystemIdleTime() >= idleThreshold) {
-      mainWindow?.webContents.send('activity:idle-detected');
+    const idleSeconds = powerMonitor.getSystemIdleTime();
+    if (idleSeconds >= idleThreshold) {
+      // Only notify once per continuous idle period - otherwise this fires every 30s for
+      // as long as the user stays away, spamming a fresh OS notification each time.
+      if (!hasNotifiedIdle) {
+        hasNotifiedIdle = true;
+        mainWindow?.webContents.send(
+          'activity:idle-detected',
+          idleSeconds * 1000,
+        );
+      }
+    } else {
+      hasNotifiedIdle = false;
     }
+  } else {
+    hasNotifiedIdle = false;
   }
 }, 30000); // Check every 30 seconds
 

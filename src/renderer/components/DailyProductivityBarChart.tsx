@@ -15,9 +15,9 @@ function DailyProductivityBarChart() {
   const theme = useTheme();
   const { productivityData, isLoadingProductivity } = useTimer();
 
-  const chartData = useMemo(() => {
+  const { chartData, useHours } = useMemo(() => {
     const labels: string[] = [];
-    const data: number[] = [];
+    const minutesData: number[] = [];
     const today = new Date();
     if (today.getHours() < 4) {
       today.setDate(today.getDate() - 1);
@@ -40,19 +40,31 @@ function DailyProductivityBarChart() {
       const isoDate = getISODateString(day);
       const durationMs = productivityMap.get(isoDate) || 0;
       const timeInMinutes = Math.ceil(durationMs / (1000 * 60));
-      data.push(timeInMinutes);
+      minutesData.push(timeInMinutes);
     }
 
+    // Once any day breaks an hour, minutes get hard to read at a glance - switch the whole
+    // chart to hours so the scale stays meaningful.
+    const shouldUseHours = Math.max(...minutesData, 0) > 60;
+    const data = shouldUseHours
+      ? minutesData.map((m) => Math.round((m / 60) * 10) / 10)
+      : minutesData;
+
     return {
-      labels,
-      datasets: [
-        {
-          label: 'Time Spent (minutes)',
-          data,
-          backgroundColor: theme.palette.primary.light,
-          borderRadius: 4,
-        },
-      ],
+      useHours: shouldUseHours,
+      chartData: {
+        labels,
+        datasets: [
+          {
+            label: shouldUseHours
+              ? 'Time Spent (hours)'
+              : 'Time Spent (minutes)',
+            data,
+            backgroundColor: theme.palette.primary.light,
+            borderRadius: 4,
+          },
+        ],
+      },
     };
   }, [productivityData, theme.palette.primary.light]);
 
@@ -72,7 +84,7 @@ function DailyProductivityBarChart() {
         beginAtZero: true,
         ticks: {
           callback(value: number) {
-            return `${value}m`;
+            return useHours ? `${value}h` : `${value}m`;
           },
         },
       },

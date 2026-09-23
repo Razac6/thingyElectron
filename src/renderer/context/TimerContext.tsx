@@ -148,15 +148,16 @@ export function TimerProvider({ children }: { children: ReactNode }) {
   }, [tasks]);
 
   useEffect(() => {
-    const handleIdle = () => {
+    const handleIdle = (rawIdleTimeMs?: unknown) => {
       const currentTasks = tasksRef.current;
       const activeTask = currentTasks.find((t) => t.startTimer);
 
       if (activeTask && activeTask.startTimer) {
-        const IDLE_THRESHOLD = 10 * 60 * 1000;
+        const idleTimeMs =
+          typeof rawIdleTimeMs === 'number' ? rawIdleTimeMs : 10 * 60 * 1000;
         setIdlePrompt({
           isOpen: true,
-          idleTimeMs: IDLE_THRESHOLD,
+          idleTimeMs,
           taskId: activeTask.id,
           taskTitle: activeTask.title,
           originalStartTime: Number(activeTask.startTimer),
