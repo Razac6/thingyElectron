@@ -23,6 +23,7 @@ import {
   createTask as createTaskService,
   deleteTask as deleteTaskService,
   getDailyBio,
+  updateDailyBio,
 } from '../services/DatabaseService';
 import { StatusEnum } from '../../enums/status.enum';
 
@@ -76,6 +77,11 @@ export interface IdlePromptState {
   originalStartTime: number;
 }
 
+export interface ModeSuggestionState {
+  mode: 'boost' | 'recovery';
+  reason: string;
+}
+
 const getWorkdayISO = () => {
   const now = new Date();
   if (now.getHours() < 4) {
@@ -112,6 +118,9 @@ interface TimerContextType {
   toggleBoostMode: (forceState?: boolean) => void;
   dailyMode: string;
   setDailyMode: (mode: string) => void;
+  modeSuggestion: ModeSuggestionState | null;
+  handleAcceptModeSuggestion: () => Promise<void>;
+  handleDismissModeSuggestion: () => void;
 }
 
 const TimerContext = createContext<TimerContextType | undefined>(undefined);
@@ -134,6 +143,8 @@ export function TimerProvider({ children }: { children: ReactNode }) {
   const [idlePrompt, setIdlePrompt] = useState<IdlePromptState | null>(null);
   const [isBoostMode, setIsBoostMode] = useState(false);
   const [dailyMode, setDailyMode] = useState('normal');
+  const [modeSuggestion, setModeSuggestion] =
+    useState<ModeSuggestionState | null>(null);
   const navigate = useNavigate();
   const { settings } = useSettings();
   const { checkForAchievements, triggerRewardAnimation } = useGamification();
@@ -207,12 +218,28 @@ export function TimerProvider({ children }: { children: ReactNode }) {
       fetchAllData();
     });
 
+    // AI-suggested work mode switch (boost/recovery), based on sprint risk or fatigue signals
+    const handleModeSuggestion = (rawPayload?: unknown) => {
+      const payload = rawPayload as ModeSuggestionState | undefined;
+      if (
+        payload &&
+        (payload.mode === 'boost' || payload.mode === 'recovery')
+      ) {
+        setModeSuggestion(payload);
+      }
+    };
+    const unsubModeSuggestion = window.electron.ipcRenderer.on(
+      'ai:suggest-mode',
+      handleModeSuggestion,
+    );
+
     // Cleanup
     return () => {
       if (unsubIdle) unsubIdle();
       if (unsubStop) unsubStop();
       if (unsubGame) unsubGame();
       if (unsubDay) unsubDay();
+      if (unsubModeSuggestion) unsubModeSuggestion();
     };
   }, []); // Mount once
 
@@ -586,6 +613,25 @@ export function TimerProvider({ children }: { children: ReactNode }) {
     }
   }, [idlePrompt, fetchAllData]);
 
+  const handleAcceptModeSuggestion = useCallback(async () => {
+    if (!modeSuggestion) return;
+    const { mode } = modeSuggestion;
+    setModeSuggestion(null);
+    try {
+      await updateDailyBio(getWorkdayISO(), { mode });
+      setDailyMode(mode);
+      if (mode === 'boost') {
+        toggleBoostMode(true);
+      }
+    } catch (e) {
+      console.error('Failed to apply suggested mode', e);
+    }
+  }, [modeSuggestion]);
+
+  const handleDismissModeSuggestion = useCallback(() => {
+    setModeSuggestion(null);
+  }, []);
+
   // Memoize context value to prevent unnecessary re-renders
   const contextValue = useMemo(
     () => ({
@@ -613,6 +659,9 @@ export function TimerProvider({ children }: { children: ReactNode }) {
       toggleBoostMode,
       dailyMode,
       setDailyMode,
+      modeSuggestion,
+      handleAcceptModeSuggestion,
+      handleDismissModeSuggestion,
     }),
     [
       tasks,
@@ -637,6 +686,9 @@ export function TimerProvider({ children }: { children: ReactNode }) {
       isBoostMode,
       toggleBoostMode,
       dailyMode,
+      modeSuggestion,
+      handleAcceptModeSuggestion,
+      handleDismissModeSuggestion,
     ],
   );
 

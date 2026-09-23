@@ -259,6 +259,9 @@ describe('List Component - inline subtasks', () => {
     // localStorage.setItem('task_view', ...) - reset it so these tests start in list view
     // (where the DataGrid, and therefore the subtask UI, actually renders).
     localStorage.removeItem('task_view');
+    // expandedTaskIds is also persisted - clear it so each test starts fully collapsed,
+    // regardless of what an earlier test in this block expanded.
+    localStorage.removeItem('list_expanded_task_ids');
     mockGetChecklistItems.mockImplementation(async (taskId: number) => {
       if (taskId === 1) {
         return [
@@ -273,7 +276,7 @@ describe('List Component - inline subtasks', () => {
     });
   });
 
-  it('renders subtasks expanded by default, with a checkbox and title each', async () => {
+  it('renders subtasks collapsed by default, with an expand control', async () => {
     render(
       <MemoryRouter>
         <List />
@@ -281,6 +284,30 @@ describe('List Component - inline subtasks', () => {
     );
 
     const row1 = await screen.findByTestId('row-1');
+    // Wait for the checklist fetch to resolve before asserting anything's absent -
+    // otherwise the "not visible" assertion could just be a false negative from timing.
+    await waitFor(() => {
+      expect(mockGetChecklistItems).toHaveBeenCalledWith(1);
+    });
+    expect(within(row1).queryByText('Subtask A')).not.toBeInTheDocument();
+    // The collapse/expand toggle button is still present even while collapsed.
+    expect(within(row1).getByRole('button')).toBeInTheDocument();
+  });
+
+  it('expands a task to show its subtasks with a checkbox and title each', async () => {
+    render(
+      <MemoryRouter>
+        <List />
+      </MemoryRouter>,
+    );
+
+    const row1 = await screen.findByTestId('row-1');
+    await waitFor(() => {
+      expect(mockGetChecklistItems).toHaveBeenCalledWith(1);
+    });
+
+    fireEvent.click(within(row1).getByRole('button'));
+
     await waitFor(() => {
       expect(within(row1).getByText('Subtask A')).toBeInTheDocument();
     });
@@ -301,17 +328,13 @@ describe('List Component - inline subtasks', () => {
       </MemoryRouter>,
     );
 
-    const row1 = await screen.findByTestId('row-1');
-    // Wait for task 1's (has subtasks) to confirm checklists have loaded at all
+    // mockTasks only has ids 1 and 2 - both are fetched for checklists regardless of expand
+    // state (a task's collapse control only appears once its checklist is known to be
+    // non-empty, but the fetch itself always happens).
     await waitFor(() => {
-      expect(within(row1).getByText('Subtask A')).toBeInTheDocument();
+      expect(mockGetChecklistItems).toHaveBeenCalledWith(1);
+      expect(mockGetChecklistItems).toHaveBeenCalledWith(2);
     });
-
-    // mockTasks only has ids 1 and 2 - if a third, subtask-less task existed it should render
-    // cleanly with no checkboxes. Task 2 does have one subtask, so assert directly against
-    // the checklist mock's "no subtasks" branch via a task id that returns [].
-    expect(mockGetChecklistItems).toHaveBeenCalledWith(1);
-    expect(mockGetChecklistItems).toHaveBeenCalledWith(2);
   });
 
   it('toggles a task open/closed via its collapse control without affecting other tasks', async () => {
@@ -325,25 +348,28 @@ describe('List Component - inline subtasks', () => {
     const row2 = await screen.findByTestId('row-2');
 
     await waitFor(() => {
+      expect(mockGetChecklistItems).toHaveBeenCalledWith(1);
+      expect(mockGetChecklistItems).toHaveBeenCalledWith(2);
+    });
+    // Collapsed by default - neither task's subtasks are visible yet.
+    expect(within(row1).queryByText('Subtask A')).not.toBeInTheDocument();
+    expect(within(row2).queryByText('Subtask C')).not.toBeInTheDocument();
+
+    // Expand task 1 only, via its expand/collapse IconButton (only interactive button in
+    // the 'expand' column cell for a row that has subtasks).
+    const expandButton = within(row1).getByRole('button');
+    fireEvent.click(expandButton);
+
+    await waitFor(() => {
       expect(within(row1).getByText('Subtask A')).toBeInTheDocument();
     });
-    expect(within(row2).getByText('Subtask C')).toBeInTheDocument();
+    // Task 2 remains collapsed - expanding is per-task, not global
+    expect(within(row2).queryByText('Subtask C')).not.toBeInTheDocument();
 
-    // Collapse task 1 via its expand/collapse IconButton (only interactive button in the
-    // 'expand' column cell for a row that has subtasks).
-    const collapseButton = within(row1).getByRole('button');
-    fireEvent.click(collapseButton);
-
+    // Collapse task 1 again
+    fireEvent.click(expandButton);
     await waitFor(() => {
       expect(within(row1).queryByText('Subtask A')).not.toBeInTheDocument();
-    });
-    // Task 2's subtasks remain visible - collapsing is per-task, not global
-    expect(within(row2).getByText('Subtask C')).toBeInTheDocument();
-
-    // Expand task 1 again
-    fireEvent.click(collapseButton);
-    await waitFor(() => {
-      expect(within(row1).getByText('Subtask A')).toBeInTheDocument();
     });
   });
 
@@ -360,6 +386,10 @@ describe('List Component - inline subtasks', () => {
     );
 
     const row1 = await screen.findByTestId('row-1');
+    await waitFor(() => {
+      expect(mockGetChecklistItems).toHaveBeenCalledWith(1);
+    });
+    fireEvent.click(within(row1).getByRole('button'));
     await waitFor(() => {
       expect(within(row1).getByText('Subtask A')).toBeInTheDocument();
     });

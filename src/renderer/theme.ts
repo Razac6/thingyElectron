@@ -46,6 +46,20 @@ const theme = createTheme({
   components: {
     MuiCssBaseline: {
       styleOverrides: {
+        // Establishes a real, percentage-inheritable height chain from the viewport down -
+        // without this, "height: 100%" on a page (List.tsx etc.) resolves to nothing, forcing
+        // pages to guess their available height via fragile "calc(100vh - Npx)" magic numbers
+        // that drift out of sync with the actual AppBar/Toolbar chrome and cause extra scroll.
+        html: {
+          height: '100%',
+        },
+        body: {
+          height: '100%',
+          margin: 0,
+        },
+        '#root': {
+          height: '100%',
+        },
         '*': {
           scrollbarWidth: 'thin', // Firefox
           scrollbarColor: '#c1ccd4 transparent',

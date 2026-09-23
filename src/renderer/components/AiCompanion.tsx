@@ -154,13 +154,6 @@ export function AiCompanion() {
         return;
       }
 
-      if (
-        safeMsg.includes('Koniec dnia blisko') ||
-        safeMsg.includes('podsumowanie')
-      ) {
-        window.dispatchEvent(new CustomEvent('open-shutdown-modal'));
-      }
-
       if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
       if (messageTimeoutRef.current) clearTimeout(messageTimeoutRef.current);
 

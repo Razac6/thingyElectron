@@ -45,6 +45,7 @@ import {
   addChecklistItem,
   toggleChecklistItem,
   deleteChecklistItem,
+  logWorkSession,
 } from '../../services/DatabaseService';
 import { StatusEnum } from '../../../enums/status.enum';
 import { PriorityEnum } from '../../../enums/priority.enum';
@@ -220,13 +221,12 @@ function TaskDetail() {
       return;
     }
     const originalTask = tasks.find((t) => t.id === task.id);
+    const spendTimeDelta = originalTask
+      ? (task.spendTime || 0) - (originalTask.spendTime || 0)
+      : 0;
 
     let taskToSave = task;
-    if (
-      task.startTimer &&
-      originalTask &&
-      task.spendTime !== originalTask.spendTime
-    ) {
+    if (task.startTimer && spendTimeDelta !== 0) {
       // "Actual Time Spent" was manually overridden while the timer is still running.
       // startTimer must be reset to now, otherwise every live Timer display (list row,
       // header widget) keeps adding elapsed time since the old start on top of this
@@ -236,6 +236,25 @@ function TaskDetail() {
     }
 
     await updateTask(taskToSave);
+
+    if (spendTimeDelta !== 0) {
+      // task.spendTime is the source of truth for "how much has this task's counter
+      // accumulated", but every aggregate view (daily/hourly productivity charts, "Total
+      // Time Spent Today") is computed from work_sessions, not from tasks.spendTime - so a
+      // manual override here would otherwise never show up in any chart. Log the delta as a
+      // correcting session (negative duration if the value was reduced) so both stay in sync.
+      try {
+        const now = Date.now();
+        await logWorkSession({
+          taskId: task.id,
+          startTime: new Date(now - Math.abs(spendTimeDelta)).toISOString(),
+          endTime: new Date(now).toISOString(),
+          duration: spendTimeDelta,
+        });
+      } catch (e) {
+        console.error('Failed to log manual time correction session', e);
+      }
+    }
 
     if (
       originalTask &&

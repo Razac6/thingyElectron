@@ -33,6 +33,7 @@ import {
   Autocomplete,
   List as MuiList,
   ListItem,
+  ListItemButton,
   CircularProgress,
   Tooltip,
   Grid,
@@ -60,6 +61,8 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ViewListIcon from '@mui/icons-material/ViewList';
 import ViewWeekIcon from '@mui/icons-material/ViewWeek';
+import DirectionsRunIcon from '@mui/icons-material/DirectionsRun';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { renderTextWithIcons } from '../../utils/emojiIcons';
 import { StatusEnum } from '../../../enums/status.enum';
 import { PriorityEnum } from '../../../enums/priority.enum';
@@ -139,6 +142,15 @@ function List() {
   const [currentMenuTaskId, setCurrentMenuTaskId] = useState<null | number>(
     null,
   );
+  const [isMoveSprintDialogOpen, setIsMoveSprintDialogOpen] = useState(false);
+  const [sprintSearchQuery, setSprintSearchQuery] = useState('');
+  const [confirmDialog, setConfirmDialog] = useState<{
+    title: string;
+    message: string;
+    confirmLabel: string;
+    confirmColor: 'error' | 'primary';
+    onConfirm: () => void;
+  } | null>(null);
   const [filterSprint, setFilterSprint] = useState('all');
   const [filterType, setFilterType] = useState('all');
   const [isColumnSortActive, setIsColumnSortActive] = useState(false);
@@ -153,12 +165,29 @@ function List() {
   // Procrastination Detection
   const [procrastinationRisks, setProcrastinationRisks] = useState<any[]>([]);
 
-  // Inline subtasks - shown expanded by default whenever a task has any; collapsedTaskIds
-  // tracks rows the user has manually collapsed. Adding/removing subtasks stays in TaskDetail -
-  // this is just a quick glance + check-off helper.
-  const [collapsedTaskIds, setCollapsedTaskIds] = useState<Set<number>>(
-    new Set(),
-  );
+  // Inline subtasks - collapsed by default; expandedTaskIds tracks rows the user has manually
+  // expanded. Persisted to localStorage so the expand/collapse state survives navigating away
+  // and back. Adding/removing subtasks stays in TaskDetail - this is just a quick glance +
+  // check-off helper.
+  const [expandedTaskIds, setExpandedTaskIds] = useState<Set<number>>(() => {
+    try {
+      const saved = localStorage.getItem('list_expanded_task_ids');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch (e) {
+      return new Set();
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        'list_expanded_task_ids',
+        JSON.stringify([...expandedTaskIds]),
+      );
+    } catch (e) {
+      // Ignore storage errors (e.g. private browsing quota)
+    }
+  }, [expandedTaskIds]);
   const [checklistsByTask, setChecklistsByTask] = useState<
     Record<number, any[]>
   >({});
@@ -475,7 +504,7 @@ function List() {
     }
   };
 
-  const handleDeleteTask = async (id: number) => {
+  const executeDeleteTask = async (id: number) => {
     try {
       await deleteTask(id);
     } catch (error) {
@@ -484,8 +513,19 @@ function List() {
     handleMenuClose();
   };
 
+  const handleDeleteTask = (id: number) => {
+    const taskTitle = tasks.find((t) => t.id === id)?.title || 'this task';
+    setConfirmDialog({
+      title: 'Delete Task',
+      message: `Are you sure you want to delete "${taskTitle}"? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      confirmColor: 'error',
+      onConfirm: () => executeDeleteTask(id),
+    });
+  };
+
   const handleToggleCollapse = (taskId: number) => {
-    setCollapsedTaskIds((prev) => {
+    setExpandedTaskIds((prev) => {
       const next = new Set(prev);
       if (next.has(taskId)) next.delete(taskId);
       else next.add(taskId);
@@ -519,6 +559,49 @@ function List() {
     setMenuAnchorEl(null);
     setCurrentMenuTaskId(null);
   };
+
+  const handleOpenMoveSprintDialog = () => {
+    // Close the three-dot popup but keep currentMenuTaskId alive - the dialog needs it.
+    setMenuAnchorEl(null);
+    setIsMoveSprintDialogOpen(true);
+  };
+
+  const handleCloseMoveSprintDialog = () => {
+    setIsMoveSprintDialogOpen(false);
+    setSprintSearchQuery('');
+    setCurrentMenuTaskId(null);
+  };
+
+  const executeMoveToSprint = async (
+    taskId: number,
+    sprintId: number | null,
+  ) => {
+    await updateTask({ id: taskId, sprintId });
+    handleCloseMoveSprintDialog();
+  };
+
+  const handleMoveToSprint = (sprintId: number | null) => {
+    if (!currentMenuTaskId) return;
+    const task = tasks.find((t) => t.id === currentMenuTaskId);
+    if (!task) return;
+    const sprintName = sprintId
+      ? sprints.find((s: any) => s.id === sprintId)?.name ||
+        'the selected sprint'
+      : 'Backlog (No Sprint)';
+    setConfirmDialog({
+      title: 'Move to Sprint',
+      message: `Move "${task.title}" to ${sprintName}?`,
+      confirmLabel: 'Move',
+      confirmColor: 'primary',
+      onConfirm: () => executeMoveToSprint(task.id, sprintId),
+    });
+  };
+
+  const sprintsForMove = useMemo(() => {
+    const q = sprintSearchQuery.trim().toLowerCase();
+    if (!q) return sprints;
+    return sprints.filter((s: any) => s.name.toLowerCase().includes(q));
+  }, [sprints, sprintSearchQuery]);
 
   const columns: GridColDef[] = [
     {
@@ -569,7 +652,7 @@ function List() {
       renderCell: (params: GridRenderCellParams<any, Task>) => {
         const items = checklistsByTask[params.row.id];
         if (!items || items.length === 0) return null;
-        const isExpanded = !collapsedTaskIds.has(params.row.id);
+        const isExpanded = expandedTaskIds.has(params.row.id);
         const doneCount = items.filter((i: any) => i.isCompleted).length;
         return (
           <Box
@@ -607,7 +690,7 @@ function List() {
       cellClassName: (params: GridCellParams<any, Task>) => {
         const items = checklistsByTask[params.row.id];
         const isExpanded =
-          !!items && items.length > 0 && !collapsedTaskIds.has(params.row.id);
+          !!items && items.length > 0 && expandedTaskIds.has(params.row.id);
         return isExpanded ? 'task-title-cell-expanded' : '';
       },
       renderCell: (params: GridRenderCellParams<any, Task>) => {
@@ -617,7 +700,7 @@ function List() {
         const isHighRisk = risk && risk.risk > 0.7;
         const subtasks = checklistsByTask[params.row.id] || [];
         const isExpanded =
-          subtasks.length > 0 && !collapsedTaskIds.has(params.row.id);
+          subtasks.length > 0 && expandedTaskIds.has(params.row.id);
 
         return (
           <Box
@@ -891,7 +974,7 @@ function List() {
   return (
     <Box
       sx={{
-        height: 'calc(100vh - 128px)',
+        height: '100%',
         width: '100%',
         display: 'flex',
         flexDirection: 'column',
@@ -997,7 +1080,7 @@ function List() {
               const items = checklistsByTask[params.id as number];
               return items &&
                 items.length > 0 &&
-                !collapsedTaskIds.has(params.id as number)
+                expandedTaskIds.has(params.id as number)
                 ? 'auto'
                 : undefined;
             }}
@@ -1095,6 +1178,17 @@ function List() {
           <ListItemText>Move to Bottom</ListItemText>
         </MenuItem>
         <Divider />
+        <MenuItem onClick={handleOpenMoveSprintDialog}>
+          <ListItemIcon>
+            <DirectionsRunIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Move to Sprint</ListItemText>
+          <ChevronRightIcon
+            fontSize="small"
+            sx={{ ml: 'auto', opacity: 0.5 }}
+          />
+        </MenuItem>
+        <Divider />
         <MenuItem onClick={() => handleDeleteTask(currentMenuTaskId!)}>
           <ListItemIcon>
             <DeleteIcon fontSize="small" color="error" />
@@ -1102,6 +1196,82 @@ function List() {
           <ListItemText>Delete</ListItemText>
         </MenuItem>
       </Menu>
+
+      {/* Move to Sprint Dialog - a flat menu doesn't scale once there are many sprints */}
+      <Dialog
+        open={isMoveSprintDialogOpen}
+        onClose={handleCloseMoveSprintDialog}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Move to Sprint</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Search sprints..."
+            fullWidth
+            variant="standard"
+            value={sprintSearchQuery}
+            onChange={(e) => setSprintSearchQuery(e.target.value)}
+          />
+          <MuiList sx={{ mt: 1, maxHeight: 400, overflow: 'auto' }}>
+            <ListItemButton onClick={() => handleMoveToSprint(null)}>
+              <ListItemText primary="Backlog (No Sprint)" />
+            </ListItemButton>
+            {sprintsForMove.map((sprint: any) => (
+              <ListItemButton
+                key={sprint.id}
+                onClick={() => handleMoveToSprint(sprint.id)}
+              >
+                <ListItemText primary={sprint.name} secondary={sprint.status} />
+              </ListItemButton>
+            ))}
+            {sprintsForMove.length === 0 && (
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ p: 2, textAlign: 'center' }}
+              >
+                No sprints match &quot;{sprintSearchQuery}&quot;.
+              </Typography>
+            )}
+          </MuiList>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseMoveSprintDialog}>Cancel</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Generic yes/no confirmation, reused by Delete and Move to Sprint */}
+      <Dialog
+        open={!!confirmDialog}
+        onClose={() => setConfirmDialog(null)}
+        maxWidth="xs"
+        fullWidth
+      >
+        {confirmDialog && (
+          <>
+            <DialogTitle>{confirmDialog.title}</DialogTitle>
+            <DialogContent>
+              <Typography variant="body2">{confirmDialog.message}</Typography>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setConfirmDialog(null)}>Cancel</Button>
+              <Button
+                color={confirmDialog.confirmColor}
+                variant="contained"
+                onClick={() => {
+                  confirmDialog.onConfirm();
+                  setConfirmDialog(null);
+                }}
+              >
+                {confirmDialog.confirmLabel}
+              </Button>
+            </DialogActions>
+          </>
+        )}
+      </Dialog>
 
       <SpeedDial
         ariaLabel="Task Actions"

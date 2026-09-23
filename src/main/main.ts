@@ -1049,6 +1049,8 @@ let lastWaterTime = Date.now();
 let lastMeditationDate: string | null = null;
 let sentMorningNudge = false;
 let standupShown = false;
+let suggestedBoostModeToday = false;
+let suggestedRecoveryModeToday = false;
 let currentDayString = new Date().toDateString();
 
 setInterval(() => {
@@ -1064,6 +1066,8 @@ setInterval(() => {
     if (dateString !== currentDayString) {
       sentMorningNudge = false;
       standupShown = false;
+      suggestedBoostModeToday = false;
+      suggestedRecoveryModeToday = false;
       lastMeditationDate = null;
       currentDayString = dateString;
 
@@ -1166,6 +1170,49 @@ setInterval(() => {
               'Skaczesz między zadaniami. Może czas na jeden blok głębokiej pracy?',
             );
             lastFragmentationNotificationTime = now;
+          }
+        }
+      }
+
+      // 7. Work Mode Suggestion (Boost / Recovery) - context-aware nudge to switch daily
+      // mode, based on sprint risk (boost) or fatigue/sleep signals (recovery). At most one
+      // suggestion per direction per day, and never suggesting a mode already active.
+      if (!suggestedBoostModeToday || !suggestedRecoveryModeToday) {
+        const todayISO = currentDate.toISOString().split('T')[0];
+        const dailyBio = getDailyBio(todayISO);
+        const currentMode = dailyBio.mode || 'normal';
+
+        if (!suggestedBoostModeToday && currentMode !== 'boost') {
+          const { risk } = neuralCore.getSprintRiskContext();
+          if (risk && (risk.risk === 'Critical' || risk.risk === 'At Risk')) {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('ai:suggest-mode', {
+                mode: 'boost',
+                reason:
+                  risk.message ||
+                  'Sprint jest zagrożony - może czas przyspieszyć?',
+              });
+            }
+            suggestedBoostModeToday = true;
+          }
+        }
+
+        if (!suggestedRecoveryModeToday && currentMode !== 'recovery') {
+          const sleepScore = dailyBio.sleepScore;
+          const isLowSleep = sleepScore !== null && sleepScore < 50;
+          const fatigue = ProductivityAnalyst.analyzeFatigue(
+            getRecentWorkSessions(1, 1),
+          );
+          if (isLowSleep || fatigue.isFatigued) {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('ai:suggest-mode', {
+                mode: 'recovery',
+                reason: isLowSleep
+                  ? 'Niski wynik snu dzisiaj - może zwolnij tempo?'
+                  : 'Długie sesje bez przerwy - rozważ tryb regeneracji.',
+              });
+            }
+            suggestedRecoveryModeToday = true;
           }
         }
       }

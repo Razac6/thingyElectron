@@ -259,15 +259,6 @@ export const initDB = async () => {
         status: 'active',
       }),
     },
-    {
-      key: 'shutdown_checklist',
-      value: JSON.stringify([
-        'Skrzynka odbiorcza i komunikatory sprawdzone (Inbox Zero)',
-        'Plan na jutro przygotowany i zapisany',
-        'Biurko / Pulpit uporządkowane',
-        'Ostatnie spojrzenie na kalendarz',
-      ]),
-    },
   ];
   const settingStmt = database.prepare(
     'INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)',

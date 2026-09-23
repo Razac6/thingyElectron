@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Typography,
@@ -10,64 +10,18 @@ import {
   Divider,
   Slider,
   Grid,
-  IconButton,
-  List,
-  ListItem,
-  ListItemText,
 } from '@mui/material';
-import DeleteIcon from '@mui/icons-material/Delete';
-import AddIcon from '@mui/icons-material/Add';
 import { useSettings } from '../../context/SettingsContext';
 
 function Settings() {
   const { settings, updateSetting } = useSettings();
   const [geminiKey, setGeminiKey] = useState('');
-  const [shutdownItems, setShutdownItems] = useState<string[]>([]);
-  const [newItem, setNewItem] = useState('');
 
   useEffect(() => {
     if (settings.geminiApiKey) {
       setGeminiKey(settings.geminiApiKey);
     }
-    try {
-      if (settings.shutdown_checklist) {
-        setShutdownItems(JSON.parse(settings.shutdown_checklist));
-      } else {
-        // Default if empty
-        setShutdownItems([
-          'Skrzynka odbiorcza i komunikatory sprawdzone (Inbox Zero)',
-          'Plan na jutro przygotowany i zapisany',
-          'Biurko / Pulpit uporządkowane',
-          'Ostatnie spojrzenie na kalendarz',
-        ]);
-      }
-    } catch (e) {
-      setShutdownItems([]);
-    }
   }, [settings]);
-
-  const handleShutdownSave = useCallback(
-    (newItems: string[]) => {
-      setShutdownItems(newItems);
-      updateSetting('shutdown_checklist', JSON.stringify(newItems));
-    },
-    [updateSetting],
-  );
-
-  const addShutdownItem = useCallback(() => {
-    if (!newItem.trim()) return;
-    const updated = [...shutdownItems, newItem.trim()];
-    handleShutdownSave(updated);
-    setNewItem('');
-  }, [newItem, shutdownItems, handleShutdownSave]);
-
-  const removeShutdownItem = useCallback(
-    (index: number) => {
-      const updated = shutdownItems.filter((_, i) => i !== index);
-      handleShutdownSave(updated);
-    },
-    [shutdownItems, handleShutdownSave],
-  );
 
   const handleSaveKey = useCallback(() => {
     updateSetting('geminiApiKey', geminiKey);
@@ -81,28 +35,6 @@ function Settings() {
   const handleTestStandup = useCallback(() => {
     window.electron.app.testDailyStandup();
   }, []);
-
-  // Memoize shutdown items list to prevent unnecessary re-renders
-  const shutdownItemsList = useMemo(
-    () =>
-      shutdownItems.map((item, index) => (
-        <ListItem
-          key={index}
-          secondaryAction={
-            <IconButton
-              edge="end"
-              aria-label="delete"
-              onClick={() => removeShutdownItem(index)}
-            >
-              <DeleteIcon />
-            </IconButton>
-          }
-        >
-          <ListItemText primary={item} />
-        </ListItem>
-      )),
-    [shutdownItems, removeShutdownItem],
-  );
 
   return (
     <Box sx={{ p: 3, maxWidth: 800, margin: '0 auto' }}>
@@ -270,36 +202,6 @@ function Settings() {
             />
           </Grid>
         </Grid>
-      </Paper>
-
-      {/* Shutdown Ritual Section */}
-      <Paper sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" gutterBottom>
-          Shutdown Ritual Checklist
-        </Typography>
-        <Typography variant="body2" color="text.secondary" paragraph>
-          Customize the steps you take to close your day.
-        </Typography>
-
-        <List dense>{shutdownItemsList}</List>
-
-        <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
-          <TextField
-            label="New Item"
-            size="small"
-            fullWidth
-            value={newItem}
-            onChange={(e) => setNewItem(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && addShutdownItem()}
-          />
-          <Button
-            variant="outlined"
-            startIcon={<AddIcon />}
-            onClick={addShutdownItem}
-          >
-            Add
-          </Button>
-        </Box>
       </Paper>
 
       {/* Health & Habits Section */}

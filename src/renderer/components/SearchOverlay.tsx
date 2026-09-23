@@ -506,7 +506,7 @@ export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
           </Box>
         )}
         {!isAdding && query && (
-          <List>
+          <List sx={{ maxHeight: 400, overflow: 'auto' }}>
             {results.length > 0 ? (
               results.map((result) => (
                 <ListItemButton

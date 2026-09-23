@@ -22,12 +22,10 @@ import BedIcon from '@mui/icons-material/Bed';
 import GroupsIcon from '@mui/icons-material/Groups';
 import FlagIcon from '@mui/icons-material/Flag';
 import PetsIcon from '@mui/icons-material/Pets';
-import PowerSettingsNewIcon from '@mui/icons-material/PowerSettingsNew';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import { useTimer } from '../context/TimerContext';
 import { useSettings } from '../context/SettingsContext';
 import { getDailyBio, updateDailyBio } from '../services/DatabaseService';
-import ShutdownModal from './ShutdownModal';
 
 function SmartInsightWidget() {
   const { insights, toggleBoostMode } = useTimer();
@@ -41,14 +39,6 @@ function SmartInsightWidget() {
   const [meetingAnchorEl, setMeetingAnchorEl] =
     useState<HTMLButtonElement | null>(null);
   const [sprintAnalysis, setSprintAnalysis] = useState<any>(null);
-  const [isShutdownOpen, setIsShutdownOpen] = useState(false);
-
-  useEffect(() => {
-    const handleOpenShutdown = () => setIsShutdownOpen(true);
-    window.addEventListener('open-shutdown-modal', handleOpenShutdown);
-    return () =>
-      window.removeEventListener('open-shutdown-modal', handleOpenShutdown);
-  }, []);
 
   useEffect(() => {
     const userStr = localStorage.getItem('userId');
@@ -313,24 +303,9 @@ function SmartInsightWidget() {
                 <PetsIcon fontSize="small" />
               </IconButton>
             </Tooltip>
-
-            <Tooltip
-              title="Zakończ dzień (Shutdown Ritual)"
-              arrow
-              placement="left"
-            >
-              <IconButton size="small" onClick={() => setIsShutdownOpen(true)}>
-                <PowerSettingsNewIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
           </Box>
         </Box>
       </Box>
-
-      <ShutdownModal
-        open={isShutdownOpen}
-        onClose={() => setIsShutdownOpen(false)}
-      />
 
       {/* Popovers */}
       <Popover

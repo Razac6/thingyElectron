@@ -45,6 +45,7 @@ import { useGamification } from '../context/GamificationContext';
 import Timer from './Timer';
 import SearchOverlay from './SearchOverlay';
 import IdlePromptModal from './IdlePromptModal';
+import ModeSuggestionModal from './ModeSuggestionModal';
 import BoostOverlay from './BoostOverlay';
 import { useSettings } from '../context/SettingsContext';
 import { AiCompanion } from './AiCompanion';
@@ -157,6 +158,9 @@ export default function Layout({ children }: LayoutProps) {
     isBoostMode,
     toggleBoostMode,
     dailyMode,
+    modeSuggestion,
+    handleAcceptModeSuggestion,
+    handleDismissModeSuggestion,
   } = useTimer();
   const { rewardAnimation, hideRewardAnimation } = useGamification();
   const { settings } = useSettings();
@@ -226,7 +230,7 @@ export default function Layout({ children }: LayoutProps) {
     : null;
 
   return (
-    <Box sx={{ display: 'flex' }}>
+    <Box sx={{ display: 'flex', height: '100vh' }}>
       <CssBaseline />
       <BoostOverlay open={isBoostMode} onClose={() => toggleBoostMode(false)} />
       <AiCompanion />
@@ -257,6 +261,15 @@ export default function Layout({ children }: LayoutProps) {
           taskTitle={idlePrompt.taskTitle}
           onKeep={handleKeepIdleTime}
           onDiscard={handleDiscardIdleTime}
+        />
+      )}
+      {modeSuggestion && (
+        <ModeSuggestionModal
+          open={!!modeSuggestion}
+          mode={modeSuggestion.mode}
+          reason={modeSuggestion.reason}
+          onAccept={handleAcceptModeSuggestion}
+          onDismiss={handleDismissModeSuggestion}
         />
       )}
       <AppBar position="fixed" open={open}>
@@ -379,9 +392,20 @@ export default function Layout({ children }: LayoutProps) {
           </List>
         </Box>
       </Drawer>
-      <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
-        <Toolbar />
-        {children}
+      <Box
+        component="main"
+        sx={{
+          flexGrow: 1,
+          p: 3,
+          height: '100%',
+          overflow: 'auto',
+          display: 'flex',
+          flexDirection: 'column',
+          boxSizing: 'border-box',
+        }}
+      >
+        <Toolbar sx={{ flexShrink: 0 }} />
+        <Box sx={{ flex: 1, minHeight: 0 }}>{children}</Box>
       </Box>
     </Box>
   );
