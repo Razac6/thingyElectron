@@ -43,6 +43,7 @@ import {
   adjustTaskWorkTime,
   getHourlyProductivity,
   getDailyProductivity,
+  getWorkHistory,
   getContributionData,
   getRecentWorkSessions,
   getTaskWorkSessions,
@@ -604,6 +605,9 @@ ipcMain.handle('db:get-average-sprint-capacity', () =>
 ipcMain.handle('db:get-hourly-productivity', () => getHourlyProductivity());
 ipcMain.handle('db:get-daily-productivity', (event, userId) =>
   getDailyProductivity(userId),
+);
+ipcMain.handle('db:get-work-history', (event, userId, startDate, endDate) =>
+  getWorkHistory(userId, startDate, endDate),
 );
 ipcMain.handle('db:get-contribution-data', (event, userId, days) =>
   getContributionData(userId, days),
@@ -1193,11 +1197,14 @@ setInterval(() => {
           const { risk } = neuralCore.getSprintRiskContext();
           if (risk && (risk.risk === 'Critical' || risk.risk === 'At Risk')) {
             if (mainWindow && !mainWindow.isDestroyed()) {
+              // Note: risk.message (from ProductivityAnalyst) is in Polish - this modal's UI
+              // is English, so build the reason text here instead of reusing it.
               mainWindow.webContents.send('ai:suggest-mode', {
                 mode: 'boost',
                 reason:
-                  risk.message ||
-                  'Sprint jest zagrożony - może czas przyspieszyć?',
+                  risk.risk === 'Critical'
+                    ? 'Your sprint is critically behind schedule - boosting focus now could help you catch up.'
+                    : 'Your sprint is at risk of missing its deadline - want to switch into a focused push?',
               });
             }
             suggestedBoostModeToday = true;
@@ -1205,7 +1212,7 @@ setInterval(() => {
         }
 
         if (!suggestedRecoveryModeToday && currentMode !== 'recovery') {
-          const sleepScore = dailyBio.sleepScore;
+          const { sleepScore } = dailyBio;
           const isLowSleep = sleepScore !== null && sleepScore < 50;
           const fatigue = ProductivityAnalyst.analyzeFatigue(
             getRecentWorkSessions(1, 1),
@@ -1215,8 +1222,8 @@ setInterval(() => {
               mainWindow.webContents.send('ai:suggest-mode', {
                 mode: 'recovery',
                 reason: isLowSleep
-                  ? 'Niski wynik snu dzisiaj - może zwolnij tempo?'
-                  : 'Długie sesje bez przerwy - rozważ tryb regeneracji.',
+                  ? 'Your sleep score is low today - maybe ease off the pace a bit?'
+                  : "You've been working long stretches without a break - consider a recovery mode.",
               });
             }
             suggestedRecoveryModeToday = true;

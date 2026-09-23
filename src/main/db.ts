@@ -836,6 +836,67 @@ export const getDailyProductivity = (userId: number) => {
   return results;
 };
 
+// Day-by-day work history, broken down per task within each day - backs the History view in
+// Statistics. Uses the same "Productivity Day" bucketing (starts 4 AM) as getDailyProductivity
+// for consistency with the rest of the app's day-grouped charts.
+export const getWorkHistory = (
+  userId: number,
+  startDate: string,
+  endDate: string,
+) => {
+  if (!db) return [];
+
+  const stmt = db.prepare(`
+    SELECT date, taskId, taskTitle, SUM(duration) as duration
+    FROM (
+      SELECT
+        strftime('%Y-%m-%d', datetime(ws.startTime, 'localtime', '-4 hours')) as date,
+        ws.taskId as taskId,
+        t.title as taskTitle,
+        ws.duration as duration
+      FROM work_sessions ws
+      JOIN tasks t ON ws.taskId = t.id
+      WHERE t.userId = :userId
+    ) sub
+    WHERE date >= :startDate AND date <= :endDate
+    GROUP BY date, taskId
+    ORDER BY date DESC, duration DESC
+  `);
+  stmt.bind({
+    ':userId': userId,
+    ':startDate': startDate,
+    ':endDate': endDate,
+  });
+
+  const rows: any[] = [];
+  while (stmt.step()) {
+    rows.push(stmt.getAsObject());
+  }
+  stmt.free();
+
+  // Group flat rows into { date, totalDuration, tasks: [...] } per day
+  const byDate = new Map<
+    string,
+    { date: string; totalDuration: number; tasks: any[] }
+  >();
+  rows.forEach((row) => {
+    if (!byDate.has(row.date)) {
+      byDate.set(row.date, { date: row.date, totalDuration: 0, tasks: [] });
+    }
+    const day = byDate.get(row.date)!;
+    day.totalDuration += row.duration;
+    day.tasks.push({
+      taskId: row.taskId,
+      title: row.taskTitle,
+      duration: row.duration,
+    });
+  });
+
+  return Array.from(byDate.values()).sort((a, b) =>
+    b.date.localeCompare(a.date),
+  );
+};
+
 export const getHourlyProductivity = () => {
   if (!db) return [];
   const stmt = db.prepare(`

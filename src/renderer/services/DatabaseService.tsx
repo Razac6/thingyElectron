@@ -197,6 +197,25 @@ const getDailyProductivity = async () => {
   }
 };
 
+const getWorkHistory = async (startDate: string, endDate: string) => {
+  try {
+    const userStr = localStorage.getItem('userId');
+    const userId = userStr ? JSON.parse(userStr) : null;
+    if (!userId) {
+      return [];
+    }
+    const data = await window.electron.database.getWorkHistory(
+      userId,
+      startDate,
+      endDate,
+    );
+    return data;
+  } catch (error) {
+    console.error('[DatabaseService] Error fetching work history:', error);
+    return [];
+  }
+};
+
 const getContributionData = async (days: number = 365) => {
   try {
     const userStr = localStorage.getItem('userId');
@@ -417,6 +436,7 @@ export {
   logWorkSession,
   adjustTaskWorkTime,
   getDailyProductivity,
+  getWorkHistory,
   getContributionData,
   getHourlyProductivity,
   getProductivityInsights,

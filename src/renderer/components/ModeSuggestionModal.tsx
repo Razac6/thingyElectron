@@ -56,7 +56,7 @@ export default function ModeSuggestionModal({
           )}
         </Avatar>
         <Typography variant="h6" fontWeight="bold">
-          {isBoost ? 'Przełączyć na Boost Mode?' : 'Przełączyć na Recovery?'}
+          {isBoost ? 'Switch to Boost Mode?' : 'Switch to Recovery Mode?'}
         </Typography>
         <Typography
           variant="body2"
@@ -80,7 +80,7 @@ export default function ModeSuggestionModal({
               borderRadius: 2,
             }}
           >
-            Tak, zmień tryb
+            Yes, switch mode
           </Button>
 
           <Button
@@ -89,7 +89,7 @@ export default function ModeSuggestionModal({
             onClick={onDismiss}
             sx={{ py: 1.5, borderRadius: 2 }}
           >
-            Nie, zostaw jak jest
+            No, keep it as is
           </Button>
         </Stack>
       </DialogContent>

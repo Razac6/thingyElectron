@@ -66,7 +66,7 @@ function AiProductivityChart() {
           } else {
             const labels = perfData.map((d: any) => {
               const date = new Date(d.date);
-              return date.toLocaleDateString([], {
+              return date.toLocaleDateString('en-US', {
                 weekday: 'short',
                 day: 'numeric',
               });

@@ -67,6 +67,8 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('db:get-hourly-productivity'),
     getDailyProductivity: (userId: number) =>
       ipcRenderer.invoke('db:get-daily-productivity', userId),
+    getWorkHistory: (userId: number, startDate: string, endDate: string) =>
+      ipcRenderer.invoke('db:get-work-history', userId, startDate, endDate),
     getContributionData: (userId: number, days?: number) =>
       ipcRenderer.invoke('db:get-contribution-data', userId, days),
     getWorkSessions: (userId: number, days: number) =>

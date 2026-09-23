@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
   Paper,
@@ -7,7 +8,15 @@ import {
   TextField,
   Tabs,
   Tab,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  List as MuiList,
+  ListItemButton,
+  ListItemText,
+  Chip,
 } from '@mui/material';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { Pie, Doughnut, Line as ChartLine } from 'react-chartjs-2';
 import 'chart.js/auto';
 import { useTimer } from '../../context/TimerContext';
@@ -16,6 +25,15 @@ import { PriorityEnum } from '../../../enums/priority.enum';
 import ProductivityChart from '../../components/ProductivityChart';
 import HourlyProductivityChart from '../../components/HourlyProductivityChart';
 import AiProductivityChart from '../../components/AiProductivityChart';
+import { getWorkHistory } from '../../services/DatabaseService';
+
+const formatDuration = (ms: number): string => {
+  if (ms <= 0) return '0h 0m';
+  const totalMinutes = Math.ceil(ms / (1000 * 60));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${hours}h ${minutes}m`;
+};
 
 // Helper to format date to YYYY-MM-DD for the input
 const formatDateForInput = (date: Date): string => {
@@ -45,8 +63,12 @@ function TabPanel(props: TabPanelProps) {
 }
 
 function Statistics() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const { tasks, productivityData } = useTimer();
-  const [tabValue, setTabValue] = useState(0);
+  const [tabValue, setTabValue] = useState(
+    location.state && (location.state as any).tab === 'history' ? 2 : 0,
+  );
   const [startDate, setStartDate] = useState<string>(() => {
     const date = new Date();
     date.setDate(date.getDate() - 7); // Default to last 7 days
@@ -56,6 +78,30 @@ function Statistics() {
     formatDateForInput(new Date()),
   );
   const [deepWorkData, setDeepWorkData] = useState<any[]>([]);
+
+  const [historyStartDate, setHistoryStartDate] = useState<string>(() => {
+    const date = new Date();
+    date.setDate(date.getDate() - 7);
+    return formatDateForInput(date);
+  });
+  const [historyEndDate, setHistoryEndDate] = useState<string>(
+    formatDateForInput(new Date()),
+  );
+  const [historyData, setHistoryData] = useState<any[]>([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+
+  useEffect(() => {
+    const fetchHistory = async () => {
+      setIsHistoryLoading(true);
+      try {
+        const data = await getWorkHistory(historyStartDate, historyEndDate);
+        setHistoryData(data || []);
+      } finally {
+        setIsHistoryLoading(false);
+      }
+    };
+    fetchHistory();
+  }, [historyStartDate, historyEndDate]);
 
   useEffect(() => {
     const fetchDeepWork = async () => {
@@ -77,7 +123,7 @@ function Statistics() {
   // Memoized data for Focus Quality Chart
   const focusQualityData = useMemo(() => {
     const labels = deepWorkData.map((d) =>
-      new Date(d.date).toLocaleDateString([], {
+      new Date(d.date).toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
       }),
@@ -131,7 +177,7 @@ function Statistics() {
       // Parse YYYY-MM-DD manually to avoid UTC conversion issues in Date constructor
       const [y, m, d] = entry.date.split('-').map(Number);
       const localDate = new Date(y, m - 1, d);
-      return localDate.toLocaleDateString([], {
+      return localDate.toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
       });
@@ -219,6 +265,7 @@ function Statistics() {
         >
           <Tab label="General Stats" />
           <Tab label="Neural Core AI" />
+          <Tab label="History" />
         </Tabs>
       </Box>
 
@@ -316,6 +363,104 @@ function Statistics() {
             <AiProductivityChart />
           </Grid>
         </Grid>
+      </TabPanel>
+
+      {/* Tab 3: History - day-by-day breakdown of tasks worked on */}
+      <TabPanel value={tabValue} index={2}>
+        <Paper sx={{ padding: 2 }}>
+          <Box
+            sx={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              mb: 2,
+              flexWrap: 'wrap',
+              gap: 2,
+            }}
+          >
+            <Typography variant="h6">Work History</Typography>
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <TextField
+                label="Start Date"
+                type="date"
+                value={historyStartDate}
+                onChange={(e) => setHistoryStartDate(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+                size="small"
+              />
+              <TextField
+                label="End Date"
+                type="date"
+                value={historyEndDate}
+                onChange={(e) => setHistoryEndDate(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+                size="small"
+              />
+            </Box>
+          </Box>
+
+          {isHistoryLoading && (
+            <Typography color="text.secondary">Loading...</Typography>
+          )}
+
+          {!isHistoryLoading && historyData.length === 0 && (
+            <Typography color="text.secondary">
+              No work logged in this date range.
+            </Typography>
+          )}
+
+          {!isHistoryLoading &&
+            historyData.map((day) => (
+              <Accordion key={day.date}>
+                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      width: '100%',
+                      pr: 2,
+                    }}
+                  >
+                    <Typography fontWeight="medium">
+                      {new Date(`${day.date}T00:00:00`).toLocaleDateString(
+                        'en-US',
+                        {
+                          weekday: 'short',
+                          month: 'short',
+                          day: 'numeric',
+                        },
+                      )}
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                      <Chip
+                        size="small"
+                        label={`${day.tasks.length} task${day.tasks.length === 1 ? '' : 's'}`}
+                      />
+                      <Typography color="text.secondary" variant="body2">
+                        {formatDuration(day.totalDuration)}
+                      </Typography>
+                    </Box>
+                  </Box>
+                </AccordionSummary>
+                <AccordionDetails>
+                  <MuiList dense disablePadding>
+                    {day.tasks.map((task: any) => (
+                      <ListItemButton
+                        key={task.taskId}
+                        onClick={() => navigate(`/task/${task.taskId}`)}
+                      >
+                        <ListItemText primary={task.title} />
+                        <Typography color="text.secondary" variant="body2">
+                          {formatDuration(task.duration)}
+                        </Typography>
+                      </ListItemButton>
+                    ))}
+                  </MuiList>
+                </AccordionDetails>
+              </Accordion>
+            ))}
+        </Paper>
       </TabPanel>
     </Box>
   );

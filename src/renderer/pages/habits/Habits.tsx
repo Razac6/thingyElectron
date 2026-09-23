@@ -142,7 +142,7 @@ function HabitHistoryChart({
     for (let i = daysToScroll - 1; i >= 0; i--) {
       const d = addDays(new Date(), -i);
       labels.push(
-        d.toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }),
+        d.toLocaleDateString('en-US', { day: 'numeric', month: 'short' }),
       );
       const done = logs.some(
         (l) => l.date === toLocalISOString(d) && l.value >= 1,

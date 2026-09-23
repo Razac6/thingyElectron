@@ -63,6 +63,7 @@ import ViewListIcon from '@mui/icons-material/ViewList';
 import ViewWeekIcon from '@mui/icons-material/ViewWeek';
 import DirectionsRunIcon from '@mui/icons-material/DirectionsRun';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import HistoryIcon from '@mui/icons-material/History';
 import { renderTextWithIcons } from '../../utils/emojiIcons';
 import { StatusEnum } from '../../../enums/status.enum';
 import { PriorityEnum } from '../../../enums/priority.enum';
@@ -1010,7 +1011,17 @@ function List() {
           </ToggleButton>
         </ToggleButtonGroup>
 
-        <Box sx={{ display: 'flex', gap: 2 }}>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+          <Tooltip title="Work History">
+            <IconButton
+              size="small"
+              onClick={() =>
+                navigate('/statistics', { state: { tab: 'history' } })
+              }
+            >
+              <HistoryIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
           <Autocomplete
             size="small"
             sx={{ minWidth: 200 }}

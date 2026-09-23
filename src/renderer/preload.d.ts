@@ -54,6 +54,11 @@ export interface IElectronAPI {
     getAverageSprintCapacity: () => Promise<number>;
     getHourlyProductivity: () => Promise<any[]>;
     getDailyProductivity: (userId: number) => Promise<any[]>;
+    getWorkHistory: (
+      userId: number,
+      startDate: string,
+      endDate: string,
+    ) => Promise<any[]>;
     getContributionData: (userId: number, days: number) => Promise<any[]>;
     getWorkSessions: (userId: number, days: number) => Promise<any[]>;
     getTaskWorkSessions: (taskId: number) => Promise<any[]>;
