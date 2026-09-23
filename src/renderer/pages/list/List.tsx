@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { keyframes } from '@emotion/react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   DataGrid,
@@ -79,6 +80,20 @@ import {
   toggleChecklistItem,
 } from '../../services/DatabaseService';
 import { KanbanBoard } from '../../components/KanbanBoard';
+
+// Flowing highlight sweep for the active timer's row - plain CSS animation, no JS ticking
+// involved at all. Color is picked once per row-class evaluation (see getActiveRowLiquidClass)
+// from a cheap snapshot calculation, not a continuously-updating progress bar.
+const rowLiquidSweep = keyframes`
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+`;
+
+const getActiveRowLiquidClass = (progressPercent: number): string => {
+  if (progressPercent >= 90) return 'active-timer-row-red'; // little time left / overtime
+  if (progressPercent >= 70) return 'active-timer-row-yellow'; // getting low
+  return 'active-timer-row-blue'; // plenty of time left
+};
 
 const getPriorityColor = (priority: PriorityEnum) => {
   switch (priority) {
@@ -395,6 +410,19 @@ function List() {
     let classes = '';
     if (params.row.id === dragTargetTaskId) {
       classes += 'drop-target-row ';
+    }
+    if (params.row.startTimer !== null && params.row.startTimer !== undefined) {
+      // Snapshot color, not a live progress bar - no ticking interval involved, this is just
+      // arithmetic on the row's own data, recomputed whenever DataGrid naturally re-evaluates
+      // row classes (no extra re-renders caused by this).
+      const start = Number(params.row.startTimer);
+      let progress = 0;
+      if (!Number.isNaN(start)) {
+        const elapsed = (params.row.spendTime || 0) + (Date.now() - start);
+        const estimateMs = (params.row.estimate || 1) * 3600 * 1000;
+        progress = (elapsed / estimateMs) * 100;
+      }
+      classes += `active-timer-row ${getActiveRowLiquidClass(progress)} `;
     }
     return classes;
   };
@@ -1107,6 +1135,26 @@ function List() {
               '& .drop-target-row': {
                 borderTop: '3px solid #2196f3',
                 backgroundColor: 'rgba(33, 150, 243, 0.05) !important',
+              },
+              '& .active-timer-row-blue': {
+                backgroundImage:
+                  'linear-gradient(90deg, transparent 0%, rgba(33, 150, 243, 0.14) 50%, transparent 100%) !important',
+                backgroundSize: '200% 100% !important',
+                // linear (not ease-in-out) so the sweep never slows to a near-stop at each
+                // loop boundary - constant speed reads as continuously flowing.
+                animation: `${rowLiquidSweep} 6s linear infinite`,
+              },
+              '& .active-timer-row-yellow': {
+                backgroundImage:
+                  'linear-gradient(90deg, transparent 0%, rgba(255, 193, 7, 0.17) 50%, transparent 100%) !important',
+                backgroundSize: '200% 100% !important',
+                animation: `${rowLiquidSweep} 5s linear infinite`,
+              },
+              '& .active-timer-row-red': {
+                backgroundImage:
+                  'linear-gradient(90deg, transparent 0%, rgba(239, 83, 80, 0.2) 50%, transparent 100%) !important',
+                backgroundSize: '200% 100% !important',
+                animation: `${rowLiquidSweep} 4s linear infinite`,
               },
               '& .task-title-cell-expanded': {
                 whiteSpace: 'normal !important',

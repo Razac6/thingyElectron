@@ -349,6 +349,7 @@ export function TimerProvider({ children }: { children: ReactNode }) {
         estimate: activeTask.estimate || 0,
         initialSpendTime: activeTask.spendTime || 0,
         userId,
+        timerMode: activeTask.timerMode,
       });
     } else {
       window.electron.ipcRenderer.send('tray:stop-timer');
@@ -619,10 +620,9 @@ export function TimerProvider({ children }: { children: ReactNode }) {
     setModeSuggestion(null);
     try {
       await updateDailyBio(getWorkdayISO(), { mode });
+      // Layout's own effect opens/closes the Boost Overlay from dailyMode (and only while a
+      // timer is running) - this is the single source of truth, so just sync dailyMode here.
       setDailyMode(mode);
-      if (mode === 'boost') {
-        toggleBoostMode(true);
-      }
     } catch (e) {
       console.error('Failed to apply suggested mode', e);
     }

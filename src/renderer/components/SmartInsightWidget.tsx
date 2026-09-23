@@ -28,7 +28,7 @@ import { useSettings } from '../context/SettingsContext';
 import { getDailyBio, updateDailyBio } from '../services/DatabaseService';
 
 function SmartInsightWidget() {
-  const { insights, toggleBoostMode } = useTimer();
+  const { insights, setDailyMode } = useTimer();
   const { settings } = useSettings();
   const [dailyBio, setDailyBioState] = useState<{
     mode: string;
@@ -62,9 +62,12 @@ function SmartInsightWidget() {
     const updated = await updateDailyBio(today, { mode });
     setDailyBioState({ ...dailyBio, ...updated });
 
-    if (mode === 'boost') {
-      toggleBoostMode(true);
-    }
+    // Keep TimerContext's shared dailyMode in sync - Layout's own effect is what actually
+    // opens/closes the Boost Overlay (and only while a timer is running), so this is the only
+    // thing needed here. Previously this called toggleBoostMode(true) directly for 'boost'
+    // only, with no corresponding close for 'normal'/'recovery' - switching away from boost
+    // never told anything the mode had changed, leaving the fullscreen overlay stuck open.
+    setDailyMode(mode);
   };
 
   const handleSleepUpdate = async (val: number) => {

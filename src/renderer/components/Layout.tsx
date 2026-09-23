@@ -166,13 +166,19 @@ export default function Layout({ children }: LayoutProps) {
   const { settings } = useSettings();
 
   const activeTask = tasks.find((task) => task.startTimer !== null);
+  const isPomodoroRunning = activeTask?.timerMode === 'pomodoro';
 
-  // Auto-activate Boost Overlay if mode is Boost and timer is running
+  // Auto-activate Boost Overlay if mode is Boost and timer is running. A running Pomodoro
+  // sets isBoostMode itself (see startTimer in TimerContext) independently of dailyMode - it
+  // must never be force-closed here just because the daily mode isn't 'boost', otherwise the
+  // overlay (and its liquid loader) closes right after opening for every Pomodoro session.
   useEffect(() => {
     if (dailyMode === 'boost' && activeTask) {
       if (!isBoostMode) toggleBoostMode(true);
-    } else if (isBoostMode) toggleBoostMode(false);
-  }, [dailyMode, activeTask, isBoostMode]);
+    } else if (isBoostMode && !isPomodoroRunning) {
+      toggleBoostMode(false);
+    }
+  }, [dailyMode, activeTask, isBoostMode, isPomodoroRunning]);
 
   const visibleMenuItems = menuItems.filter((item) => {
     if (item.text === 'Monitoring') {

@@ -37,6 +37,7 @@ jest.mock('../context/TimerContext', () => ({
       },
     },
     toggleBoostMode: jest.fn(),
+    setDailyMode: jest.fn(),
     tasks: [],
     totalSpendTimeToday: 3600000,
     dailyChallenge: { status: 'ACTIVE' },
