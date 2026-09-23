@@ -31,6 +31,7 @@ export interface IElectronAPI {
   };
   database: {
     logWorkSession: (session: any) => Promise<void>;
+    adjustTaskWorkTime: (taskId: number, deltaMs: number) => Promise<void>;
     getTasks: (userId: number) => Promise<any[]>;
     createTask: (task: any, userId?: number) => Promise<any>;
     updateTask: (task: any) => Promise<void>;

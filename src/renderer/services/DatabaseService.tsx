@@ -170,6 +170,15 @@ const logWorkSession = async (session: {
   }
 };
 
+const adjustTaskWorkTime = async (taskId: number, deltaMs: number) => {
+  try {
+    await window.electron.database.adjustTaskWorkTime(taskId, deltaMs);
+  } catch (error) {
+    console.error('[DatabaseService] Error adjusting task work time:', error);
+    throw error;
+  }
+};
+
 const getDailyProductivity = async () => {
   try {
     const userStr = localStorage.getItem('userId');
@@ -406,6 +415,7 @@ export {
   deleteNote,
   globalSearch,
   logWorkSession,
+  adjustTaskWorkTime,
   getDailyProductivity,
   getContributionData,
   getHourlyProductivity,

@@ -554,6 +554,54 @@ export const logWorkSession = (session: {
   console.log('[DB] Work session logged and DB saved.');
 };
 
+// Reconciles work_sessions with a manual correction to a task's total spendTime. A positive
+// delta logs a new session (genuine extra time being accounted for). A negative delta reduces
+// existing sessions instead of inserting one with a negative duration - a negative-duration
+// row would net out fine in simple SUM() aggregates, but would corrupt every per-session
+// display (session counts, averages, day-grouped charts going negative). Reduction works from
+// most-recent session backward, deleting any it fully consumes and shrinking the one it
+// partially consumes, so every remaining session's duration stays >= 0.
+export const adjustTaskWorkTime = (taskId: number, deltaMs: number) => {
+  if (!db || deltaMs === 0) return;
+
+  if (deltaMs > 0) {
+    const now = Date.now();
+    logWorkSession({
+      taskId,
+      startTime: new Date(now - deltaMs).toISOString(),
+      endTime: new Date(now).toISOString(),
+      duration: deltaMs,
+    });
+    return;
+  }
+
+  let remaining = Math.abs(deltaMs);
+  const stmt = db.prepare(
+    'SELECT id, duration FROM work_sessions WHERE taskId = ? ORDER BY startTime DESC',
+  );
+  stmt.bind([taskId]);
+  const sessions: { id: number; duration: number }[] = [];
+  while (stmt.step()) {
+    sessions.push(stmt.getAsObject() as any);
+  }
+  stmt.free();
+
+  for (let i = 0; i < sessions.length && remaining > 0; i += 1) {
+    const session = sessions[i];
+    if (session.duration <= remaining) {
+      db.run('DELETE FROM work_sessions WHERE id = ?', [session.id]);
+      remaining -= session.duration;
+    } else {
+      db.run('UPDATE work_sessions SET duration = ? WHERE id = ?', [
+        session.duration - remaining,
+        session.id,
+      ]);
+      remaining = 0;
+    }
+  }
+  saveDB();
+};
+
 export const getTaskWorkSessions = (taskId: number) => {
   if (!db) return [];
   const stmt = db.prepare(

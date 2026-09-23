@@ -61,6 +61,8 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('db:get-average-sprint-capacity'),
     logWorkSession: (session: any) =>
       ipcRenderer.invoke('db:log-work-session', session),
+    adjustTaskWorkTime: (taskId: number, deltaMs: number) =>
+      ipcRenderer.invoke('db:adjust-task-work-time', taskId, deltaMs),
     getHourlyProductivity: () =>
       ipcRenderer.invoke('db:get-hourly-productivity'),
     getDailyProductivity: (userId: number) =>

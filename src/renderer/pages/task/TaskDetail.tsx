@@ -45,7 +45,7 @@ import {
   addChecklistItem,
   toggleChecklistItem,
   deleteChecklistItem,
-  logWorkSession,
+  adjustTaskWorkTime,
 } from '../../services/DatabaseService';
 import { StatusEnum } from '../../../enums/status.enum';
 import { PriorityEnum } from '../../../enums/priority.enum';
@@ -241,18 +241,14 @@ function TaskDetail() {
       // task.spendTime is the source of truth for "how much has this task's counter
       // accumulated", but every aggregate view (daily/hourly productivity charts, "Total
       // Time Spent Today") is computed from work_sessions, not from tasks.spendTime - so a
-      // manual override here would otherwise never show up in any chart. Log the delta as a
-      // correcting session (negative duration if the value was reduced) so both stay in sync.
+      // manual override here would otherwise never show up in any chart. Reconcile the two:
+      // increasing spendTime logs a new session, decreasing it shrinks/removes existing
+      // sessions (never writes a negative-duration one - a session's time spent can't be
+      // negative).
       try {
-        const now = Date.now();
-        await logWorkSession({
-          taskId: task.id,
-          startTime: new Date(now - Math.abs(spendTimeDelta)).toISOString(),
-          endTime: new Date(now).toISOString(),
-          duration: spendTimeDelta,
-        });
+        await adjustTaskWorkTime(task.id, spendTimeDelta);
       } catch (e) {
-        console.error('Failed to log manual time correction session', e);
+        console.error('Failed to reconcile manual time correction', e);
       }
     }
 

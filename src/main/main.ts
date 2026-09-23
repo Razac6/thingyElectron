@@ -40,6 +40,7 @@ import {
   getAverageTimeForTaskType,
   getAverageSprintCapacity,
   logWorkSession,
+  adjustTaskWorkTime,
   getHourlyProductivity,
   getDailyProductivity,
   getContributionData,
@@ -481,6 +482,12 @@ ipcMain.handle('db:log-work-session', async (event, session) => {
     }
   }
 });
+
+// Manual "Actual Time Spent" corrections - deliberately does not touch daily challenge
+// progress (unlike db:log-work-session), since a correction isn't newly-performed work.
+ipcMain.handle('db:adjust-task-work-time', (event, taskId, deltaMs) =>
+  adjustTaskWorkTime(taskId, deltaMs),
+);
 
 ipcMain.handle('db:global-search', (event, userId, query) =>
   globalSearch(userId, query),
