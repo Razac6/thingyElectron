@@ -128,21 +128,23 @@ function SmartInsightWidget() {
         {/* Left Side: Stats */}
         <Stack spacing={0.5} sx={{ flexGrow: 1 }}>
           <Box display="flex" alignItems="center" gap={1}>
-            <WbSunnyIcon sx={{ color: '#ffb703', fontSize: 16 }} />
+            <WbSunnyIcon sx={{ color: 'secondary.main', fontSize: 16 }} />
             <Typography variant="caption">
               <strong>Peak:</strong> {peakHourRange}
             </Typography>
           </Box>
 
           <Box display="flex" alignItems="center" gap={1}>
-            <CenterFocusStrongIcon sx={{ color: '#219ebc', fontSize: 16 }} />
+            <CenterFocusStrongIcon
+              sx={{ color: 'primary.main', fontSize: 16 }}
+            />
             <Typography variant="caption">
               <strong>Deep Work:</strong> {focusText}
             </Typography>
           </Box>
 
           <Box display="flex" alignItems="center" gap={1}>
-            <BatteryAlertIcon sx={{ color: '#fb8500', fontSize: 16 }} />
+            <BatteryAlertIcon sx={{ color: 'warning.main', fontSize: 16 }} />
             <Typography variant="caption">
               <strong>Max Focus:</strong> {focusScore.longestSessionToday || 0}m
               <span style={{ opacity: 0.6, marginLeft: 4 }}>
@@ -160,7 +162,10 @@ function SmartInsightWidget() {
             >
               {getTrendIcon()}
               <Typography variant="caption">
-                <strong>Trend:</strong> {trend.direction}
+                <strong>Trend:</strong>{' '}
+                {trend.direction === 'insufficient'
+                  ? 'not enough data'
+                  : trend.direction}
               </Typography>
             </Box>
           </Tooltip>
@@ -172,10 +177,10 @@ function SmartInsightWidget() {
                   sx={{
                     color:
                       sprintAnalysis.risk === 'Critical'
-                        ? '#d32f2f'
+                        ? 'error.main'
                         : sprintAnalysis.risk === 'At Risk'
-                          ? '#fb8500'
-                          : '#2e7d32',
+                          ? 'warning.main'
+                          : 'success.main',
                     fontSize: 16,
                   }}
                 />
@@ -193,10 +198,10 @@ function SmartInsightWidget() {
                         width: `${(sprintAnalysis.completed / sprintAnalysis.total) * 100}%`,
                         bgcolor:
                           sprintAnalysis.risk === 'Critical'
-                            ? '#d32f2f'
+                            ? 'error.main'
                             : sprintAnalysis.risk === 'At Risk'
-                              ? '#fb8500'
-                              : '#2e7d32',
+                              ? 'warning.main'
+                              : 'success.main',
                         height: '100%',
                         borderRadius: 2,
                       }}
@@ -210,8 +215,8 @@ function SmartInsightWidget() {
                     fontWeight: 'bold',
                     color:
                       sprintAnalysis.risk === 'Critical'
-                        ? '#d32f2f'
-                        : '#2e7d32',
+                        ? 'error.main'
+                        : 'success.main',
                   }}
                 >
                   {sprintAnalysis.risk}
@@ -228,7 +233,7 @@ function SmartInsightWidget() {
                 gap={1}
                 sx={{ cursor: 'help' }}
               >
-                <EmojiEventsIcon sx={{ color: '#2e7d32', fontSize: 16 }} />
+                <EmojiEventsIcon sx={{ color: 'success.main', fontSize: 16 }} />
                 <Typography variant="caption">
                   <strong>Nawyki:</strong> +{habitCorrelation.impact}% focus
                 </Typography>

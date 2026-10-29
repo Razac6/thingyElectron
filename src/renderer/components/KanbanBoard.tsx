@@ -14,6 +14,7 @@ import TimerIcon from '@mui/icons-material/Timer';
 import { Task } from '../../interfaces/task.interface';
 import { StatusEnum } from '../../enums/status.enum';
 import { PriorityEnum } from '../../enums/priority.enum';
+import { useIsLuma } from '../themes';
 
 interface KanbanBoardProps {
   tasks: Task[];
@@ -37,11 +38,33 @@ const getPriorityColor = (priority: PriorityEnum) => {
   }
 };
 
+// `color` tints the whole column in Classic; Luma keeps columns neutral and shows
+// `accent` (a palette path) as a status dot in the header instead.
 const COLUMN_CONFIG = [
-  { status: StatusEnum.TO_DO, label: 'To Do', color: '#e9ecef' },
-  { status: StatusEnum.IN_PROGRESS, label: 'In Progress', color: '#e3f2fd' },
-  { status: StatusEnum.IN_REVIEW, label: 'In Review', color: '#f3e5f5' },
-  { status: StatusEnum.COMPLETED, label: 'Completed', color: '#e8f5e9' },
+  {
+    status: StatusEnum.TO_DO,
+    label: 'To Do',
+    color: '#e9ecef',
+    accent: 'text.disabled',
+  },
+  {
+    status: StatusEnum.IN_PROGRESS,
+    label: 'In Progress',
+    color: '#e3f2fd',
+    accent: 'progress.main',
+  },
+  {
+    status: StatusEnum.IN_REVIEW,
+    label: 'In Review',
+    color: '#f3e5f5',
+    accent: 'review.main',
+  },
+  {
+    status: StatusEnum.COMPLETED,
+    label: 'Completed',
+    color: '#e8f5e9',
+    accent: 'success.main',
+  },
 ];
 
 export function KanbanBoard({
@@ -52,6 +75,7 @@ export function KanbanBoard({
   onStopTimer,
   anyTimerRunning,
 }: KanbanBoardProps) {
+  const isLuma = useIsLuma();
   const handleDragStart = (e: React.DragEvent, taskId: number) => {
     e.dataTransfer.setData('taskId', taskId.toString());
   };
@@ -90,20 +114,34 @@ export function KanbanBoard({
           onDragOver={handleDragOver}
           onDrop={(e) => handleDrop(e, col.status)}
           sx={{
-            flex: '0 0 280px',
+            flex: '1 1 0',
+            minWidth: 0,
             display: 'flex',
             flexDirection: 'column',
-            bgcolor: col.color,
-            borderRadius: 2,
+            bgcolor: isLuma ? 'rgba(17, 18, 20, 0.035)' : col.color,
+            borderRadius: isLuma ? '24px' : 2,
             p: 1.5,
           }}
         >
           <Typography
             variant="subtitle2"
             sx={{
+              ...(isLuma && {
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+                px: 0.5,
+                '&::before': {
+                  content: '""',
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  bgcolor: col.accent,
+                },
+              }),
               fontWeight: 800,
               mb: 2,
-              color: '#023047',
+              color: 'text.primary',
               opacity: 0.8,
               textTransform: 'uppercase',
               fontSize: '0.7rem',
@@ -127,6 +165,7 @@ export function KanbanBoard({
                     cursor: 'grab',
                     '&:active': { cursor: 'grabbing' },
                     borderLeft: `4px solid ${getPriorityColor(task.priority as PriorityEnum)}`,
+                    ...(isLuma && { borderRadius: '16px' }),
                     transition: 'transform 0.2s',
                     '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 },
                   }}
@@ -137,7 +176,7 @@ export function KanbanBoard({
                       sx={{
                         fontWeight: 600,
                         mb: 1,
-                        color: '#023047',
+                        color: 'text.primary',
                         lineHeight: 1.2,
                       }}
                     >

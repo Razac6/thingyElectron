@@ -3,6 +3,7 @@ import CalendarHeatmap from 'react-calendar-heatmap';
 import { Tooltip } from 'react-tooltip';
 import 'react-calendar-heatmap/dist/styles.css';
 import { Paper, Box } from '@mui/material';
+import { alpha, useTheme } from '@mui/material/styles';
 import { useTimer } from '../context/TimerContext';
 
 const formatTooltipContent = (value: any) => {
@@ -26,7 +27,25 @@ const formatTooltipContent = (value: any) => {
   return `${date}: ${remainingMinutes}m`;
 };
 
-function ContributionGraph() {
+const lightScale = {
+  empty: '#eeeeee',
+  steps: ['#8ecae6', '#219ebc', '#116581', '#023047'],
+};
+
+function ContributionGraph({ tone = 'light' }: { tone?: 'light' | 'dark' }) {
+  const { palette } = useTheme();
+  const accent = palette.secondary.main;
+  // Dark tone sits on the Activity band (palette.band exists only in the app's themes)
+  const onBand = palette.band?.contrastText ?? '#ffffff';
+  // 'dark' renders without a card, in shades of the theme accent, for a dark surface
+  const scale =
+    tone === 'dark'
+      ? {
+          empty: alpha(onBand, 0.1),
+          steps: [0.3, 0.55, 0.8, 1].map((a) => alpha(accent, a)),
+        }
+      : lightScale;
+
   const { contributionData } = useTimer();
 
   const data = useMemo(() => {
@@ -45,21 +64,28 @@ function ContributionGraph() {
       elevation={3}
       sx={{
         p: 2,
+        ...(tone === 'dark' && {
+          p: 0,
+          bgcolor: 'transparent',
+          boxShadow: 'none',
+          '.react-calendar-heatmap text': { fill: alpha(onBand, 0.45) },
+          '.react-calendar-heatmap rect': { rx: 2 },
+        }),
         '.react-calendar-heatmap-week:nth-of-type(1)': { display: 'none' },
         '.react-calendar-heatmap .color-empty': {
-          fill: '#eeeeee',
+          fill: scale.empty,
         },
         '.react-calendar-heatmap .color-scale-1': {
-          fill: '#8ecae6',
+          fill: scale.steps[0],
         },
         '.react-calendar-heatmap .color-scale-2': {
-          fill: '#219ebc',
+          fill: scale.steps[1],
         },
         '.react-calendar-heatmap .color-scale-3': {
-          fill: '#116581',
+          fill: scale.steps[2],
         },
         '.react-calendar-heatmap .color-scale-4': {
-          fill: '#023047',
+          fill: scale.steps[3],
         },
       }}
     >

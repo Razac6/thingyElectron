@@ -6,7 +6,7 @@ import { app } from 'electron';
 import {
   logSystemEvent,
   getDailyBio,
-  getAiMaturity,
+  getActiveUserId,
   getSetting,
   setSetting,
   getTasks,
@@ -15,12 +15,12 @@ import {
   getHabitLogs,
   getActiveSprint,
   getSprintTasks,
-  getTagAnalytics,
-  getTagByName,
   getFocusContext,
 } from './db';
 import { ProductivityAnalyst } from './ProductivityAnalysis';
 import { personalityEngine, AiMood } from './PersonalityEngine';
+import { estimateFromHistory } from './TaskEstimator';
+import { computeHabitStatus } from './habitStatus';
 
 // Simple mapping for priorities
 const PRIORITY_MAP: { [key: string]: number } = {
@@ -43,7 +43,9 @@ const PREDICTION_SANITY_FLOOR = 5; // Below this, a prediction is treated as imp
 const LOW_SLEEP_THRESHOLD = 50;
 const HIGH_HABIT_SCORE = 0.8;
 const MED_HABIT_SCORE = 0.5;
-const AI_MATURITY_MAX = 100; // getAiMaturity() scale (0-100); used to weight net vs. baseline blending
+// Samples the current weights must have learned from before the net's own prediction is
+// trusted fully over the baseline (similar-task history, see TaskEstimator).
+const FULL_TRUST_SAMPLES = 100;
 
 // Model capacity / regularization - kept small on purpose: a personal task tracker realistically
 // trains on tens to low hundreds of completed tasks, not thousands, so a large network just overfits.
@@ -73,6 +75,9 @@ export class NeuralCore {
   isTraining: boolean = false;
 
   lastTrainingTime: number = 0;
+
+  // Samples the currently loaded weights were trained on - 0 for a fresh/reset model.
+  trainedSamples: number = 0;
 
   constructor() {
     this.model = tf.sequential();
@@ -130,7 +135,10 @@ export class NeuralCore {
         shape: w.shape,
         data: Array.from(w.dataSync()),
       }));
-      fs.writeFileSync(MODEL_PATH, JSON.stringify(weightData));
+      fs.writeFileSync(
+        MODEL_PATH,
+        JSON.stringify({ samples: this.trainedSamples, weights: weightData }),
+      );
     } catch (e) {
       log.error('Failed to save neural weights', e);
     }
@@ -139,7 +147,10 @@ export class NeuralCore {
   private async loadWeights() {
     if (!fs.existsSync(MODEL_PATH)) return;
     try {
-      const data = JSON.parse(fs.readFileSync(MODEL_PATH, 'utf-8'));
+      const raw = JSON.parse(fs.readFileSync(MODEL_PATH, 'utf-8'));
+      // Older files stored the bare weights array, without the sample count
+      const data = Array.isArray(raw) ? raw : raw.weights;
+      const samples = Array.isArray(raw) ? 0 : Number(raw.samples) || 0;
       // Shape must be stored and restored explicitly - dataSync() flattens each tensor, so
       // reconstructing without the original shape produces a 1D tensor setWeights() rejects.
       const weights = data.map((w: { shape: number[]; data: number[] }) =>
@@ -150,6 +161,7 @@ export class NeuralCore {
       // caught below so we can delete the stale file and retrain from scratch.
       try {
         this.model.setWeights(weights);
+        this.trainedSamples = samples;
         logSystemEvent('NeuralCore memory loaded from disk.', 'SYSTEM');
       } catch (weightError) {
         log.error('Weight Mismatch during setWeights. Resetting.', weightError);
@@ -176,6 +188,7 @@ export class NeuralCore {
       // Re-initialize model to be sure it's clean
       this.model = tf.sequential();
       this.initModel();
+      this.trainedSamples = 0;
     }
   }
 
@@ -270,22 +283,36 @@ export class NeuralCore {
     });
   }
 
-  async train(tasks: any[]) {
-    if (this.isTraining) return;
-    const now = Date.now();
-    if (now - this.lastTrainingTime < TRAINING_COOLDOWN_MS) return;
+  // How much the loaded model has actually learned (0-100), used to blend its prediction
+  // with the baseline. Past training runs don't count - a reset model knows nothing.
+  getMaturity(): number {
+    return Math.min(
+      100,
+      Math.round((this.trainedSamples / FULL_TRUST_SAMPLES) * 100),
+    );
+  }
 
-    const userId = tasks.length > 0 ? tasks[0].userId : 1;
+  // Resolves true only when the model was actually fitted - callers log the outcome, and a
+  // skipped run (cooldown, too little data) must not be reported as a completed training.
+  async train(tasks: any[]): Promise<boolean> {
+    if (this.isTraining) return false;
+    const now = Date.now();
+    if (now - this.lastTrainingTime < TRAINING_COOLDOWN_MS) return false;
+
+    const userId = tasks.length > 0 ? tasks[0].userId : getActiveUserId();
     this.isTraining = true;
     this.lastTrainingTime = now;
 
     try {
       const { inputs, outputs } = this.preprocessData(tasks, userId);
       if (inputs.shape[0] < MIN_TRAINING_SAMPLES) {
-        this.isTraining = false;
+        logSystemEvent(
+          `[NEURAL] Training skipped: ${inputs.shape[0]} completed tasks with tracked time (need ${MIN_TRAINING_SAMPLES}).`,
+          'LEARNING',
+        );
         inputs.dispose();
         outputs.dispose();
-        return;
+        return false;
       }
 
       const sampleCount = inputs.shape[0];
@@ -323,14 +350,17 @@ export class NeuralCore {
         `[NEURAL] Training complete: ${epochsRun}/${MAX_EPOCHS} epochs${earlyStopNote}, ${sampleCount} samples, loss=${lossStr}${valLossStr}`,
         'LEARNING',
       );
+      this.trainedSamples = sampleCount;
       this.saveWeights();
       const trainings = Number(getSetting('neural_training_count') || 0) + 1;
       setSetting('neural_training_count', String(trainings));
 
       inputs.dispose();
       outputs.dispose();
+      return true;
     } catch (e) {
       log.error('Training failed', e);
+      return false;
     } finally {
       this.isTraining = false;
     }
@@ -339,27 +369,12 @@ export class NeuralCore {
   predict(task: any): number {
     const dateObj = new Date();
     const dateStr = dateObj.toISOString().split('T')[0];
-    const userId = task.userId || 1;
+    const userId = task.userId || getActiveUserId();
 
     const habits = getHabits(userId);
     const logs = getHabitLogs(userId);
     const { sleep, meetingLoad, priority, habitScore, storyPoints } =
       this.computeCommonFeatures(task, dateStr, habits, logs);
-
-    let tagEmaSum = 0;
-    let tagCount = 0;
-    if (task.tags && Array.isArray(task.tags)) {
-      task.tags.forEach((tagName: string) => {
-        const tagId = getTagByName(tagName);
-        if (tagId) {
-          const analytics = getTagAnalytics(tagId[0] as number);
-          if (analytics && analytics.completed_count > 0) {
-            tagEmaSum += analytics.ema;
-            tagCount++;
-          }
-        }
-      });
-    }
 
     const focusContext = getFocusContext(Date.now()); // Real-time context
 
@@ -387,23 +402,24 @@ export class NeuralCore {
       return MIN_PREDICTED_MINUTES;
     }
 
-    // Blend the net's raw prediction with a simpler baseline, weighted by how much the model has
-    // actually learned (getAiMaturity: training runs + completed-task volume, 0-100). At low
-    // maturity the net hasn't seen enough data to be trusted alone, so lean on tag history (if any)
-    // or the user's own manual estimate instead.
-    let baseline: number | null = null;
-    if (tagCount > 0) {
-      baseline = tagEmaSum / tagCount / (1000 * 60); // historical tag average, minutes
-    } else if (task.estimate) {
-      baseline = Number(task.estimate) * 60; // manual estimate, hours -> minutes
+    // Blend the net's raw prediction with a baseline from the user's own history of similar
+    // tasks (tags, type, link context; see TaskEstimator), weighted by how much the model has
+    // actually learned (getMaturity: samples behind the loaded weights, 0-100). Until then the
+    // net isn't trusted alone. Without history, fall back to the user's manual estimate.
+    const suggestion = estimateFromHistory(task, getTasks(userId));
+    let baseline: number | null = suggestion ? suggestion.minutes : null;
+    if (baseline === null && Number(task.estimate) > 0) {
+      baseline = Number(task.estimate) * 60; // hours -> minutes
     }
 
     if (baseline !== null) {
-      const neuralWeight = Math.min(
+      const neuralWeight = this.getMaturity() / 100;
+      // A short baseline is real history, not a glitch - only the floor below guards the
+      // net's raw output when there's nothing to compare against.
+      return Math.max(
         1,
-        Math.max(0, getAiMaturity() / AI_MATURITY_MAX),
+        neuralWeight * finalMin + (1 - neuralWeight) * baseline,
       );
-      finalMin = neuralWeight * finalMin + (1 - neuralWeight) * baseline;
     }
 
     return finalMin < PREDICTION_SANITY_FLOOR
@@ -414,7 +430,7 @@ export class NeuralCore {
   predictForTask(task: any): number {
     const dateObj = parseDate(task.updateStatusDate || task.createdAt);
     const dateStr = dateObj.toISOString().split('T')[0];
-    const userId = task.userId || 1;
+    const userId = task.userId || getActiveUserId();
 
     const habits = getHabits(userId);
     const logs = getHabitLogs(userId);
@@ -448,10 +464,7 @@ export class NeuralCore {
 
     // Same confidence blend as predict() - see comment there.
     if (task.estimate) {
-      const neuralWeight = Math.min(
-        1,
-        Math.max(0, getAiMaturity() / AI_MATURITY_MAX),
-      );
+      const neuralWeight = this.getMaturity() / 100;
       value =
         neuralWeight * value +
         (1 - neuralWeight) * (Number(task.estimate) * 60);
@@ -462,8 +475,12 @@ export class NeuralCore {
 
   // Real prediction accuracy (0-100) from completed tasks in the last `days`, based on actual
   // percent error (predicted vs. actual duration) rather than a data-volume proxy. Backs the
-  // "Confidence" stat shown in the AI Status widget and System Logs page.
-  getPredictionAccuracy(userId: number = 1, days: number = 14): number {
+  // "Confidence" stat on the System Logs page. null when there's nothing recent to score -
+  // that's "unknown", not 0% accurate.
+  getPredictionAccuracy(
+    userId: number = getActiveUserId(),
+    days: number = 14,
+  ): number | null {
     const tasks = getTasks(userId);
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - days);
@@ -476,7 +493,7 @@ export class NeuralCore {
         parseDate(t.updateStatusDate) >= cutoffDate,
     );
 
-    if (recentCompleted.length === 0) return 0;
+    if (recentCompleted.length === 0) return null;
 
     let totalErrorPct = 0;
     recentCompleted.forEach((task) => {
@@ -581,7 +598,7 @@ export class NeuralCore {
 
   // Shared by getNeuralAdvice and the db:get-ai-message IPC handler (main.ts) so both use the
   // same real sprint-risk assessment instead of duplicating the computation.
-  getSprintRiskContext(userId: number = 1): {
+  getSprintRiskContext(userId: number = getActiveUserId()): {
     risk: any;
     tasksRemaining: number;
   } {
@@ -617,16 +634,16 @@ export class NeuralCore {
 
     const date = new Date();
     const dateStr = date.toISOString().split('T')[0];
-    const userId = 1;
+    const userId = getActiveUserId();
 
     const bio = getDailyBio(dateStr);
     const sleep = bio.sleepScore !== null ? Number(bio.sleepScore) : 75;
-    const habits = getHabits(userId);
-    const logs = getHabitLogs(userId);
-    const habitCount = logs.filter(
-      (l: any) => l.date === dateStr && l.value >= 1,
-    ).length;
-    const habitScore = habits.length > 0 ? habitCount / habits.length : 0.5;
+    // Only habits scheduled for today count; none due = neutral
+    const habitScore =
+      computeHabitStatus(
+        getHabits(userId) as any[],
+        getHabitLogs(userId) as any[],
+      ).score ?? 0.5;
 
     const { risk, tasksRemaining } = this.getSprintRiskContext(userId);
 

@@ -7,6 +7,7 @@ import '@fontsource/roboto/500.css';
 import '@fontsource/roboto/700.css';
 
 const theme = createTheme({
+  variant: 'classic',
   palette: {
     primary: {
       main: '#219ebc', // Main blue
@@ -105,4 +106,16 @@ const theme = createTheme({
   },
 });
 
-export default theme;
+// Task / sprint status colors - exactly what statuses always used (primary / secondary).
+// Custom palette keys aren't completed by createTheme, so pass full color objects.
+export default createTheme(theme, {
+  palette: {
+    progress: theme.palette.primary,
+    review: theme.palette.secondary,
+    highlight: theme.palette.secondary,
+    band: theme.palette.augmentColor({
+      color: { main: '#023047' },
+      name: 'band',
+    }),
+  },
+});

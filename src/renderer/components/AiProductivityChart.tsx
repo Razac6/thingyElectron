@@ -3,7 +3,6 @@ import {
   Box,
   Paper,
   Typography,
-  CircularProgress,
   Tooltip,
   IconButton,
   Alert,
@@ -22,6 +21,7 @@ import {
 } from 'chart.js';
 import ScienceIcon from '@mui/icons-material/Science';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import { LiquidLoader } from './LiquidFill';
 
 ChartJS.register(
   CategoryScale,
@@ -125,7 +125,7 @@ function AiProductivityChart() {
           justifyContent: 'center',
         }}
       >
-        <CircularProgress />
+        <LiquidLoader size={40} />
       </Paper>
     );
   }

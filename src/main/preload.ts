@@ -124,6 +124,8 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('db:delete-checklist-item', itemId),
     predictDuration: (task: any) =>
       ipcRenderer.invoke('db:predict-duration', task),
+    suggestEstimate: (task: any) =>
+      ipcRenderer.invoke('db:suggest-estimate', task),
     getAiPerformance: (userId: number, days?: number) =>
       ipcRenderer.invoke('db:get-ai-performance', userId, days),
     generateDailyReport: (userId: number) =>
@@ -174,6 +176,14 @@ contextBridge.exposeInMainWorld('electron', {
     setDomainCategory: (domain: string, category: string) =>
       ipcRenderer.invoke('db:set-domain-category', domain, category),
     getAppStats: (days: number) => ipcRenderer.invoke('db:get-app-stats', days),
+    getLastActivityTime: (start: number, end: number) =>
+      ipcRenderer.invoke('db:get-last-activity-time', start, end),
+    startFocusBlock: (block: any) =>
+      ipcRenderer.invoke('db:start-focus-block', block),
+    finishFocusBlock: (id: number, achieved: boolean) =>
+      ipcRenderer.invoke('db:finish-focus-block', id, achieved),
+    getTodayWins: (userId: any) =>
+      ipcRenderer.invoke('db:get-today-wins', userId),
     setAppCategory: (appName: string, category: string) =>
       ipcRenderer.invoke('db:set-app-category', appName, category),
     startNewExpedition: () => ipcRenderer.invoke('db:start-new-expedition'),

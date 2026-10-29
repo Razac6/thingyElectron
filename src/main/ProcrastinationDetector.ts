@@ -9,7 +9,21 @@ import {
   getAppSwitchCount,
   getWebDistractionRatio,
   getDaysSinceLastSimilarTask,
+  getActiveUserId,
 } from './db';
+
+// Task dates are stored both as ISO strings and as "dd.mm.yyyy" (older rows) - new Date()
+// misreads the latter, which would mislabel training rows.
+const parseTaskDate = (str: string): number => {
+  let d = new Date(str);
+  if (Number.isNaN(d.getTime()) || /^\d{1,2}\.\d{1,2}\.\d{4}$/.test(str)) {
+    const [day, month, year] = String(str).split('.');
+    if (year) {
+      d = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+    }
+  }
+  return d.getTime();
+};
 
 export interface ProcrastinationRisk {
   taskId: number;
@@ -30,6 +44,10 @@ export class ProcrastinationDetector {
   private isTraining: boolean = false;
 
   private lastTrainingTime: number = 0;
+
+  // False until weights were loaded or fitted - an untrained net outputs noise, so predict()
+  // reports no risk instead of a made-up percentage.
+  private isTrained: boolean = false;
 
   constructor() {
     this.model = tf.sequential();
@@ -93,6 +111,7 @@ export class ProcrastinationDetector {
 
       try {
         this.model.setWeights(weights);
+        this.isTrained = true;
         logSystemEvent('ProcrastinationDetector weights loaded', 'SYSTEM');
       } catch (weightError) {
         log.error('Weight mismatch in ProcrastinationDetector. Resetting.');
@@ -238,13 +257,23 @@ export class ProcrastinationDetector {
       switchCount: getAppSwitchCount(recentWindowStart, now),
       webDistractionScore: getWebDistractionRatio(recentWindowStart, now),
       daysSinceLastSimilar: getDaysSinceLastSimilarTask(
-        task.userId || 1,
+        task.userId || getActiveUserId(),
         task.type || 'TASK',
         task.id,
       ),
     };
 
     const features = this.extractFeatures(task, historicalData);
+
+    if (!this.isTrained) {
+      return {
+        taskId: task.id,
+        risk: 0,
+        confidence: 0,
+        reasons: [],
+        suggestion: '',
+      };
+    }
 
     const risk = tf.tidy(() => {
       const input = tf.tensor2d([features], [1, 8]);
@@ -288,11 +317,12 @@ export class ProcrastinationDetector {
     return risks.sort((a, b) => b.risk - a.risk);
   }
 
-  async train(userId: number): Promise<void> {
-    if (this.isTraining) return;
+  // Resolves true only when the model was actually fitted (see NeuralCore.train).
+  async train(userId: number): Promise<boolean> {
+    if (this.isTraining) return false;
 
     const now = Date.now();
-    if (now - this.lastTrainingTime < 24 * 60 * 60 * 1000) return; // Train once per day
+    if (now - this.lastTrainingTime < 24 * 60 * 60 * 1000) return false; // Train once per day
 
     this.isTraining = true;
     this.lastTrainingTime = now;
@@ -307,8 +337,8 @@ export class ProcrastinationDetector {
       tasks.forEach((task: any) => {
         if (task.status === 'Completed' && task.estimate) {
           const actualHours = (task.spendTime || 0) / (1000 * 60 * 60);
-          const createdDate = new Date(task.createdAt).getTime();
-          const completedDate = new Date(task.updateStatusDate).getTime();
+          const createdDate = parseTaskDate(task.createdAt);
+          const completedDate = parseTaskDate(task.updateStatusDate);
           const daysToComplete =
             (completedDate - createdDate) / (1000 * 60 * 60 * 24);
 
@@ -340,8 +370,11 @@ export class ProcrastinationDetector {
       });
 
       if (labeledData.length < 10) {
-        this.isTraining = false;
-        return; // Need at least 10 samples
+        logSystemEvent(
+          `[ProcrastinationDetector] Training skipped: ${labeledData.length} completed tasks with an estimate (need 10).`,
+          'LEARNING',
+        );
+        return false;
       }
 
       const { inputs, labels } = tf.tidy(() => {
@@ -372,8 +405,11 @@ export class ProcrastinationDetector {
 
       inputs.dispose();
       labels.dispose();
+      this.isTrained = true;
+      return true;
     } catch (e) {
       log.error('ProcrastinationDetector training failed', e);
+      return false;
     } finally {
       this.isTraining = false;
     }

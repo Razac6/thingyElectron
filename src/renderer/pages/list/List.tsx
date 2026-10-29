@@ -80,6 +80,8 @@ import {
   toggleChecklistItem,
 } from '../../services/DatabaseService';
 import { KanbanBoard } from '../../components/KanbanBoard';
+import { usePageActions } from '../../context/PageActionsContext';
+import { LiquidLoader } from '../../components/LiquidFill';
 
 // Flowing highlight sweep for the active timer's row - plain CSS animation, no JS ticking
 // involved at all. Color is picked once per row-class evaluation (see getActiveRowLiquidClass)
@@ -174,6 +176,11 @@ function List() {
   const [editingStatusId, setEditingStatusId] = useState<number | null>(null);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [isPredicting, setIsPredicting] = useState(false);
+  // Explainable estimate from similar past tasks, shown under the Estimate field
+  type EstimateHint = Awaited<
+    ReturnType<typeof window.electron.database.suggestEstimate>
+  >;
+  const [estimateHint, setEstimateHint] = useState<EstimateHint>(null);
   const [view, setView] = useState<'list' | 'board'>(() => {
     return (localStorage.getItem('task_view') as 'list' | 'board') || 'list';
   });
@@ -338,27 +345,120 @@ function List() {
     }
   };
 
+  const getUserId = () =>
+    localStorage.getItem('userId')
+      ? JSON.parse(localStorage.getItem('userId')!)
+      : 1;
+
+  const contextForEstimate = (estimate: number) => ({
+    title: newTask.title,
+    priority: newTask.priority,
+    type: newTask.type,
+    tags: newTask.tags || [],
+    link: newTask.link,
+    estimate,
+    userId: getUserId(),
+  });
+
   const handleAiSuggestEstimate = async () => {
     if (!newTask.title) return;
     setIsPredicting(true);
     try {
-      const taskForPrediction = {
-        title: newTask.title,
-        priority: newTask.priority,
-        tags: newTask.tags || [],
-        userId: localStorage.getItem('userId')
-          ? JSON.parse(localStorage.getItem('userId')!)
-          : 1,
-      };
-      const predictionMin =
-        await window.electron.database.predictDuration(taskForPrediction);
-      const hours = Number((predictionMin / 60).toFixed(1));
-      setNewTask((prev) => ({ ...prev, estimate: hours }));
+      // No estimate sent: ask for the typical duration of similar tasks, not a correction
+      const hint = await window.electron.database.suggestEstimate(
+        contextForEstimate(0),
+      );
+      const minutes =
+        hint?.minutes ??
+        (await window.electron.database.predictDuration(contextForEstimate(0)));
+      setNewTask((prev) => ({
+        ...prev,
+        estimate: Math.max(0.1, Number((minutes / 60).toFixed(1))),
+      }));
+      setEstimateHint(hint);
     } catch (error) {
       console.error('AI Prediction failed', error);
     } finally {
       setIsPredicting(false);
     }
+  };
+
+  // Estimate coach: once an estimate is typed, compare it with how similar tasks actually
+  // went (debounced while the user edits the task's context)
+  useEffect(() => {
+    if (!openDialog || !newTask.title || !(Number(newTask.estimate) > 0)) {
+      setEstimateHint(null);
+      return undefined;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        setEstimateHint(
+          await window.electron.database.suggestEstimate(
+            contextForEstimate(Number(newTask.estimate)),
+          ),
+        );
+      } catch (error) {
+        setEstimateHint(null);
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    openDialog,
+    newTask.title,
+    newTask.estimate,
+    newTask.type,
+    newTask.link,
+    newTask.tags,
+  ]);
+
+  const formatMinutes = (minutes: number) => {
+    const h = Math.floor(minutes / 60);
+    const m = Math.round(minutes % 60);
+    if (!h) return `${m}m`;
+    return m ? `${h}h ${m}m` : `${h}h`;
+  };
+
+  // One line of explanation: what the suggestion is based on
+  const renderEstimateHint = () => {
+    if (!estimateHint) return null;
+    const basedOn = estimateHint.similarTasks
+      ? `${estimateHint.sampleSize} similar tasks${
+          estimateHint.matchedOn.length
+            ? ` (${estimateHint.matchedOn.join(', ')})`
+            : ''
+        }`
+      : `all ${estimateHint.sampleSize} of your tracked tasks`;
+    const capitalized = (text: string) =>
+      text.charAt(0).toUpperCase() + text.slice(1);
+    const suggestedHours = Number((estimateHint.minutes / 60).toFixed(1));
+    const isCorrection =
+      estimateHint.basis === 'ratio' && estimateHint.ratio !== null;
+    // A correction within 15% isn't worth a nudge
+    if (isCorrection && Math.abs(estimateHint.ratio! - 1) < 0.15) return null;
+    return (
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        sx={{ display: 'block', mt: 0.5, lineHeight: 1.4 }}
+      >
+        {isCorrection
+          ? `${capitalized(basedOn)} took ${estimateHint.ratio}× their estimate → ~${formatMinutes(estimateHint.minutes)}`
+          : `Typical for ${basedOn}: ~${formatMinutes(estimateHint.minutes)}`}
+        {estimateHint.confidence === 'low' && ' · little data yet'}
+        {isCorrection && Number(newTask.estimate) !== suggestedHours && (
+          <Button
+            size="small"
+            onClick={() =>
+              setNewTask((prev) => ({ ...prev, estimate: suggestedHours }))
+            }
+            sx={{ ml: 0.5, minWidth: 0, py: 0, px: 1, fontSize: '0.75rem' }}
+          >
+            Apply
+          </Button>
+        )}
+      </Typography>
+    );
   };
 
   // Drag & Drop Handlers
@@ -491,8 +591,8 @@ function List() {
     }
     const taskToCreate: Partial<Task> = {
       ...newTask,
-      createdAt: new Date().toLocaleDateString(),
-      updateStatusDate: new Date().toLocaleDateString(),
+      createdAt: new Date().toISOString(),
+      updateStatusDate: new Date().toISOString(),
       spendTime: 0,
       startTimer: null,
     };
@@ -899,11 +999,11 @@ function List() {
           );
         }
 
-        let color: 'success' | 'primary' | 'default' | 'warning' = 'default';
+        let color: 'success' | 'progress' | 'default' | 'warning' = 'default';
         let customStyle = {};
 
         if (params.value === StatusEnum.COMPLETED) color = 'success';
-        else if (params.value === StatusEnum.IN_PROGRESS) color = 'primary';
+        else if (params.value === StatusEnum.IN_PROGRESS) color = 'progress';
         else if (params.value === StatusEnum.IN_REVIEW)
           customStyle = { backgroundColor: '#ede7f6', color: '#5e35b1' };
 
@@ -999,6 +1099,29 @@ function List() {
   const currentTaskIndex = filteredTasks.findIndex(
     (t) => t.id === currentMenuTaskId,
   );
+
+  // Luma shows these next to search instead of the SpeedDial
+  const actionsInToolbar = usePageActions([
+    {
+      key: 'toggle-completed',
+      label: showCompletedTasks ? 'Hide Completed' : 'Show Completed',
+      icon: showCompletedTasks ? <VisibilityOffIcon /> : <VisibilityIcon />,
+      onClick: () => setShowCompletedTasks(!showCompletedTasks),
+    },
+    {
+      key: 'ai-schedule',
+      label: 'AI Auto-Planner',
+      icon: <AutoFixHighIcon />,
+      onClick: handleAutoSchedule,
+    },
+    {
+      key: 'add',
+      label: 'New task',
+      icon: <AddIcon fontSize="small" />,
+      onClick: () => setOpenDialog(true),
+      primary: true,
+    },
+  ]);
 
   return (
     <Box
@@ -1108,7 +1231,7 @@ function List() {
               height: '100%',
             }}
           >
-            <CircularProgress />
+            <LiquidLoader label="Loading tasks" />
           </Box>
         ) : view === 'list' ? (
           <DataGrid
@@ -1332,35 +1455,39 @@ function List() {
         )}
       </Dialog>
 
-      <SpeedDial
-        ariaLabel="Task Actions"
-        sx={{ position: 'absolute', bottom: 72, right: 16 }}
-        icon={<SpeedDialIcon />}
-        onClose={() => {}}
-        onOpen={() => {}}
-        direction="up"
-      >
-        <SpeedDialAction
-          key="add"
-          icon={<AddIcon />}
-          tooltipTitle="Add New Task"
-          onClick={() => setOpenDialog(true)}
-        />
-        <SpeedDialAction
-          key="ai-schedule"
-          icon={<AutoFixHighIcon color="secondary" />}
-          tooltipTitle="AI Auto-Planner"
-          onClick={handleAutoSchedule}
-        />
-        <SpeedDialAction
-          key="toggle-completed"
-          icon={showCompletedTasks ? <VisibilityOffIcon /> : <VisibilityIcon />}
-          tooltipTitle={
-            showCompletedTasks ? 'Hide Completed' : 'Show Completed'
-          }
-          onClick={() => setShowCompletedTasks(!showCompletedTasks)}
-        />
-      </SpeedDial>
+      {!actionsInToolbar && (
+        <SpeedDial
+          ariaLabel="Task Actions"
+          sx={{ position: 'absolute', bottom: 72, right: 16 }}
+          icon={<SpeedDialIcon />}
+          onClose={() => {}}
+          onOpen={() => {}}
+          direction="up"
+        >
+          <SpeedDialAction
+            key="add"
+            icon={<AddIcon />}
+            tooltipTitle="Add New Task"
+            onClick={() => setOpenDialog(true)}
+          />
+          <SpeedDialAction
+            key="ai-schedule"
+            icon={<AutoFixHighIcon color="secondary" />}
+            tooltipTitle="AI Auto-Planner"
+            onClick={handleAutoSchedule}
+          />
+          <SpeedDialAction
+            key="toggle-completed"
+            icon={
+              showCompletedTasks ? <VisibilityOffIcon /> : <VisibilityIcon />
+            }
+            tooltipTitle={
+              showCompletedTasks ? 'Hide Completed' : 'Show Completed'
+            }
+            onClick={() => setShowCompletedTasks(!showCompletedTasks)}
+          />
+        </SpeedDial>
+      )}
 
       <Dialog
         open={openDialog}
@@ -1390,6 +1517,16 @@ function List() {
             onChange={(e) =>
               setNewTask({ ...newTask, description: e.target.value })
             }
+          />
+          <TextField
+            margin="dense"
+            label="Link"
+            placeholder="Azure DevOps / GitHub / Jira URL"
+            fullWidth
+            variant="standard"
+            value={newTask.link || ''}
+            onChange={(e) => setNewTask({ ...newTask, link: e.target.value })}
+            helperText="Used to compare with similar tasks from the same project or repo"
           />
           <Grid container spacing={2} sx={{ mt: 1 }}>
             <Grid item xs={6}>
@@ -1450,7 +1587,7 @@ function List() {
                 }
                 InputProps={{
                   endAdornment: (
-                    <Tooltip title="AI Suggest Estimate">
+                    <Tooltip title="Suggest from similar past tasks">
                       <IconButton
                         onClick={handleAiSuggestEstimate}
                         disabled={isPredicting || !newTask.title}
@@ -1467,6 +1604,7 @@ function List() {
                   ),
                 }}
               />
+              {renderEstimateHint()}
             </Grid>
             <Grid item xs={12}>
               <FormControl fullWidth size="small">
@@ -1571,9 +1709,9 @@ function List() {
                           task.status === StatusEnum.COMPLETED
                             ? 'success'
                             : task.status === StatusEnum.IN_PROGRESS
-                              ? 'primary'
+                              ? 'progress'
                               : task.status === StatusEnum.IN_REVIEW
-                                ? 'secondary'
+                                ? 'review'
                                 : 'default'
                         }
                       />

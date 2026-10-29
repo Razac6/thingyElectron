@@ -3,6 +3,11 @@ import fs from 'fs';
 import { app } from 'electron';
 import { Database } from 'sql.js';
 import crypto from 'crypto';
+import {
+  isDistractionCategory,
+  resolveAppCategory,
+  resolveDomainCategory,
+} from './activityCategories';
 
 const initSqlJs = require('sql.js');
 
@@ -189,6 +194,17 @@ export const initDB = async () => {
       );
     } catch (e) {}
 
+    // Progress tracking: when checklist steps get done, and focus blocks (a planned stretch
+    // of work towards one small goal - see FocusBlockCard)
+    try {
+      database.run(
+        'ALTER TABLE task_checklist_items ADD COLUMN completedAt TEXT',
+      );
+    } catch (e) {}
+    database.run(
+      `CREATE TABLE IF NOT EXISTS focus_blocks (id INTEGER PRIMARY KEY, taskId INTEGER, goal TEXT, checklistItemId INTEGER, plannedMinutes INTEGER, startedAt TEXT, endedAt TEXT, achieved INTEGER)`,
+    );
+
     // Bio logs migration
     try {
       database.run(
@@ -362,32 +378,38 @@ export const getSystemLogs = (limit: number = 50) => {
   return logs;
 };
 
-export const getAiMaturity = () => {
-  if (!db) return 0;
-  const trainingCount = Number(getSetting('neural_training_count') || 0);
+// The renderer identifies the user by the id from login (a UUID string at runtime, even
+// though most signatures here are typed `number`). The main process has no session of its
+// own, so background jobs (training, reminders, AI messages) use the last id the renderer
+// asked for, falling back to whoever owns the most tasks - never a hardcoded 1, which
+// matches no real data once accounts come from login.
+let activeUserId: number | null = null;
 
-  // Data Count comes from completed tasks
-  const taskCountStmt = db.prepare(
-    "SELECT COUNT(*) as count FROM tasks WHERE status = 'Completed'",
-  );
-  let dataCount = 0;
-  if (taskCountStmt.step()) {
-    const row = taskCountStmt.getAsObject();
-    dataCount = Number(row.count) || 0;
+export const setActiveUserId = (userId: number | null | undefined) => {
+  if (userId !== null && userId !== undefined && String(userId) !== '') {
+    activeUserId = userId;
   }
-  taskCountStmt.free();
-
-  // Maturity Score: Training (max 50) + Data Volume (max 50)
-  const trainingScore = Math.min(50, trainingCount * 2);
-  const dataScore = Math.min(50, dataCount);
-
-  return Math.round(trainingScore + dataScore);
 };
 
-export const getAiStats = () => {
-  if (!db) return { maturity: 0, trainingCount: 0, dataCount: 0 };
+export const getActiveUserId = (): number => {
+  if (activeUserId !== null) return activeUserId;
+  if (!db) return 1;
+  const stmt = db.prepare(
+    'SELECT userId FROM tasks GROUP BY userId ORDER BY COUNT(*) DESC LIMIT 1',
+  );
+  let userId = 1;
+  if (stmt.step()) {
+    userId = (stmt.getAsObject().userId as number) ?? 1;
+  }
+  stmt.free();
+  return userId;
+};
 
-  const maturity = getAiMaturity();
+// Maturity comes from NeuralCore itself (it knows what its loaded weights learned from) -
+// main.ts merges it into this object.
+export const getAiStats = () => {
+  if (!db) return { trainingCount: 0, dataCount: 0 };
+
   const trainingCount = Number(getSetting('neural_training_count') || 0);
 
   // Real count of completed tasks (the actual training dataset), not the never-written
@@ -402,7 +424,6 @@ export const getAiStats = () => {
   taskCountStmt.free();
 
   return {
-    maturity,
     trainingCount,
     dataCount,
   };
@@ -1592,10 +1613,14 @@ export const addChecklistItem = (taskId: number, text: string) => {
 
 export const toggleChecklistItem = (itemId: number, isCompleted: boolean) => {
   if (!db) throw new Error('DB not initialized');
-  db.run('UPDATE task_checklist_items SET isCompleted = ? WHERE id = ?', [
-    isCompleted ? 1 : 0,
-    itemId,
-  ]);
+  db.run(
+    'UPDATE task_checklist_items SET isCompleted = ?, completedAt = ? WHERE id = ?',
+    [
+      isCompleted ? 1 : 0,
+      isCompleted ? new Date().toISOString() : null,
+      itemId,
+    ],
+  );
   saveDB();
   // Get taskId to return fresh list
   const idStmt = db.prepare(
@@ -1954,7 +1979,8 @@ export const getAverageVelocity = (
     const stmt = db.prepare(`
         SELECT substr(updateStatusDate, 1, 10) as day, SUM(storyPoints) as points
         FROM tasks
-        WHERE userId = ? AND status = 'Completed' AND updateStatusDate >= ?
+        WHERE userId = ? AND status = 'Completed'
+          AND updateStatusDate LIKE '____-__-__%' AND updateStatusDate >= ?
         GROUP BY day
     `);
     stmt.bind([userId, sinceStr]);
@@ -2141,24 +2167,30 @@ export const getRecentDistraction = (minutes: number = 5) => {
   if (!db) return null;
   const cutoff = Date.now() - minutes * 60 * 1000;
 
-  // Find visited domains categorised as 'Social' or 'Entertainment' or just from the default blocklist
+  // Most recent visit to a site that counts as a distraction (user category or built-in default)
   const stmt = db.prepare(`
-        SELECT ws.domain, dc.category 
+        SELECT ws.domain, dc.category
         FROM web_stats ws
         LEFT JOIN domain_categories dc ON ws.domain = dc.domain
-        WHERE ws.timestamp >= ? 
-        AND (dc.category IN ('Social', 'Entertainment', 'Shopping') OR ws.domain IN ('facebook.com', 'twitter.com', 'instagram.com', 'youtube.com', 'reddit.com', 'tiktok.com'))
-        ORDER BY ws.timestamp DESC 
-        LIMIT 1
+        WHERE ws.timestamp >= ?
+        ORDER BY ws.timestamp DESC
     `);
 
   stmt.bind([cutoff]);
   let result = null;
-  if (stmt.step()) {
-    result = stmt.getAsObject();
+  while (stmt.step()) {
+    const row = stmt.getAsObject();
+    const category = resolveDomainCategory(
+      row.domain as string,
+      row.category as string | null,
+    );
+    if (isDistractionCategory(category)) {
+      result = { domain: row.domain, category };
+      break;
+    }
   }
   stmt.free();
-  return result; // { domain: 'facebook.com', category: 'Social' }
+  return result; // { domain: 'www.youtube.com', category: 'DISTRACTION' }
 };
 
 export const getDailyReportData = (userId: number) => {
@@ -2229,7 +2261,8 @@ export const getWorkStats = (days: number = 7) => {
   const completedStmt = db.prepare(`
         SELECT COUNT(*) as count
         FROM tasks
-        WHERE userId = :userId AND status = 'Completed' AND updateStatusDate >= :sinceDate
+        WHERE userId = :userId AND status = 'Completed'
+          AND updateStatusDate LIKE '____-__-__%' AND updateStatusDate >= :sinceDate
     `);
   completedStmt.bind({ ':userId': userId, ':sinceDate': sinceStr });
   let completedResult: any = { count: 0 };
@@ -2470,7 +2503,12 @@ export const getWebStats = (days: number = 1) => {
 
     const rows = [];
     while (stmt.step()) {
-      rows.push(stmt.getAsObject());
+      const row = stmt.getAsObject();
+      row.category = resolveDomainCategory(
+        row.domain as string,
+        row.category as string | null,
+      );
+      rows.push(row);
     }
     stmt.free();
 
@@ -2496,26 +2534,116 @@ export const getDistractionStats = (days: number = 1) => {
 
   try {
     const stmt = db.prepare(`
-      SELECT ws.domain, SUM(ws.duration) as totalTime, dc.category 
+      SELECT ws.domain, SUM(ws.duration) as totalTime, dc.category
       FROM web_stats ws
       LEFT JOIN domain_categories dc ON ws.domain = dc.domain
-      WHERE ws.timestamp >= :start 
-      AND (dc.category IN ('Social', 'Entertainment', 'Shopping') OR ws.domain IN ('facebook.com', 'twitter.com', 'instagram.com', 'youtube.com', 'reddit.com', 'tiktok.com', 'netflix.com'))
-      GROUP BY ws.domain 
-      ORDER BY totalTime DESC 
-      LIMIT 5
+      WHERE ws.timestamp >= :start
+      GROUP BY ws.domain
+      ORDER BY totalTime DESC
     `);
 
     stmt.bind({ ':start': startTimestamp });
     const rows = [];
-    while (stmt.step()) {
-      rows.push(stmt.getAsObject());
+    while (stmt.step() && rows.length < 5) {
+      const row = stmt.getAsObject();
+      row.category = resolveDomainCategory(
+        row.domain as string,
+        row.category as string | null,
+      );
+      if (isDistractionCategory(row.category as string)) rows.push(row);
     }
     stmt.free();
     return rows;
   } catch (e) {
     return [];
   }
+};
+
+// --- Focus blocks & daily progress ---
+
+export const startFocusBlock = (block: {
+  taskId: number;
+  goal: string;
+  checklistItemId?: number | null;
+  plannedMinutes: number;
+}) => {
+  if (!db) return null;
+  db.run(
+    'INSERT INTO focus_blocks (taskId, goal, checklistItemId, plannedMinutes, startedAt) VALUES (?, ?, ?, ?, ?)',
+    [
+      block.taskId,
+      block.goal,
+      block.checklistItemId ?? null,
+      block.plannedMinutes,
+      new Date().toISOString(),
+    ],
+  );
+  const id = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
+  saveDB();
+  return id as number;
+};
+
+export const finishFocusBlock = (id: number, achieved: boolean) => {
+  if (!db) return;
+  db.run('UPDATE focus_blocks SET endedAt = ?, achieved = ? WHERE id = ?', [
+    new Date().toISOString(),
+    achieved ? 1 : 0,
+    id,
+  ]);
+  saveDB();
+};
+
+// Small, visible wins for today - finished steps and blocks, not just hours logged
+export const getTodayWins = (userId: number) => {
+  const empty = {
+    tasksCompleted: 0,
+    stepsCompleted: 0,
+    focusBlocks: 0,
+    focusBlocksAchieved: 0,
+    focusMinutes: 0,
+  };
+  if (!db) return empty;
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const since = todayStart.toISOString();
+
+  const one = (sql: string, params: any[]) => {
+    const stmt = db!.prepare(sql);
+    stmt.bind(params);
+    const row = stmt.step() ? stmt.get() : [];
+    stmt.free();
+    return row.map((v) => Number(v) || 0);
+  };
+
+  const [tasksCompleted] = one(
+    // ISO dates only: older rows stored "9.12.2025", which compares as greater than any
+    // "2026-..." string and would count every old task as finished today
+    "SELECT COUNT(*) FROM tasks WHERE userId = ? AND status = 'Completed' AND updateStatusDate LIKE '____-__-__%' AND updateStatusDate >= ?",
+    [userId, since],
+  );
+  const [stepsCompleted] = one(
+    `SELECT COUNT(*) FROM task_checklist_items ci JOIN tasks t ON ci.taskId = t.id
+     WHERE t.userId = ? AND ci.isCompleted = 1 AND ci.completedAt >= ?`,
+    [userId, since],
+  );
+  const [focusBlocks, focusBlocksAchieved] = one(
+    `SELECT COUNT(*), SUM(fb.achieved) FROM focus_blocks fb JOIN tasks t ON fb.taskId = t.id
+     WHERE t.userId = ? AND fb.startedAt >= ? AND fb.endedAt IS NOT NULL`,
+    [userId, since],
+  );
+  const [focusMs] = one(
+    `SELECT SUM(ws.duration) FROM work_sessions ws JOIN tasks t ON ws.taskId = t.id
+     WHERE t.userId = ? AND ws.startTime >= ?`,
+    [userId, since],
+  );
+
+  return {
+    tasksCompleted: tasksCompleted ?? 0,
+    stepsCompleted: stepsCompleted ?? 0,
+    focusBlocks: focusBlocks ?? 0,
+    focusBlocksAchieved: focusBlocksAchieved ?? 0,
+    focusMinutes: Math.round((focusMs ?? 0) / 60000),
+  };
 };
 
 export const getDailyDeepWorkStats = (userId: number) => {
@@ -2606,6 +2734,29 @@ export const getAllDomainCategories = () => {
   }
 };
 
+// Latest moment the user was active at the computer within [start, end] (app monitor rows
+// are only written while not idle, web rows only while browsing), or null without data.
+// Used to trim a timer that was left running after the user walked away.
+export const getLastActivityTime = (
+  start: number,
+  end: number,
+): number | null => {
+  if (!db) return null;
+  let latest: number | null = null;
+  ['app_activity', 'web_stats'].forEach((table) => {
+    const stmt = db!.prepare(
+      `SELECT MAX(timestamp) AS t FROM ${table} WHERE timestamp >= ? AND timestamp <= ?`,
+    );
+    stmt.bind([start, end]);
+    if (stmt.step()) {
+      const t = stmt.getAsObject().t as number | null;
+      if (t !== null && (latest === null || t > latest)) latest = t;
+    }
+    stmt.free();
+  });
+  return latest;
+};
+
 export const logAppActivity = (data: {
   appName: string;
   windowTitle: string;
@@ -2665,7 +2816,14 @@ export const getAppStats = (days: number = 1) => {
     `);
     stmt.bind({ ':start': startTimestamp });
     const rows = [];
-    while (stmt.step()) rows.push(stmt.getAsObject());
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      row.category = resolveAppCategory(
+        row.appName as string,
+        row.category as string | null,
+      );
+      rows.push(row);
+    }
     stmt.free();
     return rows;
   } catch (e) {
@@ -2704,9 +2862,7 @@ const getWebDistractionDuration = (
 
     if (
       blockedSites.has(domain) ||
-      category === 'Social' ||
-      category === 'Entertainment' ||
-      category === 'Shopping'
+      isDistractionCategory(resolveDomainCategory(domain, category))
     ) {
       distractionDuration += duration;
     }
@@ -2798,11 +2954,13 @@ export const getDaysSinceLastSimilarTask = (
   }
 };
 
-export const getFocusContext = (
+// Focus score (0-1) plus whether anything was tracked at all - with no activity the score
+// defaults to 1.0, which callers must not present as "perfect focus".
+export const getFocusContextDetail = (
   timestamp: number,
   startTime?: number,
-): number => {
-  if (!db) return 1.0;
+): { score: number; hasActivity: boolean } => {
+  if (!db) return { score: 1.0, hasActivity: false };
 
   const analysisStart = startTime || timestamp - 60 * 60 * 1000;
   const analysisEnd = timestamp;
@@ -2825,25 +2983,31 @@ export const getFocusContext = (
   while (appStmt.step()) {
     const row = appStmt.getAsObject();
     const duration = row.duration as number;
-    const category = row.category as string;
+    const category = resolveAppCategory(
+      row.app_name as string,
+      row.category as string | null,
+    );
 
     totalDuration += duration;
 
-    if (
-      category === 'Game' ||
-      category === 'Entertainment' ||
-      category === 'Social'
-    ) {
+    if (isDistractionCategory(category)) {
       distractionDuration += duration;
     }
   }
   appStmt.free();
 
-  if (totalDuration === 0) return 1.0;
+  if (totalDuration === 0) return { score: 1.0, hasActivity: false };
 
   const score = 1 - distractionDuration / totalDuration;
-  return Math.max(0, Math.min(1, score));
+  return { score: Math.max(0, Math.min(1, score)), hasActivity: true };
 };
+
+// Neutral 1.0 when nothing was tracked - fine as a model feature, see getFocusContextDetail
+// for display purposes.
+export const getFocusContext = (
+  timestamp: number,
+  startTime?: number,
+): number => getFocusContextDetail(timestamp, startTime).score;
 
 export const startNewExpedition = () => {
   const targetMinutes = 120 + Math.floor(Math.random() * 240); // 2h to 6h

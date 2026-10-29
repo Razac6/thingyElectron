@@ -1,14 +1,24 @@
 import { Notification } from 'electron';
 import log from 'electron-log';
-import { getFocusContext, getDailyBio, getHabits, getHabitLogs } from './db';
+import {
+  getFocusContextDetail,
+  getDailyBio,
+  getHabits,
+  getHabitLogs,
+} from './db';
+import { computeHabitStatus, localDateKey } from './habitStatus';
 
 export interface NotificationContext {
   userId: number;
-  focusScore: number; // 0-100
+  // 0-100, or null when nothing was tracked recently - no data is not "100% focused"
+  focusScore: number | null;
   sessionTime: number; // minutes
   meetingTime: number; // minutes
   sleepScore: number; // 0-100
-  habitScore: number; // 0-1
+  habitsDue: number; // habits scheduled for today
+  // Due habits not done yet that have no reminder time of their own (those get a
+  // dedicated reminder from main.ts - don't nag twice)
+  pendingHabits: string[];
   recentPattern: 'focused' | 'distracted' | 'fatigued' | 'normal';
 }
 
@@ -16,25 +26,24 @@ export interface SmartNotification {
   title: string;
   body: string;
   priority: 'low' | 'medium' | 'high';
-  category: 'break' | 'hydration' | 'focus' | 'productivity' | 'health';
-  actionable?: {
-    label: string;
-    action: string;
-  };
+  // Water reminders live in main.ts, driven by the user's settings
+  category: 'break' | 'focus' | 'productivity' | 'health';
 }
 
-export class ContextAwareNotificationEngine {
-  private lastNotificationTime: number = 0;
+const COOLDOWN_MS = 15 * 60 * 1000;
+const FLOW_QUIET_MS = 30 * 60 * 1000; // promised silence after "you're in flow"
+const HABIT_NUDGE_HOUR = 14; // local time after which unfinished habits get one nudge
 
-  private notificationCooldown: number = 15 * 60 * 1000; // 15 minutes
+export class ContextAwareNotificationEngine {
+  // No notification before this time (cooldown, or quiet time after a flow message)
+  private quietUntil: number = 0;
 
   private sessionStartTime: number | null = null;
 
-  private nextHydrationCheckpointMin: number = 60;
+  private lastHabitNudgeDate: string | null = null;
 
   startSession() {
     this.sessionStartTime = Date.now();
-    this.nextHydrationCheckpointMin = 60;
   }
 
   endSession() {
@@ -46,48 +55,33 @@ export class ContextAwareNotificationEngine {
     return (Date.now() - this.sessionStartTime) / (1000 * 60); // minutes
   }
 
-  private canShowNotification(): boolean {
-    const now = Date.now();
-    return now - this.lastNotificationTime > this.notificationCooldown;
-  }
-
-  private markNotificationShown() {
-    this.lastNotificationTime = Date.now();
+  private markNotificationShown(now: Date, quietMs: number = COOLDOWN_MS) {
+    this.quietUntil = now.getTime() + quietMs;
   }
 
   async analyzeContext(userId: number): Promise<NotificationContext> {
     const now = Date.now();
-    const today = new Date().toISOString().split('T')[0];
 
-    // Get current focus score
-    const focusScore = Math.round(getFocusContext(now) * 100);
+    const focus = getFocusContextDetail(now);
+    const focusScore = focus.hasActivity ? Math.round(focus.score * 100) : null;
 
-    // Get session time
     const sessionTime = this.getSessionDuration();
 
-    // Get bio data
-    const bio = getDailyBio(today);
+    // Daily bio is keyed by the UTC date everywhere (renderer and main alike)
+    const bio = getDailyBio(new Date().toISOString().split('T')[0]);
     const meetingTime = bio.meetingTime || 0;
     const sleepScore = bio.sleepScore || 75;
 
-    // Get habit score
-    const habits = getHabits(userId);
-    const logs = getHabitLogs(userId);
-    const completedToday = logs.filter(
-      (l: any) => l.date === today && l.value >= 1,
-    ).length;
-    const habitScore = habits.length > 0 ? completedToday / habits.length : 0.5;
+    const habitStatus = computeHabitStatus(
+      getHabits(userId) as any[],
+      getHabitLogs(userId) as any[],
+    );
 
-    // Analyze recent pattern
-    let recentPattern: 'focused' | 'distracted' | 'fatigued' | 'normal' =
-      'normal';
-
-    if (focusScore < 30) {
-      recentPattern = 'distracted';
-    } else if (focusScore > 75 && sessionTime > 90) {
-      recentPattern = 'fatigued';
-    } else if (focusScore > 70) {
-      recentPattern = 'focused';
+    let recentPattern: NotificationContext['recentPattern'] = 'normal';
+    if (focusScore !== null) {
+      if (focusScore < 30) recentPattern = 'distracted';
+      else if (focusScore > 75 && sessionTime > 90) recentPattern = 'fatigued';
+      else if (focusScore > 70) recentPattern = 'focused';
     }
 
     return {
@@ -96,40 +90,42 @@ export class ContextAwareNotificationEngine {
       sessionTime,
       meetingTime,
       sleepScore,
-      habitScore,
+      habitsDue: habitStatus.due.length,
+      pendingHabits: habitStatus.pending
+        .filter((h: any) => !h.reminderTime)
+        .map((h: any) => h.title),
       recentPattern,
     };
   }
 
   generateSmartNotification(
     context: NotificationContext,
+    now: Date = new Date(),
   ): SmartNotification | null {
-    // Don't spam - respect cooldown
-    if (!this.canShowNotification()) {
+    // Don't spam - respect cooldown / quiet time
+    if (now.getTime() < this.quietUntil) {
       return null;
     }
 
+    const { focusScore } = context;
+
     // Priority 1: Fatigue after long session
-    if (context.sessionTime > 90 && context.focusScore < 50) {
-      this.markNotificationShown();
+    if (focusScore !== null && context.sessionTime > 90 && focusScore < 50) {
+      this.markNotificationShown(now);
       return {
         title: '🧠 Zmęczony mózg wykryty',
-        body: `Pracujesz już ${Math.round(context.sessionTime)}min i tracisz fokus. Twój mózg potrzebuje 5-10min przerwy.`,
+        body: `Pracujesz już ${Math.round(context.sessionTime)} min i tracisz fokus. Twój mózg potrzebuje 5-10 min przerwy.`,
         priority: 'high',
         category: 'break',
-        actionable: {
-          label: 'Zrób przerwę',
-          action: 'take-break',
-        },
       };
     }
 
     // Priority 2: Meeting overload
-    if (context.meetingTime > 180 && context.focusScore < 40) {
-      this.markNotificationShown();
+    if (focusScore !== null && context.meetingTime > 180 && focusScore < 40) {
+      this.markNotificationShown(now);
       return {
         title: '📅 Meeting Overload',
-        body: `${Math.floor(context.meetingTime / 60)}h meetingów wypaliło Twoje CPU. Zostaw dziś tylko proste, mało wymagające zadania.`,
+        body: `${Math.floor(context.meetingTime / 60)}h spotkań to dużo. Zostaw na dziś proste, mało wymagające zadania.`,
         priority: 'high',
         category: 'productivity',
       };
@@ -137,10 +133,10 @@ export class ContextAwareNotificationEngine {
 
     // Priority 3: Sleep deprivation
     if (context.sleepScore < 50 && context.sessionTime > 60) {
-      this.markNotificationShown();
+      this.markNotificationShown(now);
       return {
         title: '😴 Niski sen wykryty',
-        body: `Sen: ${context.sleepScore}/100. Twoja funkcja kognitywna jest obniżona. Skup się na admin tasks, nie na hard problems.`,
+        body: `Sen: ${context.sleepScore}/100. Skup się dziś na prostszych zadaniach, nie na najtrudniejszych problemach.`,
         priority: 'medium',
         category: 'health',
       };
@@ -148,52 +144,46 @@ export class ContextAwareNotificationEngine {
 
     // Priority 4: Distraction pattern
     if (context.recentPattern === 'distracted' && context.sessionTime > 20) {
-      this.markNotificationShown();
+      this.markNotificationShown(now);
       return {
         title: '🎯 Rozproszenie wykryte',
-        body: `Twój focus score: ${context.focusScore}%. Widzę rozproszenia. Zamknij karty, wyłącz komunikatory na 25 min?`,
+        body: `Skupienie w ostatniej godzinie: ${focusScore}%. Zamknij rozpraszające karty i wycisz komunikatory na 25 min?`,
         priority: 'medium',
         category: 'focus',
-        actionable: {
-          label: 'Pomodoro 25min',
-          action: 'start-pomodoro',
-        },
       };
     }
 
-    // Priority 5: Hydration reminder (context-aware) - fires once per hour of session time
-    if (context.sessionTime >= this.nextHydrationCheckpointMin) {
-      this.nextHydrationCheckpointMin += 60;
-      this.markNotificationShown();
+    // Priority 5: Unfinished habits - once a day, in the afternoon, naming them
+    const today = localDateKey(now);
+    if (
+      context.pendingHabits.length > 0 &&
+      now.getHours() >= HABIT_NUDGE_HOUR &&
+      this.lastHabitNudgeDate !== today
+    ) {
+      this.lastHabitNudgeDate = today;
+      this.markNotificationShown(now);
+      const names = context.pendingHabits.join(', ');
       return {
-        title: '💧 Hydration Check',
-        body: 'Pracujesz już godzinę. Twój mózg to 73% wody - czas go uzupełnić!',
-        priority: 'low',
-        category: 'hydration',
-      };
-    }
-
-    // Priority 6: Habit score low
-    if (context.habitScore < 0.3 && new Date().getHours() > 14) {
-      this.markNotificationShown();
-      return {
-        title: '📋 Nawyki zapomniane',
-        body: `Dzisiaj zaliczyłeś tylko ${Math.round(context.habitScore * 100)}% nawyków. Jeszcze jest czas!`,
+        title: '📋 Nawyki na dziś',
+        body:
+          context.pendingHabits.length === 1
+            ? `Został jeszcze jeden nawyk: ${names}.`
+            : `Zostało ${context.pendingHabits.length} z ${context.habitsDue} nawyków: ${names}.`,
         priority: 'low',
         category: 'productivity',
       };
     }
 
-    // Priority 7: Flow state encouragement
+    // Priority 6: Flow state encouragement - and actually stay quiet afterwards
     if (
       context.recentPattern === 'focused' &&
       context.sessionTime > 45 &&
       context.sessionTime < 90
     ) {
-      this.markNotificationShown();
+      this.markNotificationShown(now, FLOW_QUIET_MS);
       return {
-        title: '🔥 Flow State aktywny!',
-        body: `Focus score: ${context.focusScore}%. Jesteś w strefie. Wyłączam powiadomienia na next 30min.`,
+        title: '🔥 Jesteś w strefie',
+        body: `Skupienie: ${focusScore}%. Nie przeszkadzam przez następne 30 min.`,
         priority: 'low',
         category: 'productivity',
       };
@@ -234,15 +224,6 @@ export class ContextAwareNotificationEngine {
     });
 
     n.show();
-
-    // Handle actionable notifications
-    if (notif.actionable) {
-      n.on('click', () => {
-        log.info('[Notification Action]', notif.actionable?.action);
-        // Emit event to main process to handle action
-        // e.g., start-pomodoro, take-break, etc.
-      });
-    }
   }
 }
 

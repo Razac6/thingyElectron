@@ -69,7 +69,7 @@ export interface IElectronAPI {
     getTagByName: (name: string) => Promise<number[]>;
     getAllTags: () => Promise<string[]>;
     getSystemLogs: (limit?: number) => Promise<any[]>;
-    getNeuralConfidence: () => Promise<number>;
+    getNeuralConfidence: () => Promise<number | null>;
     getAiMaturity: () => Promise<number>;
     getAiStats: () => Promise<any>;
     login: (creds: any) => Promise<any>;
@@ -91,6 +91,16 @@ export interface IElectronAPI {
     getTopHabit: (userId: number) => Promise<any>;
     toggleHabitFavorite: (habitId: number, userId: number) => Promise<void>;
     predictDuration: (task: any) => Promise<number>;
+    // See src/main/TaskEstimator.ts (EstimateSuggestion)
+    suggestEstimate: (task: any) => Promise<{
+      minutes: number;
+      basis: 'ratio' | 'duration';
+      ratio: number | null;
+      sampleSize: number;
+      matchedOn: string[];
+      similarTasks: boolean;
+      confidence: 'low' | 'medium' | 'high';
+    } | null>;
     getAiMessage: (userId: number) => Promise<string>;
     getProductivityInsights: (userId: number) => Promise<any>;
     suggestBestTimeForTask: (
@@ -128,6 +138,21 @@ export interface IElectronAPI {
     getDistractionStats: (days: number) => Promise<any>;
     setDomainCategory: (domain: string, category: string) => Promise<void>;
     getAppStats: (days: number) => Promise<any>;
+    getLastActivityTime: (start: number, end: number) => Promise<number | null>;
+    startFocusBlock: (block: {
+      taskId: number;
+      goal: string;
+      checklistItemId?: number | null;
+      plannedMinutes: number;
+    }) => Promise<number | null>;
+    finishFocusBlock: (id: number, achieved: boolean) => Promise<void>;
+    getTodayWins: (userId: any) => Promise<{
+      tasksCompleted: number;
+      stepsCompleted: number;
+      focusBlocks: number;
+      focusBlocksAchieved: number;
+      focusMinutes: number;
+    }>;
     setAppCategory: (appName: string, category: string) => Promise<void>;
     startNewExpedition: () => Promise<any>;
     requestSync: () => Promise<void>;

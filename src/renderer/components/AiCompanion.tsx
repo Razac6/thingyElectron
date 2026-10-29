@@ -27,6 +27,10 @@ import { renderTextWithIcons } from '../utils/emojiIcons';
 import { useSettings } from '../context/SettingsContext';
 import { useTimer } from '../context/TimerContext';
 import { useGamification } from '../context/GamificationContext';
+import DropletCompanion, { DropletMood } from './DropletCompanion';
+import OwlCompanion from './OwlCompanion';
+import DogCompanion from './DogCompanion';
+import SnakeCompanion from './SnakeCompanion';
 
 const MESSAGES = [
   'Pamiętaj o wodzie! 💧',
@@ -71,6 +75,14 @@ export function AiCompanion() {
   const bubbleRef = useRef<HTMLDivElement>(null);
 
   const opacity = Number(settings.ai_bubble_opacity) || 0.8;
+  const isSnake = settings.companion_character === 'snake';
+
+  // Mood for the droplet character: hovered > night-time sleep > working > idle
+  const hour = new Date().getHours();
+  let dropletMood: DropletMood = 'idle';
+  if (isHovered) dropletMood = 'happy';
+  else if (hour >= 23 || hour < 6) dropletMood = 'sleep';
+  else if (tasks.some((t) => t.startTimer)) dropletMood = 'focus';
   const isEnabled = settings.enable_ai_assistant !== 'false';
 
   // Cleanup all timeouts on unmount to prevent memory leaks
@@ -517,7 +529,7 @@ export function AiCompanion() {
             variant="caption"
             sx={{
               fontWeight: 700,
-              color: '#023047',
+              color: 'text.primary',
               display: 'block',
               mb: isMenuOpen || promptType !== 'none' ? 1.5 : 0,
             }}
@@ -654,7 +666,7 @@ export function AiCompanion() {
                 sx={{
                   justifyContent: 'flex-start',
                   textTransform: 'none',
-                  color: '#023047',
+                  color: 'text.primary',
                   fontSize: '0.75rem',
                   py: 0.5,
                 }}
@@ -669,7 +681,7 @@ export function AiCompanion() {
                 sx={{
                   justifyContent: 'flex-start',
                   textTransform: 'none',
-                  color: '#023047',
+                  color: 'text.primary',
                   fontSize: '0.75rem',
                   py: 0.5,
                 }}
@@ -684,7 +696,7 @@ export function AiCompanion() {
                 sx={{
                   justifyContent: 'flex-start',
                   textTransform: 'none',
-                  color: '#023047',
+                  color: 'text.primary',
                   fontSize: '0.75rem',
                   py: 0.5,
                 }}
@@ -699,7 +711,7 @@ export function AiCompanion() {
                 sx={{
                   justifyContent: 'flex-start',
                   textTransform: 'none',
-                  color: '#023047',
+                  color: 'text.primary',
                   fontSize: '0.75rem',
                   py: 0.5,
                 }}
@@ -714,7 +726,7 @@ export function AiCompanion() {
                 sx={{
                   justifyContent: 'flex-start',
                   textTransform: 'none',
-                  color: '#023047',
+                  color: 'text.primary',
                   fontSize: '0.75rem',
                   py: 0.5,
                 }}
@@ -843,7 +855,7 @@ export function AiCompanion() {
                   display="flex"
                   justifyContent="space-between"
                   alignItems="center"
-                  sx={{ fontSize: '0.75rem', color: '#023047' }}
+                  sx={{ fontSize: '0.75rem', color: 'text.primary' }}
                 >
                   <Typography variant="caption" noWrap sx={{ maxWidth: 140 }}>
                     {i + 1}. {d.name}
@@ -861,7 +873,7 @@ export function AiCompanion() {
                 sx={{
                   mt: 1,
                   textTransform: 'none',
-                  color: '#023047',
+                  color: 'text.primary',
                   fontSize: '0.7rem',
                   opacity: 0.7,
                 }}
@@ -968,7 +980,9 @@ export function AiCompanion() {
             width: 130,
             height: 130,
             cursor: 'pointer',
-            pointerEvents: 'auto',
+            // The snake draws itself along the bottom edge; this box only keeps the
+            // speech bubble's position
+            pointerEvents: isSnake ? 'none' : 'auto',
             transition: 'transform 0.3s ease',
             transform: isHovered ? 'scale(1.05) translateY(-5px)' : 'scale(1)',
             filter: 'drop-shadow(0px 5px 10px rgba(0,0,0,0.15))',
@@ -978,9 +992,51 @@ export function AiCompanion() {
             handleCatClick();
           }}
         >
-          <Lottie animationData={catAnimation} loop />
+          {isSnake ? null : settings.companion_character === 'cat' ? (
+            <Lottie animationData={catAnimation} loop />
+          ) : (
+            // The companion box sits 40px below the window edge, so like the cat the
+            // animals only peek in (head above the edge, the rest hidden). The droplet is
+            // all "head" - lift it back into view instead.
+            <Box
+              sx={{
+                height: '100%',
+                pb: ['owl', 'dog'].includes(settings.companion_character)
+                  ? 0
+                  : '46px',
+                boxSizing: 'border-box',
+              }}
+            >
+              {settings.companion_character === 'owl' && (
+                <OwlCompanion
+                  mood={dropletMood}
+                  talking={!!message}
+                  variant="peek"
+                />
+              )}
+              {settings.companion_character === 'dog' && (
+                <DogCompanion
+                  mood={dropletMood}
+                  talking={!!message}
+                  variant="peek"
+                />
+              )}
+              {!['owl', 'dog'].includes(settings.companion_character) && (
+                <DropletCompanion mood={dropletMood} talking={!!message} />
+              )}
+            </Box>
+          )}
         </Box>
       </Slide>
+      {isSnake && (
+        <SnakeCompanion
+          visible={isVisible}
+          mood={dropletMood}
+          talking={!!message}
+          onClick={handleCatClick}
+          onHoverChange={setIsHovered}
+        />
+      )}
     </Box>
   );
 }

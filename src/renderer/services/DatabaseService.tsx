@@ -336,7 +336,7 @@ const getNeuralConfidence = async () => {
     return score;
   } catch (error) {
     console.error('[DatabaseService] Error fetching neural confidence:', error);
-    return 0;
+    return null;
   }
 };
 

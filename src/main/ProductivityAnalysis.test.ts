@@ -113,6 +113,12 @@ describe('ProductivityAnalyst', () => {
       expect(result.peakHours).toContain(10);
       expect(result.peakHours).toContain(14);
     });
+
+    it('should report no peak instead of 0:00-3:00 when there are no sessions', () => {
+      const result = ProductivityAnalyst.identifyPeakHours([]);
+      expect(result.peakHours).toEqual([]);
+      expect(result.formattedRange).toBe('Not enough data');
+    });
   });
 
   describe('analyzeFatigue', () => {
@@ -161,6 +167,13 @@ describe('ProductivityAnalyst', () => {
       ];
       const result = ProductivityAnalyst.analyzeTrend(dailyTotals);
       expect(result.direction).toBe('decreasing');
+    });
+
+    it('should report insufficient data for fewer than 3 days', () => {
+      const result = ProductivityAnalyst.analyzeTrend([
+        { date: '2023-01-01', totalDuration: 60 * 60 * 1000 },
+      ]);
+      expect(result.direction).toBe('insufficient');
     });
   });
 

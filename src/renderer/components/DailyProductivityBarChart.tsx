@@ -1,8 +1,9 @@
 import React, { useMemo } from 'react';
 import { Bar } from 'react-chartjs-2';
 import 'chart.js/auto';
-import { useTheme } from '@mui/material';
+import { useTheme, alpha } from '@mui/material';
 import { useTimer } from '../context/TimerContext';
+import { LiquidLoader } from './LiquidFill';
 
 const getISODateString = (date: Date): string => {
   const year = date.getFullYear();
@@ -13,6 +14,7 @@ const getISODateString = (date: Date): string => {
 
 function DailyProductivityBarChart() {
   const theme = useTheme();
+  const isLuma = theme.variant === 'luma';
   const { productivityData, isLoadingProductivity } = useTimer();
 
   const { chartData, useHours } = useMemo(() => {
@@ -60,13 +62,24 @@ function DailyProductivityBarChart() {
               ? 'Time Spent (hours)'
               : 'Time Spent (minutes)',
             data,
-            backgroundColor: theme.palette.primary.light,
-            borderRadius: 4,
+            // Luma: muted bars with today in solid ink, rounded into pills
+            backgroundColor: isLuma
+              ? data.map((_, i) =>
+                  i === data.length - 1
+                    ? theme.palette.primary.main
+                    : alpha(theme.palette.primary.main, 0.12),
+                )
+              : theme.palette.primary.light,
+            borderRadius: isLuma ? 999 : 4,
+            borderSkipped: isLuma ? false : undefined,
+            maxBarThickness: isLuma ? 28 : undefined,
           },
         ],
       },
     };
-  }, [productivityData, theme.palette.primary.light]);
+  }, [productivityData, theme.palette.primary, isLuma]);
+
+  const tickFont = { family: theme.typography.fontFamily, weight: 500 };
 
   const options = {
     responsive: true,
@@ -86,13 +99,25 @@ function DailyProductivityBarChart() {
           callback(value: number) {
             return useHours ? `${value}h` : `${value}m`;
           },
+          ...(isLuma && { font: tickFont }),
         },
+        ...(isLuma && {
+          border: { display: false },
+          grid: { color: theme.palette.divider },
+        }),
       },
+      ...(isLuma && {
+        x: {
+          border: { display: false },
+          grid: { display: false },
+          ticks: { font: tickFont },
+        },
+      }),
     },
   };
 
   if (isLoadingProductivity) {
-    return <div>Loading...</div>;
+    return <LiquidLoader size={40} />;
   }
 
   return <Bar data={chartData} options={options as any} />;

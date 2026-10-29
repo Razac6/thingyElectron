@@ -12,7 +12,7 @@ const pulse = keyframes`
   100% { box-shadow: 0 0 0 0 rgba(255, 183, 3, 0); }
 `;
 
-const Bubble = styled(Box)(() => ({
+const Bubble = styled(Box)(({ theme }) => ({
   width: 14,
   height: 14,
   borderRadius: '50%',
@@ -24,16 +24,16 @@ const Bubble = styled(Box)(() => ({
   transition: 'all 0.2s',
   cursor: 'pointer',
   '&.done': {
-    backgroundColor: '#219ebc',
-    borderColor: '#219ebc',
+    backgroundColor: theme.palette.primary.main,
+    borderColor: theme.palette.primary.main,
   },
   '&.today': {
-    borderColor: '#ffb703',
+    borderColor: theme.palette.secondary.main,
     borderWidth: 2,
   },
   '&.pending-today': {
     animation: `${pulse} 2s infinite`,
-    borderColor: '#fb8500',
+    borderColor: theme.palette.warning.main,
   },
 }));
 
@@ -127,11 +127,11 @@ export default function FavoriteHabitWidget() {
           <Typography
             variant="caption"
             fontWeight="bold"
-            sx={{ color: '#023047', fontSize: '0.75rem' }}
+            sx={{ color: 'text.primary', fontSize: '0.75rem' }}
           >
             {habit.title}
           </Typography>
-          <Box display="flex" alignItems="center" color="#fb8500">
+          <Box display="flex" alignItems="center" color="warning.main">
             <WhatshotIcon sx={{ fontSize: 14 }} />
             <Typography
               variant="caption"

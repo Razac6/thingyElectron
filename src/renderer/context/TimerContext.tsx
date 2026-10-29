@@ -42,7 +42,7 @@ interface AnalysisResult {
   };
   trend: {
     slope: number;
-    direction: 'increasing' | 'decreasing' | 'stable';
+    direction: 'increasing' | 'decreasing' | 'stable' | 'insufficient';
     description: string;
   };
   focusScore: {
@@ -71,11 +71,24 @@ interface DailyChallenge {
 
 export interface IdlePromptState {
   isOpen: boolean;
-  idleTimeMs: number;
+  idleTimeMs: number; // time at the end of the session that "Discard" drops
   taskId: number;
   taskTitle: string;
   originalStartTime: number;
+  // 'idle': the computer went idle while the timer ran - Keep continues the timer.
+  // 'long-session': stopping a timer that ran suspiciously long (probably forgotten) -
+  // Keep stops it with the full time, Discard trims it to the last activity.
+  reason?: 'idle' | 'long-session';
+  lastActivityAt?: number | null; // long-session: last tracked activity, if any
 }
+
+// A session counts as suspiciously long (likely a forgotten timer) above both of these
+const LONG_SESSION_MIN_MS = 4 * 60 * 60 * 1000;
+const LONG_SESSION_ESTIMATE_FACTOR = 3;
+// Activity this close to the stop time means the user really was working all along
+const LONG_SESSION_TRAILING_IDLE_MS = 15 * 60 * 1000;
+// Without activity data, Discard keeps this much (or the estimate, if larger)
+const LONG_SESSION_FALLBACK_KEEP_MS = 60 * 60 * 1000;
 
 export interface ModeSuggestionState {
   mode: 'boost' | 'recovery';
@@ -100,7 +113,10 @@ interface TimerContextType {
   createTask: (newTask: Partial<Task>) => Promise<Task>;
   deleteTask: (taskId: number) => Promise<void>;
   startTimer: (taskId: number, mode?: 'normal' | 'pomodoro') => Promise<void>;
-  stopTimer: (taskId: number) => Promise<void>;
+  stopTimer: (
+    taskId: number,
+    options?: { skipLongSessionCheck?: boolean },
+  ) => Promise<void>;
   isLoading: boolean;
   productivityData: DailyProgressEntry[];
   isLoadingProductivity: boolean;
@@ -172,6 +188,7 @@ export function TimerProvider({ children }: { children: ReactNode }) {
           taskId: activeTask.id,
           taskTitle: activeTask.title,
           originalStartTime: Number(activeTask.startTimer),
+          reason: 'idle',
         });
         new Notification('💤 Idle Detected', {
           body: 'Are you still working? Click to confirm.',
@@ -467,7 +484,10 @@ export function TimerProvider({ children }: { children: ReactNode }) {
   );
 
   const stopTimer = useCallback(
-    async (taskId: number) => {
+    async (
+      taskId: number,
+      { skipLongSessionCheck = false }: { skipLongSessionCheck?: boolean } = {},
+    ) => {
       try {
         // Use ref to get latest tasks to avoid race condition
         const currentTasks = tasksRef.current;
@@ -490,6 +510,42 @@ export function TimerProvider({ children }: { children: ReactNode }) {
         }
 
         const timeSpent = Date.now() - startTime;
+
+        // Forgotten timer? (left running overnight, laptop asleep, app closed...) Instead of
+        // silently logging e.g. 20h, offer to count only up to the last activity on the
+        // computer - otherwise one such session skews every stat and estimate built on it.
+        const estimateMs =
+          (Number(taskToUpdate.estimate) || 0) * 60 * 60 * 1000;
+        const longSessionMs = Math.max(
+          LONG_SESSION_MIN_MS,
+          estimateMs * LONG_SESSION_ESTIMATE_FACTOR,
+        );
+        if (!skipLongSessionCheck && timeSpent > longSessionMs) {
+          const now = Date.now();
+          const lastActivityAt = await window.electron.database
+            .getLastActivityTime(startTime, now)
+            .catch(() => null);
+          const keepUntil =
+            lastActivityAt ??
+            startTime +
+              Math.min(
+                timeSpent,
+                Math.max(LONG_SESSION_FALLBACK_KEEP_MS, estimateMs),
+              );
+          if (now - keepUntil > LONG_SESSION_TRAILING_IDLE_MS) {
+            setIdlePrompt({
+              isOpen: true,
+              idleTimeMs: now - keepUntil,
+              taskId,
+              taskTitle: taskToUpdate.title,
+              originalStartTime: startTime,
+              reason: 'long-session',
+              lastActivityAt,
+            });
+            return;
+          }
+        }
+
         const newSpendTime = (taskToUpdate.spendTime || 0) + timeSpent;
 
         // 1. First log the work session (atomic operation)
@@ -552,8 +608,13 @@ export function TimerProvider({ children }: { children: ReactNode }) {
   );
 
   const handleKeepIdleTime = useCallback(() => {
+    const prompt = idlePrompt;
     setIdlePrompt(null);
-  }, []);
+    // Long session: the user confirmed they worked the whole time - stop with all of it
+    if (prompt?.reason === 'long-session') {
+      stopTimer(prompt.taskId, { skipLongSessionCheck: true });
+    }
+  }, [idlePrompt, stopTimer]);
 
   const handleDiscardIdleTime = useCallback(async () => {
     if (!idlePrompt) return;
@@ -585,7 +646,7 @@ export function TimerProvider({ children }: { children: ReactNode }) {
         id: taskId,
         spendTime: newSpendTime,
         startTimer: null,
-        updateStatusDate: new Date().toLocaleDateString(),
+        updateStatusDate: new Date().toISOString(),
       });
 
       // Optimistically update local state
@@ -596,7 +657,7 @@ export function TimerProvider({ children }: { children: ReactNode }) {
                 ...t,
                 spendTime: newSpendTime,
                 startTimer: null,
-                updateStatusDate: new Date().toLocaleDateString(),
+                updateStatusDate: new Date().toISOString(),
               }
             : t,
         ),

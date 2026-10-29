@@ -59,7 +59,7 @@ function DailyChallengeWidget() {
         alignItems: 'center',
         justifyContent: 'space-between',
         border: '1px solid rgba(0,0,0,0.08)',
-        bgcolor: '#ffffff',
+        bgcolor: 'background.paper',
         position: 'relative',
         overflow: 'hidden',
         minHeight: 110,
@@ -81,7 +81,12 @@ function DailyChallengeWidget() {
 
         <Typography
           variant="body2"
-          sx={{ fontWeight: 300, lineHeight: 1.3, mb: 1.5, color: '#023047' }}
+          sx={{
+            fontWeight: 300,
+            lineHeight: 1.3,
+            mb: 1.5,
+            color: 'text.primary',
+          }}
         >
           {dailyChallenge.description}
         </Typography>
@@ -163,7 +168,7 @@ function DailyChallengeWidget() {
             variant="caption"
             sx={{
               fontWeight: 200,
-              color: visualProgress > 50 ? '#fff' : '#023047',
+              color: visualProgress > 50 ? '#fff' : 'text.primary',
               fontSize: '1rem',
               textShadow:
                 visualProgress > 50 ? '0 1px 2px rgba(0,0,0,0.2)' : 'none',

@@ -8,7 +8,8 @@ import {
 
 function SystemLogs() {
   const [logs, setLogs] = useState<any[]>([]);
-  const [confidence, setConfidence] = useState(0);
+  // null = no recently completed tasks to measure accuracy on
+  const [confidence, setConfidence] = useState<number | null>(null);
   const [aiMaturity, setAiMaturity] = useState(0);
 
   useEffect(() => {
@@ -49,15 +50,11 @@ function SystemLogs() {
   return (
     <Box
       sx={{
-        height: 'calc(100vh - 100px)',
+        height: '100%',
         display: 'flex',
         flexDirection: 'column',
       }}
     >
-      <Typography variant="h4" gutterBottom>
-        Neural System Logs
-      </Typography>
-
       {/* Confidence Bars */}
       <Box
         sx={{
@@ -79,19 +76,21 @@ function SystemLogs() {
             variant="caption"
             sx={{ color: '#00e5ff', fontFamily: 'monospace' }}
           >
-            {Number.isNaN(confidence) ? 0 : confidence}%
+            {confidence === null || Number.isNaN(confidence)
+              ? 'no data'
+              : `${confidence}%`}
           </Typography>
         </Box>
         <LinearProgress
           variant="determinate"
-          value={confidence}
+          value={confidence ?? 0}
           sx={{
             height: 6,
             mb: 2,
             bgcolor: '#333',
             borderRadius: 1,
             '& .MuiLinearProgress-bar': {
-              bgcolor: confidence > 70 ? '#00e5ff' : '#f44336',
+              bgcolor: (confidence ?? 0) > 70 ? '#00e5ff' : '#f44336',
             },
           }}
         />

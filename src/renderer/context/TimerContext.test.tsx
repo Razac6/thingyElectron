@@ -120,3 +120,94 @@ describe('TimerContext', () => {
     );
   });
 });
+
+function StopComponent() {
+  const { tasks, stopTimer, idlePrompt } = useTimer();
+  return (
+    <div>
+      {tasks.map((task) => (
+        <button key={task.id} type="button" onClick={() => stopTimer(task.id)}>
+          Stop {task.id}
+        </button>
+      ))}
+      <span data-testid="prompt">
+        {idlePrompt ? `${idlePrompt.reason}:${idlePrompt.idleTimeMs}` : 'none'}
+      </span>
+    </div>
+  );
+}
+
+describe('TimerContext - forgotten timer', () => {
+  const HOUR = 60 * 60 * 1000;
+  const { logWorkSession } = require('../services/DatabaseService');
+
+  const renderWithRunningTask = async (runningForMs: number) => {
+    fetchData.mockResolvedValue([
+      {
+        id: 7,
+        title: 'Forgotten',
+        status: StatusEnum.IN_PROGRESS,
+        estimate: 1,
+        spendTime: 0,
+        startTimer: String(Date.now() - runningForMs),
+        type: 'TASK',
+      } as any,
+    ]);
+    await act(async () => {
+      render(
+        <TimerProvider>
+          <StopComponent />
+        </TimerProvider>,
+      );
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByText('Stop 7'));
+    });
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (window as any).electron.database.endNotificationSession = jest
+      .fn()
+      .mockResolvedValue(undefined);
+  });
+
+  it('asks before logging a session far longer than the estimate, trimmed to the last activity', async () => {
+    const lastActivityAgo = 8 * HOUR;
+    (window as any).electron.database.getLastActivityTime = jest
+      .fn()
+      .mockResolvedValue(Date.now() - lastActivityAgo);
+
+    await renderWithRunningTask(10 * HOUR);
+
+    expect(logWorkSession).not.toHaveBeenCalled();
+    const [reason, idleMs] = screen
+      .getByTestId('prompt')
+      .textContent!.split(':');
+    expect(reason).toBe('long-session');
+    // Discard would drop everything after the last activity (~8h)
+    expect(Number(idleMs)).toBeGreaterThan(lastActivityAgo - 1000);
+  });
+
+  it('logs normally when there was activity right up to the stop', async () => {
+    (window as any).electron.database.getLastActivityTime = jest
+      .fn()
+      .mockResolvedValue(Date.now() - 60 * 1000);
+
+    await renderWithRunningTask(5 * HOUR);
+
+    expect(screen.getByTestId('prompt').textContent).toBe('none');
+    expect(logWorkSession).toHaveBeenCalled();
+  });
+
+  it('logs short sessions without checking activity', async () => {
+    (window as any).electron.database.getLastActivityTime = jest.fn();
+
+    await renderWithRunningTask(30 * 60 * 1000);
+
+    expect(
+      (window as any).electron.database.getLastActivityTime,
+    ).not.toHaveBeenCalled();
+    expect(logWorkSession).toHaveBeenCalled();
+  });
+});

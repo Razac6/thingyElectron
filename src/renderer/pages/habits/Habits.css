@@ -39,7 +39,7 @@
 }
 
 .day-label.today {
-  color: #219ebc;
+  color: var(--thingy-primary, #219ebc);
   font-weight: 700;
 }
 
@@ -56,13 +56,13 @@
 }
 
 .day-bubble.done {
-  background-color: #219ebc;
-  border-color: #219ebc;
+  background-color: var(--thingy-primary, #219ebc);
+  border-color: var(--thingy-primary, #219ebc);
   box-shadow: 0 2px 8px rgba(33, 158, 188, 0.3);
 }
 
 .day-bubble.today-bubble {
-  border-color: #ffb703; /* Highlight current day border */
+  border-color: var(--thingy-secondary, #ffb703); /* Highlight current day border */
 }
 
 @keyframes pulse {
@@ -73,7 +73,7 @@
 
 .day-bubble.pending-today {
   animation: pulse 2s infinite;
-  border-color: #fb8500;
+  border-color: var(--thingy-warning, #fb8500);
   border-width: 2px;
 }
 

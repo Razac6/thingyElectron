@@ -881,7 +881,7 @@ describe('DatabaseService', () => {
 
         const result = await getNeuralConfidence();
 
-        expect(result).toBe(0);
+        expect(result).toBeNull();
         expect(console.error).toHaveBeenCalled();
       });
     });

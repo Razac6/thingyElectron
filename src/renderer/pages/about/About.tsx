@@ -32,7 +32,7 @@ function About() {
         <Typography
           variant="h3"
           gutterBottom
-          sx={{ fontWeight: 300, color: '#023047' }}
+          sx={{ fontWeight: 300, color: 'text.primary' }}
         >
           O Aplikacji Thingy
         </Typography>

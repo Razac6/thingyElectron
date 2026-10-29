@@ -58,6 +58,10 @@ function getProductivityLevel(
   return 'low';
 }
 
+// Below this much tracked work, the deep-work share says nothing about focus - a single
+// 6-minute session would otherwise read as "low concentration, too many distractions"
+const MIN_HOURS_TO_JUDGE_FOCUS = 1;
+
 function generateInsights(
   completed: TaskSummary[],
   stats: StandupStats,
@@ -66,33 +70,36 @@ function generateInsights(
   const insights: string[] = [];
 
   // 1. Focus Quality Insight
-  if (stats.focusScore > 80) {
-    insights.push(
-      `🎯 Świetny focus dzisiaj! ${stats.focusScore}% czasu w Deep Work`,
-    );
-  } else if (stats.focusScore < 30) {
-    insights.push(
-      `⚠️ Niska koncentracja (${stats.focusScore}%). Może za dużo rozproszeń?`,
-    );
+  if (stats.totalTime >= MIN_HOURS_TO_JUDGE_FOCUS) {
+    if (stats.focusScore > 80) {
+      insights.push(
+        `🎯 Świetny focus dzisiaj! ${stats.focusScore}% czasu w Deep Work`,
+      );
+    } else if (stats.focusScore < 30) {
+      insights.push(
+        `⚠️ Mało pracy głębokiej (${stats.focusScore}%) - sesje były krótkie albo przerywane.`,
+      );
+    }
   }
 
   // 2. Productivity vs Estimate
   const withEstimates = completed.filter((t) => t.estimate && t.estimate > 0);
   if (withEstimates.length > 0) {
-    const avgAccuracy =
-      withEstimates.reduce((sum, t) => {
-        const actualHours = t.spendTime / (1000 * 60 * 60);
-        const diff = Math.abs(actualHours - (t.estimate || 0));
-        return sum + diff;
-      }, 0) / withEstimates.length;
+    // Median, not mean - one forgotten timer would otherwise dominate the result
+    const diffs = withEstimates
+      .map((t) => Math.abs(t.spendTime / (1000 * 60 * 60) - (t.estimate || 0)))
+      .sort((a, b) => a - b);
+    const mid = Math.floor(diffs.length / 2);
+    const typicalDiff =
+      diffs.length % 2 ? diffs[mid] : (diffs[mid - 1] + diffs[mid]) / 2;
 
-    if (avgAccuracy < 0.5) {
+    if (typicalDiff < 0.5) {
       insights.push(
-        `📊 Twoje estymaty są bardzo trafne (avg ±${(avgAccuracy * 60).toFixed(0)}min)`,
+        `📊 Twoje estymaty są trafne (zwykle ±${(typicalDiff * 60).toFixed(0)} min)`,
       );
-    } else if (avgAccuracy > 1.5) {
+    } else if (typicalDiff > 1.5) {
       insights.push(
-        `📊 Estymaty średnio odbiegają o ${avgAccuracy.toFixed(1)}h - może używać AI predict?`,
+        `📊 Estymaty zwykle odbiegają o ${typicalDiff.toFixed(1)}h - przy nowym zadaniu sprawdź podpowiedź z podobnych zadań.`,
       );
     }
   }
@@ -134,8 +141,8 @@ function generateRecommendations(
 ): string[] {
   const recommendations: string[] = [];
 
-  // 1. Based on focus score
-  if (stats.focusScore < 40) {
+  // 1. Based on focus score (only meaningful with enough tracked work)
+  if (stats.totalTime >= MIN_HOURS_TO_JUDGE_FOCUS && stats.focusScore < 40) {
     recommendations.push(
       '💡 Spróbuj Pomodoro (25min focus) - Twoje sesje są zbyt rozproszone',
     );

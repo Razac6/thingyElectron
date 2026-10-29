@@ -11,7 +11,10 @@ import SmartInsightWidget from '../components/SmartInsightWidget';
 import FavoriteHabitWidget from '../components/FavoriteHabitWidget';
 import MountainClimbBeta from '../components/MountainClimbBeta';
 import DailyChallengeWidget from '../components/DailyChallengeWidget';
-import { useSettings } from '../context/SettingsContext';
+import useDashboardViews from './useDashboardViews';
+import LumaDashboard from './LumaDashboard';
+import { useIsLuma } from '../themes';
+import { LiquidLoader } from '../components/LiquidFill';
 
 function formatTime(ms: number): string {
   if (ms <= 0) return '0h 0m';
@@ -32,35 +35,20 @@ const Item = styled(Paper)(({ theme }) => ({
 
 export default function Dashboard() {
   const { tasks, isLoading, totalSpendTimeToday } = useTimer();
-  const { settings } = useSettings();
-
-  // Persist state in localStorage
-  const [activeView, setActiveView] = React.useState(() => {
-    const saved = localStorage.getItem('dashboard_active_view');
-    return saved !== null ? parseInt(saved, 10) : 0;
-  });
-
-  const isMountainClimbEnabled =
-    settings && settings.mountain_climb_enabled !== 'false';
-
-  // View 1 (Mountain Climb) only exists when the setting is enabled - views 0 and 2 are
-  // always available.
-  const availableViews = isMountainClimbEnabled ? [0, 1, 2] : [0, 2];
-
-  // Force back to first view if the current view is the (now-disabled) Mountain Climb one
-  React.useEffect(() => {
-    if (!isMountainClimbEnabled && activeView === 1) {
-      setActiveView(0);
-    }
-  }, [isMountainClimbEnabled, activeView]);
-
-  const handleViewChange = (idx: number) => {
-    setActiveView(idx);
-    localStorage.setItem('dashboard_active_view', idx.toString());
-  };
+  const isLuma = useIsLuma();
+  const {
+    activeView,
+    availableViews,
+    isMountainClimbEnabled,
+    handleViewChange,
+  } = useDashboardViews();
 
   if (isLoading) {
-    return <Typography>Loading...</Typography>;
+    return <LiquidLoader label="Loading dashboard" />;
+  }
+
+  if (isLuma) {
+    return <LumaDashboard />;
   }
 
   const toDoTasksCount = tasks.filter(
@@ -244,7 +232,6 @@ export default function Dashboard() {
             </Box>
           </Item>
         </Grid>
-        ...
         <Grid item xs={12}>
           <ContributionGraph />
         </Grid>

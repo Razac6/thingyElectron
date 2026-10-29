@@ -58,8 +58,10 @@ import {
   getAllTags,
   getSystemLogs,
   logSystemEvent,
-  getAiMaturity,
   getAiStats,
+  getActiveUserId,
+  setActiveUserId,
+  getFocusContextDetail,
   getChecklistItems,
   addChecklistItem,
   toggleChecklistItem,
@@ -84,6 +86,10 @@ import {
   getWebStats,
   setDomainCategory,
   getAppStats,
+  getLastActivityTime,
+  startFocusBlock,
+  finishFocusBlock,
+  getTodayWins,
   setAppCategory,
   getLifetimeStats,
   getDistractionStats,
@@ -91,7 +97,6 @@ import {
   getSuggestedCommitMessage,
   updateNote,
   deleteNote,
-  getFocusContext,
   startNewExpedition,
   getCurrentStreak,
   getAverageVelocity,
@@ -113,6 +118,8 @@ import { startAppMonitor, stopAppMonitor } from './AppMonitor';
 import { generateDailyStandup } from './DailyStandupAI';
 import { contextNotificationEngine } from './ContextAwareNotifications';
 import { procrastinationDetector } from './ProcrastinationDetector';
+import { estimateFromHistory } from './TaskEstimator';
+import { computeHabitStatus } from './habitStatus';
 
 // --- Aggressive Error Logging ---
 log.transports.file.level = 'info';
@@ -388,26 +395,19 @@ const notifiedHabits = new Set<string>();
 const checkHabitReminders = () => {
   const enabled = getSetting('habit_notifications_enabled') !== 'false';
   if (!enabled) return;
-  const userId = activeTaskInfo?.userId || 1;
-  const habits = getHabits(userId);
-  const logs = getHabitLogs(userId);
-  const today = new Date().toISOString().split('T')[0];
+  const userId = activeTaskInfo?.userId || getActiveUserId();
   const now = new Date();
   const currentHour = now.getHours();
   const currentMinute = now.getMinutes();
+  // Due today and not done yet - local date, same key the renderer logs habits under
+  const { pending } = computeHabitStatus(
+    getHabits(userId) as any[],
+    getHabitLogs(userId) as any[],
+    now,
+  );
+  const today = now.toDateString();
 
-  habits.forEach((habit: any) => {
-    let isDue = false;
-    if (habit.frequency.type === 'daily') isDue = true;
-    else {
-      const dayOfWeek = now.getDay();
-      if (habit.frequency.days.includes(dayOfWeek)) isDue = true;
-    }
-    if (!isDue) return;
-    const isDone = logs.some(
-      (l: any) => l.habitId === habit.id && l.date === today && l.value >= 1,
-    );
-    if (isDone) return;
+  pending.forEach((habit: any) => {
     if (!habit.reminderTime) return;
     const [remHour, remMin] = habit.reminderTime.split(':').map(Number);
     const targetTimeMin = remHour * 60 + remMin;
@@ -496,7 +496,10 @@ ipcMain.handle('db:global-search', (event, userId, query) =>
 ipcMain.handle('db:get-daily-challenge', (event, userId) =>
   getDailyChallenge(userId, new Date().toISOString().split('T')[0]),
 );
-ipcMain.handle('db:get-tasks', (event, userId) => getTasks(userId));
+ipcMain.handle('db:get-tasks', (event, userId) => {
+  setActiveUserId(userId);
+  return getTasks(userId);
+});
 ipcMain.handle('db:create-task', (event, task, userId) =>
   createTask(task, userId),
 );
@@ -633,12 +636,13 @@ ipcMain.handle('db:get-tag-by-name', (event, n) => getTagByName(n));
 ipcMain.handle('db:get-all-tags', () => getAllTags());
 ipcMain.handle('db:get-system-logs', (event, limit) => getSystemLogs(limit));
 ipcMain.handle('db:get-neural-confidence', () =>
-  neuralCore.getPredictionAccuracy(1),
+  neuralCore.getPredictionAccuracy(),
 );
-ipcMain.handle('db:get-ai-maturity', () => getAiMaturity());
+ipcMain.handle('db:get-ai-maturity', () => neuralCore.getMaturity());
 ipcMain.handle('db:get-ai-stats', () => ({
   ...getAiStats(),
-  confidence: neuralCore.getPredictionAccuracy(1),
+  maturity: neuralCore.getMaturity(),
+  confidence: neuralCore.getPredictionAccuracy(),
 }));
 
 // Settings Handlers
@@ -660,7 +664,7 @@ ipcMain.handle('db:get-daily-bio', (event, date) => getDailyBio(date));
 ipcMain.handle('db:update-daily-bio', (event, date, data) => {
   const result = updateDailyBio(date, data);
   if (data.waterIntake !== undefined) {
-    const challenge: any = getDailyChallenge(1, date);
+    const challenge: any = getDailyChallenge(getActiveUserId(), date);
     if (
       challenge &&
       challenge.status === 'ACTIVE' &&
@@ -693,6 +697,10 @@ ipcMain.handle('db:get-top-habit', (event, uid) => getTopHabit(uid));
 ipcMain.handle('db:toggle-habit-favorite', (event, hid, uid) =>
   toggleHabitFavorite(hid, uid),
 );
+// Explainable estimate from the user's similar past tasks (tags, type, link context)
+ipcMain.handle('db:suggest-estimate', (event, task) =>
+  estimateFromHistory(task, getTasks(task?.userId || getActiveUserId())),
+);
 ipcMain.handle('db:predict-duration', (event, task) =>
   neuralCore.predict(task),
 );
@@ -716,15 +724,14 @@ ipcMain.handle('db:get-ai-message', (event, uid) => {
   const bio = getDailyBio(today);
   const sleep = bio.sleepScore !== null ? Number(bio.sleepScore) : 75;
 
-  const habits = getHabits(uid);
-  const logs = getHabitLogs(uid);
-  const completedToday = logs.filter(
-    (l: any) => l.date === today && l.value >= 1,
-  ).length;
-  const habitScore = habits.length > 0 ? completedToday / habits.length : 0.5;
+  // Only habits scheduled for today count; none due = neutral, not "0% done"
+  const habitScore =
+    computeHabitStatus(getHabits(uid) as any[], getHabitLogs(uid) as any[])
+      .score ?? 0.5;
 
   const { risk, tasksRemaining } = neuralCore.getSprintRiskContext(uid);
   const mood = neuralCore.determineMood(risk, sleep, habitScore);
+  const focus = getFocusContextDetail(Date.now());
 
   const context = {
     mood,
@@ -732,7 +739,7 @@ ipcMain.handle('db:get-ai-message', (event, uid) => {
     sprintRisk: risk,
     habitScore,
     tasksRemaining,
-    focusScore: Math.round(getFocusContext(Date.now()) * 100),
+    focusScore: focus.hasActivity ? Math.round(focus.score * 100) : undefined,
     idleTimeMin: Math.round(powerMonitor.getSystemIdleTime() / 60),
     currentStreak: getCurrentStreak(uid),
     avgVelocity: getAverageVelocity(uid),
@@ -831,6 +838,18 @@ ipcMain.handle('db:set-domain-category', (event, d, c) => {
   return true;
 });
 ipcMain.handle('db:get-app-stats', (event, d) => getAppStats(d));
+ipcMain.handle('db:get-last-activity-time', (event, start, end) =>
+  getLastActivityTime(start, end),
+);
+ipcMain.handle('db:start-focus-block', (event, block) =>
+  startFocusBlock(block),
+);
+ipcMain.handle('db:finish-focus-block', (event, id, achieved) =>
+  finishFocusBlock(id, achieved),
+);
+ipcMain.handle('db:get-today-wins', (event, userId) =>
+  getTodayWins(userId || getActiveUserId()),
+);
 ipcMain.handle('db:set-app-category', (event, a, c) => {
   setAppCategory(a, c);
   return true;
@@ -916,7 +935,7 @@ ipcMain.handle('app:complete-pomodoro', (event, tid) => {
   // Wait, I can't modify db.ts here. I have to do it in a separate step or assume I can fix it here?
   // I will try to fix it by using getTasks with the userId from activeTaskInfo if available!
 
-  let userId = 1;
+  let userId = getActiveUserId();
   if (activeTaskInfo && activeTaskInfo.userId) userId = activeTaskInfo.userId;
 
   const task = getTasks(userId).find((t) => t.id === tid);
@@ -1148,7 +1167,15 @@ setInterval(() => {
         }
       }
       if (activeTaskInfo) sentMorningNudge = true;
-      if (!sentMorningNudge && nm > sh * 60 + sm + 60 && nm < eh * 60 + em) {
+      // Only on workdays, and only in the morning window (1-3h after the workday starts) -
+      // not on weekends, and not whenever the app happens to be opened later in the day
+      const isWorkday = currentDate.getDay() >= 1 && currentDate.getDay() <= 5;
+      if (
+        !sentMorningNudge &&
+        isWorkday &&
+        nm > sh * 60 + sm + 60 &&
+        nm < Math.min(sh * 60 + sm + 180, eh * 60 + em)
+      ) {
         sendAiNotification('☕ Trudny poranek?', 'Zacznij od czegoś małego.');
         sentMorningNudge = true;
       }
@@ -1215,7 +1242,7 @@ setInterval(() => {
           const { sleepScore } = dailyBio;
           const isLowSleep = sleepScore !== null && sleepScore < 50;
           const fatigue = ProductivityAnalyst.analyzeFatigue(
-            getRecentWorkSessions(1, 1),
+            getRecentWorkSessions(getActiveUserId(), 1),
           );
           if (isLowSleep || fatigue.isFatigued) {
             if (mainWindow && !mainWindow.isDestroyed()) {
@@ -1272,16 +1299,15 @@ setInterval(() => {
     if (lastNeuralTrainingDate !== today) {
       log.info('[Daily Training] Starting daily ML model training...');
 
-      // Get active user ID (fallback to 1 if no active task)
-      const userId = activeTaskInfo?.userId || 1;
+      const userId = activeTaskInfo?.userId || getActiveUserId();
       const tasks = getTasks(userId);
 
       // Train NeuralCore for task duration predictions
       neuralCore
         .train(tasks)
-        .then(() => {
+        .then((trained) => {
           log.info(
-            '[Daily Training] NeuralCore training completed successfully',
+            `[Daily Training] NeuralCore ${trained ? 'trained' : 'skipped (see System Logs)'}`,
           );
         })
         .catch((err) => {
@@ -1291,9 +1317,9 @@ setInterval(() => {
       // Train Procrastination Detector
       procrastinationDetector
         .train(userId)
-        .then(() => {
+        .then((trained) => {
           log.info(
-            '[Daily Training] Procrastination model training completed successfully',
+            `[Daily Training] Procrastination model ${trained ? 'trained' : 'skipped (see System Logs)'}`,
           );
         })
         .catch((err) => {

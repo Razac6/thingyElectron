@@ -42,7 +42,7 @@ export default function ModeSuggestionModal({
         <Avatar
           sx={{
             bgcolor: isBoost ? '#fff3e0' : '#e3f2fd',
-            color: isBoost ? '#fb8500' : '#219ebc',
+            color: isBoost ? 'warning.main' : 'primary.main',
             width: 56,
             height: 56,
             mx: 'auto',
@@ -75,8 +75,8 @@ export default function ModeSuggestionModal({
             onClick={onAccept}
             sx={{
               py: 1.5,
-              bgcolor: '#023047',
-              '&:hover': { bgcolor: '#219ebc' },
+              bgcolor: 'text.primary',
+              '&:hover': { bgcolor: 'primary.main' },
               borderRadius: 2,
             }}
           >

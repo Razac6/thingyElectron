@@ -16,7 +16,7 @@ export interface AnalysisResult {
   };
   trend: {
     slope: number;
-    direction: 'increasing' | 'decreasing' | 'stable';
+    direction: 'increasing' | 'decreasing' | 'stable' | 'insufficient';
     description: string;
   };
   focusScore: { score: number; deepWorkMinutes: number }; // Updated interface
@@ -264,12 +264,16 @@ export class ProductivityAnalyst {
     // Sort descending by score
     scoredHours.sort((a, b) => b.score - a.score);
 
-    // Get top 3 hours
-    const topHours = scoredHours.slice(0, 3).map((h) => h.hour);
+    // Top 3 hours that actually had work - with no sessions every hour scores 0, and taking
+    // the first three anyway reported a bogus "0:00 - 3:00" peak.
+    const topHours = scoredHours
+      .filter((h) => h.score > 0)
+      .slice(0, 3)
+      .map((h) => h.hour);
 
     // Simple formatting logic (finding a contiguous block if possible)
     topHours.sort((a, b) => a - b);
-    let range = 'No data';
+    let range = 'Not enough data';
     if (topHours.length > 0) {
       // Simplistic range finder: e.g. if 10, 11, 12 -> "10:00 - 13:00"
       const endHour = (topHours[topHours.length - 1] + 1) % 24;
@@ -339,13 +343,14 @@ export class ProductivityAnalyst {
    */
   static analyzeTrend(dailyTotals: { date: string; totalDuration: number }[]): {
     slope: number;
-    direction: 'increasing' | 'decreasing' | 'stable';
+    direction: 'increasing' | 'decreasing' | 'stable' | 'insufficient';
     description: string;
   } {
+    // Too few days to fit a line - say so instead of claiming the trend is "stable"
     if (dailyTotals.length < 3) {
       return {
         slope: 0,
-        direction: 'stable',
+        direction: 'insufficient',
         description: 'Not enough data for trend analysis',
       };
     }

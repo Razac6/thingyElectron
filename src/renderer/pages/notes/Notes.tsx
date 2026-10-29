@@ -14,7 +14,6 @@ import {
   IconButton,
   Grid,
   Fab,
-  CircularProgress,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -25,6 +24,8 @@ import {
   updateNote,
   deleteNote,
 } from '../../services/DatabaseService';
+import { usePageActions } from '../../context/PageActionsContext';
+import { LiquidLoader } from '../../components/LiquidFill';
 
 interface Note {
   id?: number;
@@ -104,12 +105,18 @@ function Notes() {
     setOpenDialog(true);
   };
 
+  const actionsInToolbar = usePageActions([
+    {
+      key: 'add',
+      label: 'New note',
+      icon: <AddIcon fontSize="small" />,
+      onClick: openAddDialog,
+      primary: true,
+    },
+  ]);
+
   if (isLoading) {
-    return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
-        <CircularProgress />
-      </Box>
-    );
+    return <LiquidLoader label="Loading notes" />;
   }
 
   if (error) {
@@ -158,14 +165,16 @@ function Notes() {
         ))}
       </Grid>
 
-      <Fab
-        color="primary"
-        aria-label="add"
-        sx={{ position: 'absolute', bottom: 16, right: 16 }}
-        onClick={openAddDialog}
-      >
-        <AddIcon />
-      </Fab>
+      {!actionsInToolbar && (
+        <Fab
+          color="primary"
+          aria-label="add"
+          sx={{ position: 'absolute', bottom: 16, right: 16 }}
+          onClick={openAddDialog}
+        >
+          <AddIcon />
+        </Fab>
+      )}
 
       <Dialog open={openDialog} onClose={() => setOpenDialog(false)} fullWidth>
         <DialogTitle>{isEditing ? 'Edit Note' : 'New Note'}</DialogTitle>

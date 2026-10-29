@@ -37,26 +37,27 @@ import {
 } from '../../services/SprintService';
 import { useGamification } from '../../context/GamificationContext';
 import { SprintInterface } from '../../../interfaces/sprint.interface';
+import { usePageActions } from '../../context/PageActionsContext';
 
 // Custom styles for the calendar to match the theme
 const calendarStyle = `
   .rdp {
     --rdp-cell-size: 40px;
-    --rdp-accent-color: #219ebc;
+    --rdp-accent-color: var(--thingy-primary, #219ebc);
     --rdp-background-color: #e0f7fa; 
     margin: 0;
   }
   .rdp-day_selected:not([disabled]) { 
-    background-color: #219ebc; 
+    background-color: var(--thingy-primary, #219ebc);
     color: white;
   }
   .rdp-day_today {
     font-weight: bold;
-    color: #fb8500;
+    color: var(--thingy-warning, #fb8500);
   }
   .excluded-day {
-    background-color: #ffb703 !important;
-    color: #023047 !important;
+    background-color: var(--thingy-secondary, #ffb703) !important;
+    color: var(--thingy-text, #023047) !important;
     text-decoration: line-through;
     opacity: 0.8;
   }
@@ -280,7 +281,7 @@ function Sprints() {
             size="small"
             color={
               params.value === 'ACTIVE'
-                ? 'primary'
+                ? 'progress'
                 : params.value === 'COMPLETED'
                   ? 'success'
                   : 'default'
@@ -314,10 +315,20 @@ function Sprints() {
     },
   ];
 
+  const actionsInToolbar = usePageActions([
+    {
+      key: 'add',
+      label: 'New sprint',
+      icon: <AddIcon fontSize="small" />,
+      onClick: () => handleOpenForm(),
+      primary: true,
+    },
+  ]);
+
   return (
     <Box
       sx={{
-        height: 'calc(100vh - 128px)',
+        height: '100%',
         width: '100%',
         display: 'flex',
         flexDirection: 'column',
@@ -325,13 +336,6 @@ function Sprints() {
       }}
     >
       <style>{calendarStyle}</style>
-      <Typography
-        variant="h4"
-        gutterBottom
-        sx={{ fontWeight: 300, flexShrink: 0 }}
-      >
-        Sprint Management
-      </Typography>
 
       <Paper
         elevation={0}
@@ -349,17 +353,19 @@ function Sprints() {
         />
       </Paper>
 
-      <SpeedDial
-        ariaLabel="Sprint Actions"
-        sx={{ position: 'absolute', bottom: 72, right: 16 }}
-        icon={<SpeedDialIcon />}
-      >
-        <SpeedDialAction
-          icon={<AddIcon />}
-          tooltipTitle="Create New Sprint"
-          onClick={() => handleOpenForm()}
-        />
-      </SpeedDial>
+      {!actionsInToolbar && (
+        <SpeedDial
+          ariaLabel="Sprint Actions"
+          sx={{ position: 'absolute', bottom: 72, right: 16 }}
+          icon={<SpeedDialIcon />}
+        >
+          <SpeedDialAction
+            icon={<AddIcon />}
+            tooltipTitle="Create New Sprint"
+            onClick={() => handleOpenForm()}
+          />
+        </SpeedDial>
+      )}
 
       {/* Sprint Form Dialog */}
       <Dialog
@@ -506,7 +512,7 @@ function Sprints() {
                             sx={{
                               width: 10,
                               height: 10,
-                              bgcolor: '#ffb703',
+                              bgcolor: 'secondary.main',
                               borderRadius: '50%',
                             }}
                           />{' '}
@@ -516,7 +522,7 @@ function Sprints() {
                             sx={{
                               width: 10,
                               height: 10,
-                              bgcolor: '#219ebc',
+                              bgcolor: 'primary.main',
                               borderRadius: '50%',
                             }}
                           />{' '}

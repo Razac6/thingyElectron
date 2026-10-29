@@ -25,7 +25,7 @@ jest.mock('electron-log', () => ({
 jest.mock('./db', () => ({
   logSystemEvent: jest.fn(),
   getDailyBio: jest.fn().mockReturnValue({ sleepScore: null, meetingTime: 0 }),
-  getAiMaturity: jest.fn().mockReturnValue(0),
+  getActiveUserId: jest.fn().mockReturnValue(1),
   getSetting: jest.fn(),
   setSetting: jest.fn(),
   getTasks: jest.fn().mockReturnValue([]),
@@ -125,13 +125,13 @@ describe('NeuralCore.getPredictionAccuracy', () => {
     neuralCore = new NeuralCore();
   });
 
-  it('returns 0 when there are no completed tasks in the window', () => {
+  it('returns null (no data) when there are no completed tasks in the window', () => {
     (getTasks as jest.Mock).mockReturnValue([]);
 
-    expect(neuralCore.getPredictionAccuracy(1, 14)).toBe(0);
+    expect(neuralCore.getPredictionAccuracy(1, 14)).toBeNull();
   });
 
-  it('returns 0 when tasks exist but none are completed-with-spendTime in the window', () => {
+  it('returns null when tasks exist but none are completed-with-spendTime in the window', () => {
     (getTasks as jest.Mock).mockReturnValue([
       {
         status: 'To Do',
@@ -140,7 +140,7 @@ describe('NeuralCore.getPredictionAccuracy', () => {
       },
     ]);
 
-    expect(neuralCore.getPredictionAccuracy(1, 14)).toBe(0);
+    expect(neuralCore.getPredictionAccuracy(1, 14)).toBeNull();
   });
 
   it('scores ~100 when the actual duration exactly matches the model prediction', () => {
@@ -199,7 +199,7 @@ describe('NeuralCore.getPredictionAccuracy', () => {
     ]);
 
     // days=14 window, but the task was completed 30 days ago
-    expect(neuralCore.getPredictionAccuracy(1, 14)).toBe(0);
+    expect(neuralCore.getPredictionAccuracy(1, 14)).toBeNull();
   });
 });
 

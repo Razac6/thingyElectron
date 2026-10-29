@@ -2,7 +2,9 @@ import React from 'react';
 import '@testing-library/jest-dom';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { ThemeProvider } from '@mui/material/styles';
 import SprintDetail from './SprintDetail';
+import { themes, DEFAULT_THEME } from '../../themes';
 
 // Mock TimerContext
 const mockTasks = [
@@ -54,12 +56,15 @@ beforeAll(() => {
 });
 
 const renderComponent = (sprintId = '1') => {
+  // The app's themes define the custom `progress` / `review` status colors used by chips
   return render(
-    <MemoryRouter initialEntries={[`/sprints/${sprintId}`]}>
-      <Routes>
-        <Route path="/sprints/:sprintId" element={<SprintDetail />} />
-      </Routes>
-    </MemoryRouter>,
+    <ThemeProvider theme={themes[DEFAULT_THEME]}>
+      <MemoryRouter initialEntries={[`/sprints/${sprintId}`]}>
+        <Routes>
+          <Route path="/sprints/:sprintId" element={<SprintDetail />} />
+        </Routes>
+      </MemoryRouter>
+    </ThemeProvider>,
   );
 };
 

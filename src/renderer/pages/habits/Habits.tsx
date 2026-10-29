@@ -25,10 +25,10 @@ import {
   ToggleButtonGroup,
   ToggleButton,
 } from '@mui/material';
+import { Theme, alpha, useTheme } from '@mui/material/styles';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
-import LoopIcon from '@mui/icons-material/Loop';
 import WhatshotIcon from '@mui/icons-material/Whatshot';
 import CheckIcon from '@mui/icons-material/Check';
 import StarIcon from '@mui/icons-material/Star';
@@ -119,6 +119,8 @@ function HabitHistoryChart({
   logs: HabitLog[];
   range: '7d' | '30d' | 'all';
 }) {
+  const theme = useTheme();
+  const lineColor = theme.palette.primary.main;
   const data = useMemo(() => {
     let daysToScroll = range === '7d' ? 7 : range === '30d' ? 30 : 90;
     if (range === 'all' && logs.length > 0) {
@@ -163,15 +165,15 @@ function HabitHistoryChart({
         {
           label: 'Habit Strength (%)',
           data: strengthPoints,
-          borderColor: '#219ebc',
-          backgroundColor: 'rgba(33, 158, 188, 0.1)',
+          borderColor: lineColor,
+          backgroundColor: alpha(lineColor, 0.1),
           fill: true,
           tension: 0.4,
           pointRadius: range === '7d' ? 4 : 0,
         },
       ],
     };
-  }, [logs, range]);
+  }, [logs, range, lineColor]);
 
   return (
     <Line
@@ -235,8 +237,8 @@ function HabitCard({
             <Box display="flex" alignItems="center" gap={2}>
               <Avatar
                 sx={{
-                  bgcolor: 'rgba(33, 158, 188, 0.1)',
-                  color: '#219ebc',
+                  bgcolor: (t: Theme) => alpha(t.palette.primary.main, 0.1),
+                  color: 'primary.main',
                   borderRadius: 2,
                 }}
               >
@@ -259,7 +261,7 @@ function HabitCard({
                   <Box
                     display="flex"
                     alignItems="center"
-                    color="#fb8500"
+                    color="warning.main"
                     gap={0.5}
                   >
                     <WhatshotIcon sx={{ fontSize: 16 }} />
@@ -496,28 +498,15 @@ export default function Habits() {
   };
 
   return (
-    <Box sx={{ height: 'calc(100vh - 100px)', overflow: 'auto', p: 2 }}>
+    <Box sx={{ height: '100%', overflow: 'auto', p: 2 }}>
       <Box
         sx={{
           display: 'flex',
-          justifyContent: 'space-between',
+          justifyContent: 'flex-end',
           alignItems: 'center',
           mb: 3,
         }}
       >
-        <Typography
-          variant="h4"
-          gutterBottom
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1,
-            fontWeight: 'bold',
-            color: '#023047',
-          }}
-        >
-          <LoopIcon fontSize="large" sx={{ color: '#219ebc' }} /> Habit Forge
-        </Typography>
         <Button
           variant="contained"
           startIcon={<AddIcon />}

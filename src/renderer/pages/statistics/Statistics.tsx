@@ -26,6 +26,7 @@ import ProductivityChart from '../../components/ProductivityChart';
 import HourlyProductivityChart from '../../components/HourlyProductivityChart';
 import AiProductivityChart from '../../components/AiProductivityChart';
 import { getWorkHistory } from '../../services/DatabaseService';
+import { LiquidLoader } from '../../components/LiquidFill';
 
 const formatDuration = (ms: number): string => {
   if (ms <= 0) return '0h 0m';
@@ -400,7 +401,7 @@ function Statistics() {
           </Box>
 
           {isHistoryLoading && (
-            <Typography color="text.secondary">Loading...</Typography>
+            <LiquidLoader size={40} label="Loading history" />
           )}
 
           {!isHistoryLoading && historyData.length === 0 && (

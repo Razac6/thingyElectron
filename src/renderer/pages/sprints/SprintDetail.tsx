@@ -160,7 +160,7 @@ export default function SprintDetail() {
   return (
     <Box
       sx={{
-        height: 'calc(100vh - 100px)',
+        height: '100%',
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
@@ -182,7 +182,7 @@ export default function SprintDetail() {
               label={sprint.status}
               color={
                 sprint.status === 'ACTIVE'
-                  ? 'primary'
+                  ? 'progress'
                   : sprint.status === 'COMPLETED'
                     ? 'success'
                     : 'default'
@@ -384,10 +384,10 @@ export default function SprintDetail() {
                   sx={{
                     color:
                       aiAnalysis.risk === 'Critical'
-                        ? '#d32f2f'
+                        ? 'error.main'
                         : aiAnalysis.risk === 'At Risk'
-                          ? '#fb8500'
-                          : '#2e7d32',
+                          ? 'warning.main'
+                          : 'success.main',
                   }}
                 />
                 <Box>

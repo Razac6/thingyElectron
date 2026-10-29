@@ -12,6 +12,8 @@ import {
   AppBar as MuiAppBar,
   Typography,
   IconButton,
+  ButtonBase,
+  Tooltip,
   styled,
   Theme,
   CSSObject,
@@ -43,12 +45,16 @@ import catMovement from '../../../assets/Cat Movement.json';
 import { useTimer } from '../context/TimerContext';
 import { useGamification } from '../context/GamificationContext';
 import Timer from './Timer';
+import { PageAction, PageActionsContext } from '../context/PageActionsContext';
 import SearchOverlay from './SearchOverlay';
 import IdlePromptModal from './IdlePromptModal';
+import FocusBlockCard from './FocusBlockCard';
+import TimerPill from './TimerPill';
 import ModeSuggestionModal from './ModeSuggestionModal';
 import BoostOverlay from './BoostOverlay';
 import { useSettings } from '../context/SettingsContext';
 import { AiCompanion } from './AiCompanion';
+import { useIsLuma } from '../themes';
 
 const animationMap = {
   cat_movement: catMovement,
@@ -70,6 +76,12 @@ const menuItems = [
   { text: 'Profile', path: '/profile', icon: <PersonIcon /> },
   { text: 'Notes', path: '/notes', icon: <NoteAltIcon /> },
 ];
+
+// Titles for routes that aren't in the menu (shown in the AppBar)
+const extraPageTitles: Record<string, string> = {
+  '/settings': 'Settings',
+  '/meditation': 'Meditation',
+};
 
 const bottomMenuItems = [
   { text: 'System Logs', path: '/logs', icon: <TerminalIcon /> },
@@ -149,6 +161,7 @@ export default function Layout({ children }: LayoutProps) {
   const location = useLocation();
   const [open, setOpen] = React.useState(false);
   const [searchOpen, setSearchOpen] = React.useState(false);
+  const [pageActions, setPageActions] = React.useState<PageAction[]>([]);
   const {
     tasks,
     stopTimer,
@@ -164,6 +177,7 @@ export default function Layout({ children }: LayoutProps) {
   } = useTimer();
   const { rewardAnimation, hideRewardAnimation } = useGamification();
   const { settings } = useSettings();
+  const isLuma = useIsLuma();
 
   const activeTask = tasks.find((task) => task.startTimer !== null);
   const isPomodoroRunning = activeTask?.timerMode === 'pomodoro';
@@ -228,7 +242,9 @@ export default function Layout({ children }: LayoutProps) {
     const currentItem = allItems.find(
       (item) => item.path === location.pathname,
     );
-    return currentItem ? currentItem.text : 'Thingy';
+    return currentItem
+      ? currentItem.text
+      : extraPageTitles[location.pathname] || 'Thingy';
   };
 
   const currentAnimationData = rewardAnimation
@@ -236,183 +252,313 @@ export default function Layout({ children }: LayoutProps) {
     : null;
 
   return (
-    <Box sx={{ display: 'flex', height: '100vh' }}>
-      <CssBaseline />
-      <BoostOverlay open={isBoostMode} onClose={() => toggleBoostMode(false)} />
-      <AiCompanion />
-      {currentAnimationData && (
+    <PageActionsContext.Provider value={setPageActions}>
+      <Box sx={{ display: 'flex', height: '100vh' }}>
+        <CssBaseline />
+        <BoostOverlay
+          open={isBoostMode}
+          onClose={() => toggleBoostMode(false)}
+        />
+        <AiCompanion />
+        {currentAnimationData && (
+          <Box
+            sx={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              zIndex: 9999,
+              pointerEvents: 'none',
+            }}
+          >
+            <Lottie
+              animationData={currentAnimationData}
+              loop={false}
+              onComplete={hideRewardAnimation}
+            />
+          </Box>
+        )}
+        <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} />
+        {idlePrompt && (
+          <IdlePromptModal
+            open={idlePrompt.isOpen}
+            idleTimeMs={idlePrompt.idleTimeMs}
+            taskTitle={idlePrompt.taskTitle}
+            onKeep={handleKeepIdleTime}
+            onDiscard={handleDiscardIdleTime}
+            reason={idlePrompt.reason}
+            sessionStart={idlePrompt.originalStartTime}
+            lastActivityAt={idlePrompt.lastActivityAt}
+          />
+        )}
+        <FocusBlockCard />
+        {modeSuggestion && (
+          <ModeSuggestionModal
+            open={!!modeSuggestion}
+            mode={modeSuggestion.mode}
+            reason={modeSuggestion.reason}
+            onAccept={handleAcceptModeSuggestion}
+            onDismiss={handleDismissModeSuggestion}
+          />
+        )}
+        {isLuma ? (
+          // Luma has no top bar: search and the running timer float in the top-right corner
+          <Box
+            sx={{
+              position: 'fixed',
+              top: 12,
+              right: 24,
+              zIndex: (theme) => theme.zIndex.drawer + 1,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1.5,
+            }}
+          >
+            {activeTask && (
+              <TimerPill
+                task={activeTask}
+                onStop={() => stopTimer(activeTask.id)}
+              />
+            )}
+            {pageActions
+              .filter((action) => !action.primary)
+              .map((action) => (
+                <Tooltip key={action.key} title={action.label}>
+                  <IconButton
+                    aria-label={action.label}
+                    onClick={action.onClick}
+                    sx={{
+                      width: 40,
+                      height: 40,
+                      bgcolor: 'background.paper',
+                      border: 1,
+                      borderColor: 'divider',
+                      boxShadow: '0 8px 24px rgba(17,18,20,0.08)',
+                      '&:hover': { bgcolor: 'background.paper' },
+                    }}
+                  >
+                    {action.icon}
+                  </IconButton>
+                </Tooltip>
+              ))}
+            {pageActions
+              .filter((action) => action.primary)
+              .map((action) => (
+                <ButtonBase
+                  key={action.key}
+                  aria-label={action.label}
+                  onClick={action.onClick}
+                  sx={{
+                    height: 40,
+                    pl: 1.5,
+                    pr: 2,
+                    gap: 0.75,
+                    borderRadius: 999,
+                    bgcolor: 'primary.main',
+                    color: 'primary.contrastText',
+                    boxShadow: '0 8px 24px rgba(17,18,20,0.18)',
+                    fontSize: '0.875rem',
+                    fontWeight: 600,
+                    '&:hover': { bgcolor: 'primary.light' },
+                  }}
+                >
+                  {action.icon}
+                  {action.label}
+                </ButtonBase>
+              ))}
+            <ButtonBase
+              onClick={() => setSearchOpen(true)}
+              sx={{
+                height: 40,
+                px: 2,
+                gap: 1,
+                borderRadius: 999,
+                bgcolor: 'background.paper',
+                color: 'text.secondary',
+                border: 1,
+                borderColor: 'divider',
+                boxShadow: '0 8px 24px rgba(17,18,20,0.08)',
+                fontSize: '0.875rem',
+                fontWeight: 500,
+                transition: 'color 0.2s, border-color 0.2s',
+                '&:hover': {
+                  color: 'text.primary',
+                  borderColor: 'text.primary',
+                },
+              }}
+            >
+              <SearchIcon fontSize="small" />
+              Search
+              <Box
+                component="kbd"
+                sx={{
+                  ml: 1,
+                  px: 0.75,
+                  borderRadius: 1,
+                  bgcolor: 'background.default',
+                  fontFamily: 'inherit',
+                  fontSize: '0.7rem',
+                }}
+              >
+                Ctrl K
+              </Box>
+            </ButtonBase>
+          </Box>
+        ) : (
+          <AppBar position="fixed" open={open}>
+            <Toolbar sx={{ display: 'flex', justifyContent: 'space-between' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                <IconButton
+                  color="inherit"
+                  aria-label="open drawer"
+                  onClick={handleDrawerOpen}
+                  edge="start"
+                  sx={{ marginRight: 5, ...(open && { display: 'none' }) }}
+                >
+                  <MenuIcon />
+                </IconButton>
+                <Typography variant="h6" noWrap component="div">
+                  {getPageTitle()}
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <IconButton color="inherit" onClick={() => setSearchOpen(true)}>
+                  <SearchIcon />
+                </IconButton>
+                {activeTask && (
+                  <>
+                    <Typography variant="body1" noWrap sx={{ color: 'white' }}>
+                      {activeTask.title}
+                    </Typography>
+                    <Box sx={{ color: 'white', minWidth: '110px' }}>
+                      <Timer
+                        startTimer={activeTask.startTimer}
+                        spendTime={activeTask.spendTime}
+                        estimate={activeTask.estimate}
+                        context="header"
+                      />
+                    </Box>
+                    <IconButton
+                      onClick={() => stopTimer(activeTask.id)}
+                      sx={{ color: '#ef476f' }}
+                    >
+                      <StopIcon />
+                    </IconButton>
+                  </>
+                )}
+              </Box>
+            </Toolbar>
+          </AppBar>
+        )}
+        <Drawer variant="permanent" open={open}>
+          <DrawerHeader
+            sx={isLuma && !open ? { justifyContent: 'center' } : undefined}
+          >
+            {isLuma && !open ? (
+              // Without a top bar the drawer opens from its own header
+              <IconButton aria-label="open drawer" onClick={handleDrawerOpen}>
+                <MenuIcon />
+              </IconButton>
+            ) : (
+              <IconButton onClick={handleDrawerClose}>
+                <ChevronLeftIcon />
+              </IconButton>
+            )}
+          </DrawerHeader>
+          <Box
+            sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}
+          >
+            <List>
+              {visibleMenuItems.map((item) => (
+                <ListItem
+                  key={item.text}
+                  disablePadding
+                  sx={{ display: 'block' }}
+                >
+                  <ListItemButton
+                    sx={{
+                      minHeight: 48,
+                      justifyContent: open ? 'initial' : 'center',
+                      px: 2.5,
+                    }}
+                    selected={location.pathname === item.path}
+                    onClick={() => navigate(item.path)}
+                  >
+                    <ListItemIcon
+                      sx={{
+                        minWidth: 0,
+                        mr: open ? 3 : 'auto',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      {item.icon}
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={item.text}
+                      sx={{ opacity: open ? 1 : 0 }}
+                    />
+                  </ListItemButton>
+                </ListItem>
+              ))}
+            </List>
+            <Box sx={{ flexGrow: 1 }} />
+            <List>
+              {bottomMenuItems.map((item) => (
+                <ListItem
+                  key={item.text}
+                  disablePadding
+                  sx={{ display: 'block' }}
+                >
+                  <ListItemButton
+                    sx={{
+                      minHeight: 48,
+                      justifyContent: open ? 'initial' : 'center',
+                      px: 2.5,
+                    }}
+                    selected={location.pathname === item.path}
+                    onClick={() => navigate(item.path)}
+                  >
+                    <ListItemIcon
+                      sx={{
+                        minWidth: 0,
+                        mr: open ? 3 : 'auto',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      {item.icon}
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={item.text}
+                      sx={{ opacity: open ? 1 : 0 }}
+                    />
+                  </ListItemButton>
+                </ListItem>
+              ))}
+            </List>
+          </Box>
+        </Drawer>
         <Box
+          component="main"
           sx={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100%',
+            flexGrow: 1,
+            p: 3,
             height: '100%',
-            zIndex: 9999,
-            pointerEvents: 'none',
+            overflow: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            boxSizing: 'border-box',
           }}
         >
-          <Lottie
-            animationData={currentAnimationData}
-            loop={false}
-            onComplete={hideRewardAnimation}
-          />
+          {/* Room for the AppBar (Classic) or the floating search pill (Luma) */}
+          {isLuma ? (
+            <Box sx={{ height: 40, flexShrink: 0 }} />
+          ) : (
+            <Toolbar sx={{ flexShrink: 0 }} />
+          )}
+          <Box sx={{ flex: 1, minHeight: 0 }}>{children}</Box>
         </Box>
-      )}
-      <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} />
-      {idlePrompt && (
-        <IdlePromptModal
-          open={idlePrompt.isOpen}
-          idleTimeMs={idlePrompt.idleTimeMs}
-          taskTitle={idlePrompt.taskTitle}
-          onKeep={handleKeepIdleTime}
-          onDiscard={handleDiscardIdleTime}
-        />
-      )}
-      {modeSuggestion && (
-        <ModeSuggestionModal
-          open={!!modeSuggestion}
-          mode={modeSuggestion.mode}
-          reason={modeSuggestion.reason}
-          onAccept={handleAcceptModeSuggestion}
-          onDismiss={handleDismissModeSuggestion}
-        />
-      )}
-      <AppBar position="fixed" open={open}>
-        <Toolbar sx={{ display: 'flex', justifyContent: 'space-between' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <IconButton
-              color="inherit"
-              aria-label="open drawer"
-              onClick={handleDrawerOpen}
-              edge="start"
-              sx={{ marginRight: 5, ...(open && { display: 'none' }) }}
-            >
-              <MenuIcon />
-            </IconButton>
-            <Typography variant="h6" noWrap component="div">
-              {getPageTitle()}
-            </Typography>
-          </Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <IconButton color="inherit" onClick={() => setSearchOpen(true)}>
-              <SearchIcon />
-            </IconButton>
-            {activeTask && (
-              <>
-                <Typography variant="body1" noWrap sx={{ color: 'white' }}>
-                  {activeTask.title}
-                </Typography>
-                <Box sx={{ color: 'white', minWidth: '110px' }}>
-                  <Timer
-                    startTimer={activeTask.startTimer}
-                    spendTime={activeTask.spendTime}
-                    estimate={activeTask.estimate}
-                    context="header"
-                  />
-                </Box>
-                <IconButton
-                  onClick={() => stopTimer(activeTask.id)}
-                  sx={{ color: '#ef476f' }}
-                >
-                  <StopIcon />
-                </IconButton>
-              </>
-            )}
-          </Box>
-        </Toolbar>
-      </AppBar>
-      <Drawer variant="permanent" open={open}>
-        <DrawerHeader>
-          <IconButton onClick={handleDrawerClose}>
-            <ChevronLeftIcon />
-          </IconButton>
-        </DrawerHeader>
-        <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-          <List>
-            {visibleMenuItems.map((item) => (
-              <ListItem
-                key={item.text}
-                disablePadding
-                sx={{ display: 'block' }}
-              >
-                <ListItemButton
-                  sx={{
-                    minHeight: 48,
-                    justifyContent: open ? 'initial' : 'center',
-                    px: 2.5,
-                  }}
-                  selected={location.pathname === item.path}
-                  onClick={() => navigate(item.path)}
-                >
-                  <ListItemIcon
-                    sx={{
-                      minWidth: 0,
-                      mr: open ? 3 : 'auto',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    {item.icon}
-                  </ListItemIcon>
-                  <ListItemText
-                    primary={item.text}
-                    sx={{ opacity: open ? 1 : 0 }}
-                  />
-                </ListItemButton>
-              </ListItem>
-            ))}
-          </List>
-          <Box sx={{ flexGrow: 1 }} />
-          <List>
-            {bottomMenuItems.map((item) => (
-              <ListItem
-                key={item.text}
-                disablePadding
-                sx={{ display: 'block' }}
-              >
-                <ListItemButton
-                  sx={{
-                    minHeight: 48,
-                    justifyContent: open ? 'initial' : 'center',
-                    px: 2.5,
-                  }}
-                  selected={location.pathname === item.path}
-                  onClick={() => navigate(item.path)}
-                >
-                  <ListItemIcon
-                    sx={{
-                      minWidth: 0,
-                      mr: open ? 3 : 'auto',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    {item.icon}
-                  </ListItemIcon>
-                  <ListItemText
-                    primary={item.text}
-                    sx={{ opacity: open ? 1 : 0 }}
-                  />
-                </ListItemButton>
-              </ListItem>
-            ))}
-          </List>
-        </Box>
-      </Drawer>
-      <Box
-        component="main"
-        sx={{
-          flexGrow: 1,
-          p: 3,
-          height: '100%',
-          overflow: 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-          boxSizing: 'border-box',
-        }}
-      >
-        <Toolbar sx={{ flexShrink: 0 }} />
-        <Box sx={{ flex: 1, minHeight: 0 }}>{children}</Box>
       </Box>
-    </Box>
+    </PageActionsContext.Provider>
   );
 }

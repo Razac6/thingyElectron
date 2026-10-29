@@ -129,16 +129,7 @@ function WebAnalytics() {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Box
-        display="flex"
-        justifyContent="space-between"
-        alignItems="center"
-        mb={4}
-      >
-        <Typography variant="h4" sx={{ color: theme.palette.text.primary }}>
-          {renderTextWithIcons('📊 Monitoring Activity')}
-        </Typography>
-
+      <Box display="flex" justifyContent="flex-end" alignItems="center" mb={4}>
         <FormControl sx={{ minWidth: 120 }} size="small">
           <InputLabel>Time Range</InputLabel>
           <Select

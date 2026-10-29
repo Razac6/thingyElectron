@@ -14,6 +14,7 @@ import {
   Zoom,
   LinearProgress,
 } from '@mui/material';
+import { Theme } from '@mui/material/styles';
 import PsychologyIcon from '@mui/icons-material/Psychology';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import SummarizeIcon from '@mui/icons-material/Summarize';
@@ -172,7 +173,7 @@ function AiStatusWidget() {
                 bottom: '90px', // Above robot
                 left: '10px',
                 zIndex: 100,
-                bgcolor: '#023047',
+                bgcolor: 'text.primary',
                 color: 'white',
                 p: 1.5,
                 borderRadius: '12px',
@@ -188,7 +189,8 @@ function AiStatusWidget() {
                   left: '0px',
                   borderStyle: 'solid',
                   borderWidth: '10px 10px 0 0',
-                  borderColor: '#023047 transparent transparent transparent',
+                  borderColor: (t: Theme) =>
+                    `${t.palette.text.primary} transparent transparent transparent`,
                 },
               }}
             >
@@ -218,7 +220,10 @@ function AiStatusWidget() {
             }}
           >
             <SmartToyIcon
-              sx={{ fontSize: 40, color: isMature ? '#219ebc' : '#ffb703' }}
+              sx={{
+                fontSize: 40,
+                color: isMature ? 'primary.main' : 'secondary.main',
+              }}
             />
           </Box>
 

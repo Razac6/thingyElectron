@@ -17,6 +17,7 @@ import {
   IconButton,
   Alert,
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -53,6 +54,7 @@ import { TaskTypeEnum } from '../../../enums/task-type.enum';
 import { useGamification } from '../../context/GamificationContext';
 import { useSettings } from '../../context/SettingsContext';
 import TaskStats from '../../components/TaskStats';
+import { LiquidLoader } from '../../components/LiquidFill';
 
 ChartJS.register(
   CategoryScale,
@@ -66,6 +68,7 @@ ChartJS.register(
 function TaskDetail() {
   const { taskId } = useParams<{ taskId: string }>();
   const navigate = useNavigate();
+  const barColor = useTheme().palette.text.primary;
   const { tasks, updateTask, startTimer, stopTimer } = useTimer();
   const { addXp, checkForAchievements, triggerRewardAnimation } =
     useGamification();
@@ -163,7 +166,7 @@ function TaskDetail() {
                 {
                   label: 'Time Spent (min)',
                   data: dataPoints,
-                  backgroundColor: '#023047',
+                  backgroundColor: barColor,
                   borderRadius: 4,
                   barThickness: 20,
                 },
@@ -194,7 +197,7 @@ function TaskDetail() {
     };
 
     fetchAndSetTask();
-  }, [taskId, tasks]);
+  }, [taskId, tasks, barColor]);
 
   const handleAddChecklist = async () => {
     if (newChecklistItem.trim()) {
@@ -281,12 +284,14 @@ function TaskDetail() {
     }
   };
 
-  if (isLoading || !task) {
+  if (isLoading) {
+    return <LiquidLoader label="Loading task" />;
+  }
+
+  if (!task) {
     return (
       <Paper sx={{ padding: 3, textAlign: 'center' }}>
-        <Typography variant="h5">
-          {isLoading ? 'Loading task...' : 'Task not found'}
-        </Typography>
+        <Typography variant="h5">Task not found</Typography>
         <Button
           variant="contained"
           startIcon={<ArrowBackIcon />}
