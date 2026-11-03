@@ -94,6 +94,8 @@ export default function DiffView({
         flexDirection: 'column',
         minHeight: 0,
         maxHeight,
+        // In a full-height parent (the dialog) it fills the space and scrolls inside
+        flex: maxHeight === '100%' ? 1 : undefined,
       }}
     >
       <Box

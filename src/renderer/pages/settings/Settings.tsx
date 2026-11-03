@@ -455,6 +455,51 @@ function Settings() {
           <FormControlLabel
             control={
               <Switch
+                checked={settings.focus_music_brainfm === 'true'}
+                onChange={(e) =>
+                  updateSetting('focus_music_brainfm', String(e.target.checked))
+                }
+              />
+            }
+            label="Open Brain.fm when a timer or focus block starts (desktop app on macOS, web player elsewhere)"
+          />
+          {settings.focus_music_brainfm === 'true' && (
+            <Box sx={{ ml: 4, mb: 1 }}>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                component="div"
+              >
+                When the focus block or timer ends (macOS)
+              </Typography>
+              <ToggleButtonGroup
+                size="small"
+                exclusive
+                value={settings.focus_music_control || 'playpause'}
+                onChange={(_, value) =>
+                  value && updateSetting('focus_music_control', value)
+                }
+                sx={{ mt: 0.5 }}
+              >
+                <ToggleButton value="playpause">Play / pause</ToggleButton>
+                <ToggleButton value="quit">Open / quit app</ToggleButton>
+                <ToggleButton value="none">Leave it</ToggleButton>
+              </ToggleButtonGroup>
+              <Typography
+                variant="caption"
+                color="text.disabled"
+                component="div"
+                sx={{ mt: 0.5 }}
+              >
+                Play / pause uses the system media key – macOS asks once for the
+                Accessibility permission, and the key goes to the app that
+                played audio last.
+              </Typography>
+            </Box>
+          )}
+          <FormControlLabel
+            control={
+              <Switch
                 checked={settings.enableFatigueWarnings !== 'false'}
                 onChange={(e) =>
                   updateSetting(

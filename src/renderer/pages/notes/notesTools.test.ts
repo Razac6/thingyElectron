@@ -351,3 +351,111 @@ describe('sqlTools', () => {
     expect(checkSql("select '[x]' from [my table]")).toEqual({ ok: true });
   });
 });
+
+describe('repairJson', () => {
+  // eslint-disable-next-line global-require
+  const { repairJson } = require('./jsonTools');
+  const fix = (s: string) => {
+    const r = repairJson(s);
+    expect(r.ok).toBe(true);
+    return JSON.parse(r.text);
+  };
+
+  it('fixes JS object literals', () => {
+    expect(
+      fix("{name: 'Ann', tags: ['a', 'b',], // note\n active: true,}"),
+    ).toEqual({ name: 'Ann', tags: ['a', 'b'], active: true });
+  });
+
+  it('fixes Python dicts', () => {
+    expect(fix("{'a': True, 'b': None, 'c': False}")).toEqual({
+      a: true,
+      b: null,
+      c: false,
+    });
+  });
+
+  it('adds missing commas and closes brackets', () => {
+    expect(fix('{"a": 1\n "b": [1 2 3]\n "c": {"d": "x"')).toEqual({
+      a: 1,
+      b: [1, 2, 3],
+      c: { d: 'x' },
+    });
+  });
+
+  it('removes text around, wraps several values, escapes newlines', () => {
+    expect(fix('response = {"a": 1};')).toEqual({ a: 1 });
+    expect(fix('{"a":1}\n{"a":2}')).toEqual([{ a: 1 }, { a: 2 }]);
+    expect(fix('{"text": "line1\nline2"}')).toEqual({ text: 'line1\nline2' });
+    expect(fix('{"q": "say \\"hi\\""}')).toEqual({ q: 'say "hi"' });
+  });
+
+  it('reports what it changed', () => {
+    expect(repairJson("{a: 'x',}").fixes).toEqual(
+      expect.arrayContaining([
+        'Converted single quotes to double quotes',
+        'Quoted unquoted keys',
+        'Removed trailing commas',
+      ]),
+    );
+    expect(repairJson('{"ok": 1}').fixes).toEqual([]);
+  });
+});
+
+describe('repairSql / repairMarkdown', () => {
+  // eslint-disable-next-line global-require
+  const { repairSql, checkSql } = require('./sqlTools');
+  // eslint-disable-next-line global-require
+  const { repairMarkdown } = require('./markdownTools');
+
+  it('balances brackets, closes strings, drops dangling commas', () => {
+    const r = repairSql("select a, b, from t where id in (1, 2 and name = 'x");
+    expect(r.ok).toBe(true);
+    expect(checkSql(r.text).ok).toBe(true);
+    expect(r.text).toContain('FROM t');
+    expect(r.text).not.toMatch(/,\s*FROM/);
+    expect(r.fixes).toEqual(
+      expect.arrayContaining([
+        'Closed an unterminated string',
+        'Added 1 missing )',
+        'Removed dangling commas',
+      ]),
+    );
+    expect(repairSql('select a) from t').fixes).toContain(
+      'Removed an unmatched )',
+    );
+  });
+
+  it('tidies markdown but leaves code blocks alone', () => {
+    const r = repairMarkdown(
+      '#Title\n* one\n+ two\n[] todo\n- [X] done   \n\n\n\n```js\n#not a heading\n* not a list',
+    );
+    expect(r.text).toBe(
+      [
+        '# Title',
+        '- one',
+        '- two',
+        '- [ ] todo',
+        '- [x] done',
+        '',
+        '```js',
+        '#not a heading',
+        '* not a list',
+        '```',
+      ].join('\n'),
+    );
+    expect(r.fixes).toEqual(
+      expect.arrayContaining([
+        'Added spaces after # in headings',
+        'Unified list bullets',
+        'Fixed checklist items',
+        'Collapsed blank lines',
+        'Closed an unclosed code block',
+      ]),
+    );
+    // hashtags and bold text are not headings / bullets
+    expect(repairMarkdown('#tag\n**bold** text').text).toBe(
+      '#tag\n**bold** text',
+    );
+  });
+});

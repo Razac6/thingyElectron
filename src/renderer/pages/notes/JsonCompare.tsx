@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import {
   Box,
   Button,
+  Dialog,
   FormControlLabel,
   IconButton,
   MenuItem,
@@ -19,10 +20,20 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import ContentPasteIcon from '@mui/icons-material/ContentPaste';
 import FormatAlignLeftIcon from '@mui/icons-material/FormatAlignLeft';
 import CheckIcon from '@mui/icons-material/Check';
+import OpenInFullIcon from '@mui/icons-material/OpenInFull';
+import CloseIcon from '@mui/icons-material/Close';
+import AutoFixHighOutlinedIcon from '@mui/icons-material/AutoFixHighOutlined';
+import UndoIcon from '@mui/icons-material/Undo';
 import CodeArea from './CodeArea';
 import DiffView from './DiffView';
-import { diffJson, formatJson, parseJson, JsonDifference } from './jsonTools';
-import { checkSql, formatSql, normalizeSql } from './sqlTools';
+import {
+  diffJson,
+  formatJson,
+  parseJson,
+  repairJson,
+  JsonDifference,
+} from './jsonTools';
+import { checkSql, formatSql, normalizeSql, repairSql } from './sqlTools';
 import { Note, NoteFormat } from './notesModel';
 import { MONO_FONT } from './highlight';
 import useCopy from './useCopy';
@@ -87,6 +98,7 @@ function Side({
 }) {
   const status = validate(kind, value);
   const { copy, copied } = useCopy();
+  const [undo, setUndo] = useState<string | null>(null);
   const noteFormat: NoteFormat = kind === 'text' ? 'markdown' : kind;
   const loadable = notes.filter((n) => n.format === noteFormat);
 
@@ -127,6 +139,43 @@ function Side({
                 <FormatAlignLeftIcon fontSize="small" />
               </IconButton>
             </span>
+          </Tooltip>
+        )}
+        {kind !== 'text' && (
+          <Tooltip
+            title={kind === 'json' ? 'Try to fix' : 'Try to fix (and format)'}
+          >
+            <span>
+              <IconButton
+                size="small"
+                aria-label={`Try to fix ${label}`}
+                disabled={!value.trim()}
+                onClick={() => {
+                  const result =
+                    kind === 'json' ? repairJson(value) : repairSql(value);
+                  if (result.ok && result.text !== value) {
+                    setUndo(value);
+                    onChange(result.text);
+                  }
+                }}
+              >
+                <AutoFixHighOutlinedIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+        )}
+        {undo !== null && (
+          <Tooltip title="Undo fix">
+            <IconButton
+              size="small"
+              aria-label={`Undo fix ${label}`}
+              onClick={() => {
+                onChange(undo);
+                setUndo(null);
+              }}
+            >
+              <UndoIcon fontSize="small" />
+            </IconButton>
           </Tooltip>
         )}
         <Tooltip title={copied ? 'Copied!' : 'Copy'}>
@@ -218,6 +267,7 @@ export default function JsonCompare({
   const [ignoreComments, setIgnoreComments] = useState(true);
   const [mode, setMode] = useState<'lines' | 'paths'>('lines');
   const [onlyChanges, setOnlyChanges] = useState(true);
+  const [diffOpen, setDiffOpen] = useState(false);
   const { copy, copied } = useCopy();
 
   const normalized = useMemo(() => {
@@ -258,6 +308,214 @@ export default function JsonCompare({
     })[d.kind];
 
   const byPath = kind === 'json' && mode === 'paths';
+
+  // The differences panel - inline under the editors, or full screen in a dialog
+  const diffPanel = (inModal: boolean) => (
+    <>
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 2,
+          mb: 1.5,
+          flexWrap: 'wrap',
+        }}
+      >
+        <Typography variant="subtitle2">Differences</Typography>
+        {normalized && (
+          <Typography variant="body2" color="text.secondary">
+            {normalized.differences
+              ? `${normalized.differences.length || 'No'} difference${normalized.differences.length === 1 ? '' : 's'}`
+              : changedLines
+                ? ''
+                : 'Identical'}
+          </Typography>
+        )}
+        <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1 }}>
+          {kind === 'json' && (
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={sortKeys}
+                  onChange={(e) => setSortKeys(e.target.checked)}
+                />
+              }
+              label={<Typography variant="body2">Ignore key order</Typography>}
+            />
+          )}
+          {kind === 'sql' && (
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={ignoreComments}
+                  onChange={(e) => setIgnoreComments(e.target.checked)}
+                />
+              }
+              label={<Typography variant="body2">Ignore comments</Typography>}
+            />
+          )}
+          {!byPath && (
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={onlyChanges}
+                  onChange={(e) => setOnlyChanges(e.target.checked)}
+                />
+              }
+              label={<Typography variant="body2">Only changes</Typography>}
+            />
+          )}
+          {kind === 'json' && (
+            <ToggleButtonGroup
+              size="small"
+              exclusive
+              value={mode}
+              onChange={(_, v) => v && setMode(v)}
+            >
+              <ToggleButton value="lines">Side by side</ToggleButton>
+              <ToggleButton value="paths">By path</ToggleButton>
+            </ToggleButtonGroup>
+          )}
+          {inModal ? (
+            <IconButton
+              aria-label="Close differences"
+              onClick={() => setDiffOpen(false)}
+            >
+              <CloseIcon />
+            </IconButton>
+          ) : (
+            <Tooltip title="Open the differences full screen">
+              <span>
+                <IconButton
+                  aria-label="Open differences full screen"
+                  disabled={!normalized}
+                  onClick={() => setDiffOpen(true)}
+                >
+                  <OpenInFullIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+          )}
+        </Box>
+      </Box>
+
+      {!normalized && (
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          sx={{ py: 3, textAlign: 'center' }}
+        >
+          {kind === 'text'
+            ? 'Paste text on both sides to see the differences.'
+            : `Paste valid ${kind.toUpperCase()} on both sides to see the differences.`}
+        </Typography>
+      )}
+
+      {normalized && !byPath && (
+        <DiffView
+          left={normalized.left}
+          right={normalized.right}
+          leftLabel={kind === 'sql' ? 'Left (normalised)' : 'Left'}
+          rightLabel={kind === 'sql' ? 'Right (normalised)' : 'Right'}
+          onlyChanges={onlyChanges}
+          maxHeight={inModal ? '100%' : 420}
+        />
+      )}
+
+      {normalized && byPath && normalized.differences && (
+        <Box
+          sx={{
+            overflow: 'auto',
+            fontFamily: MONO_FONT,
+            fontSize: '0.8rem',
+            maxHeight: inModal ? undefined : 420,
+            flex: inModal ? 1 : undefined,
+            minHeight: 0,
+          }}
+        >
+          {normalized.differences.map((d) => (
+            <Box
+              key={`${d.kind}${d.path}`}
+              sx={{
+                display: 'grid',
+                gridTemplateColumns:
+                  '80px minmax(160px, 1fr) minmax(0, 1fr) minmax(0, 1fr) 32px',
+                gap: 1.5,
+                alignItems: 'center',
+                py: 0.5,
+                px: 1,
+                borderTop: 1,
+                borderColor: 'divider',
+                '&:first-of-type': { borderTop: 0 },
+              }}
+            >
+              <Box
+                sx={{
+                  fontFamily: 'inherit',
+                  fontSize: '0.7rem',
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  color: kindColor(d),
+                  bgcolor: alpha(kindColor(d), 0.1),
+                  borderRadius: 1,
+                  px: 0.75,
+                  textAlign: 'center',
+                }}
+              >
+                {d.kind}
+              </Box>
+              <Box
+                sx={{
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+                title={d.path}
+              >
+                {d.path}
+              </Box>
+              <Box
+                sx={{
+                  color: 'error.main',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {d.kind === 'added' ? '' : preview(d.left)}
+              </Box>
+              <Box
+                sx={{
+                  color: 'success.main',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {d.kind === 'removed' ? '' : preview(d.right)}
+              </Box>
+              <Tooltip title={copied === d.path ? 'Copied!' : 'Copy path'}>
+                <IconButton
+                  size="small"
+                  onClick={() => copy(d.path, d.path)}
+                  aria-label="Copy path"
+                >
+                  {copied === d.path ? (
+                    <CheckIcon sx={{ fontSize: 16 }} color="success" />
+                  ) : (
+                    <ContentCopyIcon sx={{ fontSize: 16 }} />
+                  )}
+                </IconButton>
+              </Tooltip>
+            </Box>
+          ))}
+        </Box>
+      )}
+    </>
+  );
 
   return (
     <Box
@@ -331,185 +589,25 @@ export default function JsonCompare({
           flexDirection: 'column',
         }}
       >
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 2,
-            mb: 1.5,
-            flexWrap: 'wrap',
-          }}
-        >
-          <Typography variant="subtitle2">Differences</Typography>
-          {normalized && (
-            <Typography variant="body2" color="text.secondary">
-              {normalized.differences
-                ? `${normalized.differences.length || 'No'} difference${normalized.differences.length === 1 ? '' : 's'}`
-                : changedLines
-                  ? ''
-                  : 'Identical'}
-            </Typography>
-          )}
-          <Box
-            sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1 }}
-          >
-            {kind === 'json' && (
-              <FormControlLabel
-                control={
-                  <Switch
-                    size="small"
-                    checked={sortKeys}
-                    onChange={(e) => setSortKeys(e.target.checked)}
-                  />
-                }
-                label={
-                  <Typography variant="body2">Ignore key order</Typography>
-                }
-              />
-            )}
-            {kind === 'sql' && (
-              <FormControlLabel
-                control={
-                  <Switch
-                    size="small"
-                    checked={ignoreComments}
-                    onChange={(e) => setIgnoreComments(e.target.checked)}
-                  />
-                }
-                label={<Typography variant="body2">Ignore comments</Typography>}
-              />
-            )}
-            {!byPath && (
-              <FormControlLabel
-                control={
-                  <Switch
-                    size="small"
-                    checked={onlyChanges}
-                    onChange={(e) => setOnlyChanges(e.target.checked)}
-                  />
-                }
-                label={<Typography variant="body2">Only changes</Typography>}
-              />
-            )}
-            {kind === 'json' && (
-              <ToggleButtonGroup
-                size="small"
-                exclusive
-                value={mode}
-                onChange={(_, v) => v && setMode(v)}
-              >
-                <ToggleButton value="lines">Side by side</ToggleButton>
-                <ToggleButton value="paths">By path</ToggleButton>
-              </ToggleButtonGroup>
-            )}
-          </Box>
-        </Box>
-
-        {!normalized && (
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ py: 3, textAlign: 'center' }}
-          >
-            {kind === 'text'
-              ? 'Paste text on both sides to see the differences.'
-              : `Paste valid ${kind.toUpperCase()} on both sides to see the differences.`}
-          </Typography>
-        )}
-
-        {normalized && !byPath && (
-          <DiffView
-            left={normalized.left}
-            right={normalized.right}
-            leftLabel={kind === 'sql' ? 'Left (normalised)' : 'Left'}
-            rightLabel={kind === 'sql' ? 'Right (normalised)' : 'Right'}
-            onlyChanges={onlyChanges}
-          />
-        )}
-
-        {normalized && byPath && normalized.differences && (
-          <Box
-            sx={{ overflow: 'auto', fontFamily: MONO_FONT, fontSize: '0.8rem' }}
-          >
-            {normalized.differences.map((d) => (
-              <Box
-                key={`${d.kind}${d.path}`}
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns:
-                    '80px minmax(160px, 1fr) minmax(0, 1fr) minmax(0, 1fr) 32px',
-                  gap: 1.5,
-                  alignItems: 'center',
-                  py: 0.5,
-                  px: 1,
-                  borderTop: 1,
-                  borderColor: 'divider',
-                  '&:first-of-type': { borderTop: 0 },
-                }}
-              >
-                <Box
-                  sx={{
-                    fontFamily: 'inherit',
-                    fontSize: '0.7rem',
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    color: kindColor(d),
-                    bgcolor: alpha(kindColor(d), 0.1),
-                    borderRadius: 1,
-                    px: 0.75,
-                    textAlign: 'center',
-                  }}
-                >
-                  {d.kind}
-                </Box>
-                <Box
-                  sx={{
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                  title={d.path}
-                >
-                  {d.path}
-                </Box>
-                <Box
-                  sx={{
-                    color: 'error.main',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {d.kind === 'added' ? '' : preview(d.left)}
-                </Box>
-                <Box
-                  sx={{
-                    color: 'success.main',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {d.kind === 'removed' ? '' : preview(d.right)}
-                </Box>
-                <Tooltip title={copied === d.path ? 'Copied!' : 'Copy path'}>
-                  <IconButton
-                    size="small"
-                    onClick={() => copy(d.path, d.path)}
-                    aria-label="Copy path"
-                  >
-                    {copied === d.path ? (
-                      <CheckIcon sx={{ fontSize: 16 }} color="success" />
-                    ) : (
-                      <ContentCopyIcon sx={{ fontSize: 16 }} />
-                    )}
-                  </IconButton>
-                </Tooltip>
-              </Box>
-            ))}
-          </Box>
-        )}
+        {diffPanel(false)}
       </Paper>
+
+      <Dialog
+        open={diffOpen && !!normalized}
+        onClose={() => setDiffOpen(false)}
+        fullWidth
+        maxWidth="xl"
+        PaperProps={{
+          sx: {
+            height: '92vh',
+            p: 2,
+            display: 'flex',
+            flexDirection: 'column',
+          },
+        }}
+      >
+        {diffPanel(true)}
+      </Dialog>
     </Box>
   );
 }

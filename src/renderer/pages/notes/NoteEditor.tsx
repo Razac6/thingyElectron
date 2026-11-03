@@ -38,11 +38,17 @@ import LocalOfferOutlinedIcon from '@mui/icons-material/LocalOfferOutlined';
 import EditNoteIcon from '@mui/icons-material/EditNote';
 import VerticalSplitOutlinedIcon from '@mui/icons-material/VerticalSplitOutlined';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
+import AutoFixHighOutlinedIcon from '@mui/icons-material/AutoFixHighOutlined';
+import UndoIcon from '@mui/icons-material/Undo';
+import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
+import DataObjectIcon from '@mui/icons-material/DataObject';
 import CodeArea from './CodeArea';
 import MarkdownView from './MarkdownView';
 import { Note, NoteFormat, normalizeTag } from './notesModel';
-import { formatJson, parseJson, sortKeysDeep } from './jsonTools';
-import { checkSql, formatSql, minifySql } from './sqlTools';
+import { formatJson, parseJson, repairJson, sortKeysDeep } from './jsonTools';
+import JsonFoldView from './JsonFoldView';
+import { checkSql, formatSql, minifySql, repairSql } from './sqlTools';
+import { repairMarkdown } from './markdownTools';
 import useCopy from './useCopy';
 
 // Editor pane for one note, built to leave the writing area as large as possible:
@@ -142,6 +148,11 @@ export default function NoteEditor({
 }) {
   const [draft, setDraft] = useState(note);
   const [saving, setSaving] = useState<'saved' | 'pending'>('saved');
+  // JSON: edit as code, or browse as a foldable tree
+  const [jsonView, setJsonView] = useState<'code' | 'tree'>('code');
+  const [fixMessage, setFixMessage] = useState<string | null>(null);
+  // Content before the last "fix", so it can be rolled back
+  const [beforeFix, setBeforeFix] = useState<string | null>(null);
   const [mdView, setMdView] = useState<MdView>(
     () => (localStorage.getItem('notes_md_view') as MdView) || 'write',
   );
@@ -255,6 +266,40 @@ export default function NoteEditor({
     }
   };
 
+  const flashFix = (text: string) => {
+    setFixMessage(text);
+    setTimeout(() => setFixMessage(null), 6000);
+  };
+
+  // "Try to fix": JSON (almost-JSON -> JSON), SQL (brackets, quotes, commas + format) or
+  // Markdown (fences, headings, lists, blank lines). Can be undone.
+  const runFix = () => {
+    let result: { ok: boolean; text: string; fixes: string[] };
+    if (draft.format === 'json') result = repairJson(draft.content);
+    else if (draft.format === 'sql') result = repairSql(draft.content);
+    else result = repairMarkdown(draft.content);
+    if (result.text === draft.content || !result.fixes.length) {
+      flashFix(
+        result.ok ? 'Nothing to fix' : "Couldn't fix this automatically",
+      );
+      return;
+    }
+    if (!result.ok && draft.format === 'json') {
+      flashFix("Couldn't fix this automatically");
+      return;
+    }
+    setBeforeFix(draft.content);
+    update({ content: result.text });
+    flashFix(`Fixed: ${result.fixes.join(', ').toLowerCase()}`);
+  };
+
+  const undoFix = () => {
+    if (beforeFix === null) return;
+    update({ content: beforeFix });
+    setBeforeFix(null);
+    flashFix('Fix undone');
+  };
+
   const editor = (
     <Box
       ref={editorWrap}
@@ -263,7 +308,10 @@ export default function NoteEditor({
     >
       <CodeArea
         value={draft.content}
-        onChange={(content) => update({ content })}
+        onChange={(content) => {
+          setBeforeFix(null);
+          update({ content });
+        }}
         language={draft.format}
         ariaLabel="Note content"
         placeholder={
@@ -448,6 +496,16 @@ export default function NoteEditor({
                   </IconButton>
                 </Tooltip>
               ))}
+            {fixMessage && (
+              <Typography
+                variant="caption"
+                noWrap
+                title={fixMessage}
+                sx={{ ml: 1, color: 'success.main', minWidth: 0, flex: 1 }}
+              >
+                {fixMessage}
+              </Typography>
+            )}
             <ToggleButtonGroup
               size="small"
               exclusive
@@ -514,9 +572,58 @@ export default function NoteEditor({
                 flex: 1,
               }}
             >
-              {codeStatus}
+              {fixMessage || codeStatus}
             </Typography>
+            {draft.format === 'json' && (
+              <ToggleButtonGroup
+                size="small"
+                exclusive
+                value={jsonView}
+                onChange={(_, v) => v && setJsonView(v)}
+                aria-label="JSON view"
+              >
+                <ToggleButton
+                  value="code"
+                  sx={smallToggle}
+                  aria-label="Code"
+                  title="Code (edit)"
+                >
+                  <DataObjectIcon sx={{ fontSize: 18 }} />
+                </ToggleButton>
+                <ToggleButton
+                  value="tree"
+                  sx={smallToggle}
+                  aria-label="Tree"
+                  title="Tree (fold / unfold)"
+                  disabled={!parsed?.ok}
+                >
+                  <AccountTreeOutlinedIcon sx={{ fontSize: 18 }} />
+                </ToggleButton>
+              </ToggleButtonGroup>
+            )}
           </>
+        )}
+        <Tooltip title="Try to fix">
+          <IconButton
+            size="small"
+            onClick={runFix}
+            aria-label="Try to fix"
+            sx={{ p: 0.5, ml: 0.5 }}
+          >
+            <AutoFixHighOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+        {beforeFix !== null && (
+          <Tooltip title="Undo fix">
+            <IconButton
+              size="small"
+              onClick={undoFix}
+              aria-label="Undo fix"
+              sx={{ p: 0.5 }}
+            >
+              <UndoIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
         )}
         <Tooltip title={copied ? 'Copied!' : 'Copy content'}>
           <IconButton
@@ -536,7 +643,11 @@ export default function NoteEditor({
 
       {/* Body */}
       <Box sx={{ flex: 1, minHeight: 0 }}>
-        {(draft.format !== 'markdown' || mdView === 'write') && editor}
+        {draft.format === 'json' && jsonView === 'tree' && parsed?.ok ? (
+          <JsonFoldView value={parsed.value} />
+        ) : (
+          (draft.format !== 'markdown' || mdView === 'write') && editor
+        )}
         {draft.format === 'markdown' && mdView === 'preview' && (
           <Box sx={{ height: '100%', overflow: 'auto', pr: 1 }}>
             {draft.content.trim() ? (

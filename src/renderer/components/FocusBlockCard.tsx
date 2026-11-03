@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Box,
   Button,
+  Checkbox,
+  FormControlLabel,
   IconButton,
   Paper,
   ToggleButton,
@@ -15,11 +17,15 @@ import { useTheme } from '@mui/material/styles';
 import LiquidFill from './LiquidFill';
 import { useTimer } from '../context/TimerContext';
 import { useGamification } from '../context/GamificationContext';
+import { useIsLuma } from '../themes';
+import { setRunningBlock } from './focusBlockStore';
 
 // Focus blocks turn "work on this task" into one small, concrete goal for a set stretch of
 // time - specific, near-term goals and visible small wins are what keep developers moving
 // (and feeling progress). The card only speaks at natural breakpoints: when a timer starts
-// and when a block ends. In between it shrinks to a quiet progress bar.
+// and when a block ends. In between, Luma shows the countdown in the timer pill at the top
+// (one countdown, not two); Classic keeps a slim bar at the bottom. Starting a block can
+// also open Boost, the full-screen distraction-free view.
 
 type Phase = 'propose' | 'running' | 'review' | 'won';
 
@@ -48,7 +54,11 @@ const formatLeft = (ms: number) => {
 };
 
 export default function FocusBlockCard() {
-  const { tasks, insights } = useTimer();
+  const { tasks, insights, toggleBoostMode } = useTimer();
+  const isLuma = useIsLuma();
+  const [withBoost, setWithBoost] = useState(
+    () => localStorage.getItem('focus_block_boost') === 'true',
+  );
   const { addXp, checkForAchievements } = useGamification();
   const navigate = useNavigate();
   const theme = useTheme();
@@ -93,6 +103,7 @@ export default function FocusBlockCard() {
       sessionKey.current = null;
       setPhase(null);
       setBlock(undefined);
+      setRunningBlock(null);
       return;
     }
     if (sessionKey.current === activeTask.startTimer) return;
@@ -113,6 +124,9 @@ export default function FocusBlockCard() {
   useEffect(() => {
     if (phase === 'running' && block && now >= block.endsAt) {
       setPhase('review');
+      setRunningBlock(null);
+      toggleBoostMode(false);
+      window.electron.ipcRenderer.send('focus-music:stop');
       try {
         // eslint-disable-next-line no-new
         new Notification('Focus block done', {
@@ -125,6 +139,8 @@ export default function FocusBlockCard() {
   }, [now, phase, block, step]);
 
   if (!activeTask || isPomodoro || !phase || !step) return null;
+  // Luma: the running block lives in the timer pill at the top
+  if (isLuma && phase === 'running') return null;
 
   const startBlock = async () => {
     let id: number | null = null;
@@ -138,9 +154,13 @@ export default function FocusBlockCard() {
     } catch (e) {
       id = null; // still run the block, just unrecorded
     }
-    setBlock({ id, endsAt: Date.now() + minutes * 60 * 1000 });
+    const endsAt = Date.now() + minutes * 60 * 1000;
+    setBlock({ id, endsAt });
     setNow(Date.now());
     setPhase('running');
+    setRunningBlock({ goal: step.text, minutes, endsAt, boost: withBoost });
+    window.electron.ipcRenderer.send('focus-music:start');
+    if (withBoost) toggleBoostMode(true);
   };
 
   const finishBlock = async (achieved: boolean) => {
@@ -250,6 +270,27 @@ export default function FocusBlockCard() {
               Start block
             </Button>
           </Box>
+          <FormControlLabel
+            sx={{ mt: 1, ml: -0.5 }}
+            control={
+              <Checkbox
+                size="small"
+                checked={withBoost}
+                onChange={(e) => {
+                  setWithBoost(e.target.checked);
+                  localStorage.setItem(
+                    'focus_block_boost',
+                    String(e.target.checked),
+                  );
+                }}
+              />
+            }
+            label={
+              <Typography variant="body2" color="text.secondary">
+                Open Boost (full-screen, distraction-free)
+              </Typography>
+            }
+          />
         </>
       )}
 

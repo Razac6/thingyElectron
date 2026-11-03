@@ -15,6 +15,7 @@ import {
   dialog,
 } from 'electron';
 import fs from 'fs';
+import { execFile } from 'child_process';
 import log from 'electron-log';
 import MenuBuilder from './menu';
 import { XP } from './gamification';
@@ -1272,8 +1273,102 @@ ipcMain.on('tray:destroy', destroyTray);
 ipcMain.on('tray:update-title', (event, t) => {
   tray?.setTitle(t);
 });
+// Focus music (Brain.fm), when enabled in Settings. Two ways to control it:
+//  - 'playpause' (default): the system Play/Pause media key - starts the music when a
+//    timer / focus block starts and pauses it when it ends. macOS asks once for the
+//    Accessibility permission (needed to send a key event). The key goes to the app that
+//    played audio last, and it's a toggle, so Thingy only sends it when it knows the state
+//    it set: play only if it isn't playing "by us", pause only what it started.
+//  - 'quit': launch the app in the background and quit it at the end (only if Thingy
+//    launched it).
+// macOS launches the desktop app in the background (`open -g`) without stealing focus.
+// Elsewhere (or without the app) the web player opens, at most once every 2 hours - a
+// browser tab can't be paused or closed from here. Brain.fm has no public API.
+let lastFocusMusicOpen = 0;
+let focusMusicLaunchedByUs = false;
+let focusMusicPlayingByUs = false;
+
+// NSEvent "system defined" media key (NX_KEYTYPE_PLAY = 16), key down + up, via JXA
+const PLAY_PAUSE_JXA = `
+ObjC.import('Cocoa');
+function send(down) {
+  var flags = down ? 0xa00 : 0xb00;
+  var ev = $.NSEvent.otherEventWithTypeLocationModifierFlagsTimestampWindowNumberContextSubtypeData1Data2(
+    14, { x: 0, y: 0 }, flags, 0, 0, $(), 8, (16 << 16) | flags, -1);
+  $.CGEventPost(0, ev.CGEvent);
+}
+send(true); send(false);
+`;
+const pressPlayPause = () =>
+  execFile('osascript', ['-l', 'JavaScript', '-e', PLAY_PAUSE_JXA], (err) => {
+    if (err)
+      log.warn(
+        '[FOCUS MUSIC] Media key failed (Accessibility permission?)',
+        err.message,
+      );
+  });
+
+const focusMusicMode = () => getSetting('focus_music_control') || 'playpause';
+
+const openFocusMusic = () => {
+  if (getSetting('focus_music_brainfm') !== 'true') return;
+  const openWeb = () => {
+    if (Date.now() - lastFocusMusicOpen < 2 * 3600000) return;
+    lastFocusMusicOpen = Date.now();
+    shell.openExternal('https://my.brain.fm');
+  };
+  if (process.platform !== 'darwin') {
+    openWeb();
+    return;
+  }
+  execFile('pgrep', ['-x', 'Brain.fm'], (notRunning) => {
+    const play = () => {
+      if (focusMusicMode() !== 'playpause' || focusMusicPlayingByUs) return;
+      focusMusicPlayingByUs = true;
+      pressPlayPause();
+    };
+    if (!notRunning) {
+      play();
+      return;
+    }
+    execFile('open', ['-g', '-a', 'Brain.fm'], (openError) => {
+      if (openError) {
+        openWeb(); // app not installed
+        return;
+      }
+      focusMusicLaunchedByUs = true;
+      // Give the app a moment to load before pressing play
+      setTimeout(play, 6000);
+    });
+  });
+};
+
+const closeFocusMusic = () => {
+  if (process.platform !== 'darwin') return;
+  const mode = focusMusicMode();
+  if (mode === 'playpause' && focusMusicPlayingByUs) {
+    focusMusicPlayingByUs = false;
+    pressPlayPause();
+  } else if (mode === 'quit' && focusMusicLaunchedByUs) {
+    focusMusicLaunchedByUs = false;
+    // A normal quit; fall back to ending the process if Apple Events are refused
+    execFile(
+      'osascript',
+      ['-e', 'tell application "Brain.fm" to quit'],
+      (err) => {
+        if (err) execFile('pkill', ['-x', 'Brain.fm'], () => {});
+      },
+    );
+  }
+};
+
+// Focus blocks (renderer) start and end the music too
+ipcMain.on('focus-music:start', () => openFocusMusic());
+ipcMain.on('focus-music:stop', () => closeFocusMusic());
+
 ipcMain.on('tray:start-timer', (event, info) => {
   activeTaskInfo = info;
+  openFocusMusic();
   if (trayTimerInterval) clearInterval(trayTimerInterval);
 
   hasSentFatigueWarning = false;
@@ -1285,6 +1380,7 @@ ipcMain.on('tray:start-timer', (event, info) => {
 });
 ipcMain.on('tray:stop-timer', () => {
   activeTaskInfo = null;
+  closeFocusMusic();
   if (trayTimerInterval) clearInterval(trayTimerInterval);
   trayTimerInterval = null;
   updateServerState({ focusMode: false });

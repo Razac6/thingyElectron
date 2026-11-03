@@ -232,3 +232,201 @@ export const lineDiff = (leftText: string, rightText: string): DiffRow[] => {
   flush();
   return rows;
 };
+
+// --- Repair ------------------------------------------------------------------------------
+
+type RToken =
+  | { t: 'str'; v: string } // already a valid JSON string literal
+  | { t: 'num'; v: string }
+  | { t: 'lit'; v: 'true' | 'false' | 'null' }
+  | { t: 'word'; v: string } // bare identifier (key candidate)
+  | { t: 'p'; v: '{' | '}' | '[' | ']' | ':' | ',' };
+
+const LITERALS: Record<string, 'true' | 'false' | 'null'> = {
+  true: 'true',
+  false: 'false',
+  null: 'null',
+  True: 'true',
+  False: 'false',
+  None: 'null',
+  undefined: 'null',
+  NaN: 'null',
+  Infinity: 'null',
+};
+
+// Turns the raw inside of a '…' or "…" literal into its string value
+const unescapeLoose = (raw: string) =>
+  raw.replace(/\\(u[0-9a-fA-F]{4}|.)/g, (m, e: string) => {
+    if (e.length === 5) return String.fromCharCode(parseInt(e.slice(1), 16));
+    return (
+      (
+        { n: '\n', r: '\r', t: '\t', b: '\b', f: '\f' } as Record<
+          string,
+          string
+        >
+      )[e] ?? e
+    );
+  });
+
+/**
+ * Best-effort fix for "almost JSON": JS object literals, Python dicts, logs. Handles
+ * comments, single quotes, unquoted keys, trailing / missing / double commas, Python and
+ * JS literals, smart quotes, raw newlines in strings, text around the JSON, several
+ * top-level values (wrapped in an array) and unclosed brackets / strings.
+ * Returns the repaired text (pretty-printed when it parses) and what was changed.
+ */
+export const repairJson = (input: string) => {
+  const fixes = new Set<string>();
+  let s = input.replace(/^\uFEFF/, '');
+  if (/[\u201C\u201D\u2018\u2019]/.test(s)) {
+    s = s.replace(/[\u201C\u201D]/g, '"').replace(/[\u2018\u2019]/g, "'");
+    fixes.add('Replaced smart quotes');
+  }
+  // Text before the JSON (e.g. "response = {", "data: [")
+  const start = s.search(/[{[]/);
+  if (start > 0 && /[A-Za-z=:]/.test(s.slice(0, start))) {
+    s = s.slice(start);
+    fixes.add('Removed text before the JSON');
+  }
+
+  // Tokenize leniently
+  const tokens: RToken[] = [];
+  let i = 0;
+  while (i < s.length) {
+    const c = s[i];
+    if (/\s/.test(c)) {
+      i += 1;
+    } else if (c === '/' && s[i + 1] === '/') {
+      while (i < s.length && s[i] !== '\n') i += 1;
+      fixes.add('Removed comments');
+    } else if (c === '/' && s[i + 1] === '*') {
+      const end = s.indexOf('*/', i + 2);
+      i = end === -1 ? s.length : end + 2;
+      fixes.add('Removed comments');
+    } else if (c === '"' || c === "'") {
+      let j = i + 1;
+      let raw = '';
+      while (j < s.length && s[j] !== c) {
+        if (s[j] === '\\' && j + 1 < s.length) {
+          raw += s[j] + s[j + 1];
+          j += 2;
+        } else {
+          raw += s[j];
+          j += 1;
+        }
+      }
+      if (j >= s.length) fixes.add('Closed an unterminated string');
+      if (c === "'") fixes.add('Converted single quotes to double quotes');
+      if (/[\n\r\t]/.test(raw)) fixes.add('Escaped line breaks inside strings');
+      tokens.push({ t: 'str', v: JSON.stringify(unescapeLoose(raw)) });
+      i = j + 1;
+    } else if ('{}[]:,'.includes(c)) {
+      tokens.push({ t: 'p', v: c as '{' });
+      i += 1;
+    } else if (/[-+.\d]/.test(c)) {
+      const m = s.slice(i).match(/^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?/);
+      if (m) {
+        const n = Number(m[0]);
+        const v = Number.isFinite(n) ? String(n) : 'null';
+        if (v !== m[0]) fixes.add('Normalised numbers');
+        tokens.push({ t: 'num', v });
+        i += m[0].length;
+      } else {
+        i += 1;
+        fixes.add('Removed unexpected characters');
+      }
+    } else if (/[A-Za-z_$]/.test(c)) {
+      const m = s.slice(i).match(/^[A-Za-z_$][\w$-]*/)!;
+      const lit = LITERALS[m[0]];
+      if (lit && !/^(true|false|null)$/.test(m[0])) {
+        fixes.add('Converted Python / JavaScript literals');
+      }
+      tokens.push(lit ? { t: 'lit', v: lit } : { t: 'word', v: m[0] });
+      i += m[0].length;
+    } else {
+      i += 1;
+      if (c !== ';') fixes.add('Removed unexpected characters');
+    }
+  }
+
+  // Rebuild with structural fixes
+  const out: string[] = [];
+  const stack: ('{' | '[')[] = [];
+  let prev: RToken | null = null;
+  let topLevelValues = 1;
+  const endsValue = (t: RToken | null) =>
+    !!t &&
+    (t.t === 'str' ||
+      t.t === 'num' ||
+      t.t === 'lit' ||
+      t.t === 'word' ||
+      (t.t === 'p' && (t.v === '}' || t.v === ']')));
+  const startsValue = (t: RToken) => t.t !== 'p' || t.v === '{' || t.v === '[';
+
+  tokens.forEach((tok, k) => {
+    let token = tok;
+    if (token.t === 'word') {
+      const inObject = stack[stack.length - 1] === '{';
+      const expectingKey =
+        inObject &&
+        (!prev || (prev.t === 'p' && (prev.v === '{' || prev.v === ',')));
+      fixes.add(expectingKey ? 'Quoted unquoted keys' : 'Quoted bare words');
+      token = { t: 'str', v: JSON.stringify(token.v) };
+    }
+
+    if (token.t === 'p' && token.v === ',') {
+      const next = tokens[k + 1];
+      if (!next || (next.t === 'p' && (next.v === '}' || next.v === ']'))) {
+        fixes.add('Removed trailing commas');
+        return;
+      }
+      if (!prev || (prev.t === 'p' && ['{', '[', ',', ':'].includes(prev.v))) {
+        fixes.add('Removed extra commas');
+        return;
+      }
+      if (!stack.length) {
+        // a comma between top-level values: wrap them in an array below
+        topLevelValues += 1;
+      }
+    } else if (startsValue(token) && endsValue(prev)) {
+      out.push(',');
+      if (stack.length) fixes.add('Added missing commas');
+      else topLevelValues += 1;
+    }
+
+    if (token.t === 'p' && (token.v === '}' || token.v === ']')) {
+      const open = stack.pop();
+      if (!open) {
+        fixes.add('Removed unmatched closing brackets');
+        return;
+      }
+      const want = open === '{' ? '}' : ']';
+      if (want !== token.v) fixes.add('Fixed mismatched brackets');
+      out.push(want);
+      prev = { t: 'p', v: want };
+      return;
+    }
+    if (token.t === 'p' && (token.v === '{' || token.v === '[')) {
+      stack.push(token.v);
+    }
+    out.push(token.v);
+    prev = token;
+  });
+
+  while (out.length && out[out.length - 1] === ',') out.pop();
+  if (stack.length) {
+    fixes.add('Closed unclosed brackets');
+    while (stack.length) out.push(stack.pop() === '{' ? '}' : ']');
+  }
+  let text = out.join('');
+  if (topLevelValues > 1) {
+    text = `[${text}]`;
+    fixes.add('Wrapped several values in an array');
+  }
+  const parsed = parseJson(text);
+  return {
+    ok: parsed.ok,
+    text: parsed.ok ? formatJson(parsed.value) : text,
+    fixes: [...fixes],
+  };
+};

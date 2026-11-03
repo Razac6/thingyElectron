@@ -271,3 +271,57 @@ export const checkSql = (sql: string): SqlCheck => {
   }
   return { ok: true };
 };
+
+/**
+ * Best-effort SQL fix: closes an unterminated string / quoted name / block comment,
+ * removes unmatched ")" and adds missing ones, drops a dangling comma before FROM / WHERE /
+ * ")" / the end, then formats. Returns what changed.
+ */
+export const repairSql = (input: string) => {
+  const fixes = new Set<string>();
+  const tokens = tokenizeSql(input);
+  const out: string[] = [];
+  let depth = 0;
+  tokens.forEach((t) => {
+    let { text } = t;
+    if (t.type === 'string' || t.type === 'ident') {
+      const close = text[0] === '[' ? ']' : text[0];
+      if (text.length < 2 || !text.endsWith(close)) {
+        text += close;
+        fixes.add('Closed an unterminated string');
+      }
+    }
+    if (t.type === 'comment' && text.startsWith('/*') && !text.endsWith('*/')) {
+      text += ' */';
+      fixes.add('Closed a block comment');
+    }
+    if (text === '(') depth += 1;
+    if (text === ')') {
+      if (depth === 0) {
+        fixes.add('Removed an unmatched )');
+        return;
+      }
+      depth -= 1;
+    }
+    out.push(text);
+  });
+  let sql = out.join('');
+  if (depth > 0) {
+    sql = sql.replace(
+      /\s*;?\s*$/,
+      (end) => `${')'.repeat(depth)}${end.includes(';') ? ';' : ''}`,
+    );
+    fixes.add(`Added ${depth} missing )`);
+  }
+  const before = sql;
+  sql = sql
+    .replace(
+      /,(\s*)(from|where|group\s+by|order\s+by|having|limit|\))/gi,
+      '$1$2',
+    )
+    .replace(/,\s*;?\s*$/, '');
+  if (sql !== before) fixes.add('Removed dangling commas');
+  const formatted = formatSql(sql);
+  if (formatted.trim() !== input.trim() && !fixes.size) fixes.add('Formatted');
+  return { ok: checkSql(formatted).ok, text: formatted, fixes: [...fixes] };
+};

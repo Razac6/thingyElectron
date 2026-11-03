@@ -50,6 +50,7 @@ import SearchOverlay from './SearchOverlay';
 import IdlePromptModal from './IdlePromptModal';
 import FocusBlockCard from './FocusBlockCard';
 import TimerPill from './TimerPill';
+import { useRunningBlock } from './focusBlockStore';
 import ModeSuggestionModal from './ModeSuggestionModal';
 import BoostOverlay from './BoostOverlay';
 import { useSettings } from '../context/SettingsContext';
@@ -187,6 +188,9 @@ export default function Layout({ children }: LayoutProps) {
   const activeTask = tasks.find((task) => task.startTimer !== null);
   const isPomodoroRunning = activeTask?.timerMode === 'pomodoro';
 
+  // A focus block started with Boost keeps the overlay open until the block ends
+  const focusBlock = useRunningBlock();
+
   // Auto-activate Boost Overlay if mode is Boost and timer is running. A running Pomodoro
   // sets isBoostMode itself (see startTimer in TimerContext) independently of dailyMode - it
   // must never be force-closed here just because the daily mode isn't 'boost', otherwise the
@@ -194,10 +198,10 @@ export default function Layout({ children }: LayoutProps) {
   useEffect(() => {
     if (dailyMode === 'boost' && activeTask) {
       if (!isBoostMode) toggleBoostMode(true);
-    } else if (isBoostMode && !isPomodoroRunning) {
+    } else if (isBoostMode && !isPomodoroRunning && !focusBlock?.boost) {
       toggleBoostMode(false);
     }
-  }, [dailyMode, activeTask, isBoostMode, isPomodoroRunning]);
+  }, [dailyMode, activeTask, isBoostMode, isPomodoroRunning, focusBlock]);
 
   const visibleMenuItems = menuItems.filter((item) => {
     if (item.text === 'Monitoring') {

@@ -360,8 +360,9 @@ describe('SearchOverlay', () => {
             }),
           );
         },
-        { timeout: 1500 },
-      ); // Account for 800ms debounce
+        // 800 ms debounce - generous margin, the full suite runs many workers in parallel
+        { timeout: 5000 },
+      );
     });
 
     it('should not fetch AI estimate for short queries', async () => {
