@@ -1,5 +1,8 @@
 import { IpcRendererEvent } from 'electron';
 import { StandupData } from '../main/DailyStandupAI';
+import type { DockerStatus } from '../main/docker';
+import type { RunSnapshot, RunStepInput } from '../main/commandRunner';
+import type { ConnectionString, DockerContainer } from '../main/dockerTools';
 
 export interface IElectronAPI {
   ipcRenderer: {
@@ -9,6 +12,39 @@ export interface IElectronAPI {
     sendSync(channel: string, ...args: any[]): any;
     removeListener(channel: string, func: (...args: unknown[]) => void): void;
     invoke(channel: string, ...args: unknown[]): Promise<any>;
+  };
+  commands: {
+    run: (
+      steps: RunStepInput[],
+      options: {
+        label: string;
+        groupId?: string | null;
+        stopOnError?: boolean;
+      },
+    ) => Promise<RunSnapshot | null>;
+    stop: (runId: string) => Promise<boolean>;
+    runs: () => Promise<RunSnapshot[]>;
+    output: (runId: string, step?: number | null) => Promise<string>;
+    rerun: (
+      runId: string,
+      options?: { from?: number; only?: number },
+    ) => Promise<RunSnapshot | null>;
+    clear: () => Promise<boolean>;
+    pickFolder: (current?: string) => Promise<string | null>;
+  };
+  docker: {
+    status: () => Promise<DockerStatus>;
+    list: () => Promise<{
+      containers: DockerContainer[];
+      error: string | null;
+    }>;
+    action: (
+      ids: string[],
+      action: 'start' | 'stop' | 'restart' | 'pause' | 'unpause',
+    ) => Promise<{ ok: boolean; error: string | null }>;
+    logs: (id: string, tail?: number) => Promise<{ ok: boolean; text: string }>;
+    connections: (id: string) => Promise<ConnectionString[]>;
+    startColima: () => Promise<{ ok: boolean; error: string | null }>;
   };
   shell: {
     openExternal: (url: string) => void;

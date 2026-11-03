@@ -60,7 +60,7 @@ const FEATURES: { icon: React.ReactNode; title: string; text: string }[] = [
   {
     icon: <CodeIcon />,
     title: 'Dev Notes',
-    text: 'Markdown, JSON and SQL notes with syntax highlighting, formatting and validation, notebooks, tags, search, version history and .md/.json/.sql import/export, plus tools: compare JSON, SQL or text side by side, DevTools cURL/fetch → WebStorm HTTP Client, and Base64 ↔ file.',
+    text: 'Markdown, JSON and SQL notes with syntax highlighting, formatting and validation, notebooks, tags, search, version history and .md/.json/.sql import/export, plus tools: compare JSON, SQL or text side by side, DevTools cURL/fetch → WebStorm HTTP Client, Base64 ↔ file, Docker containers (Docker Desktop / Colima: search, start / stop, logs, database connection strings) and saved CLI commands grouped into packages that run in order, with per-step logs and re-runs.',
   },
   {
     icon: <PetsOutlinedIcon />,

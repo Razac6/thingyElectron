@@ -46,6 +46,8 @@ import NoteEditor from './NoteEditor';
 import JsonCompare from './JsonCompare';
 import HttpConverter from './HttpConverter';
 import Base64Tool from './Base64Tool';
+import DockerTool from './DockerTool';
+import CommandsTool from './CommandsTool';
 import VersionHistoryDialog, { NoteVersion } from './VersionHistoryDialog';
 import {
   Note,
@@ -67,7 +69,7 @@ import {
 // Notes: notebooks + tags + search + pagination on the left, the editor on the right,
 // plus two developer tools - JSON compare and a DevTools cURL/fetch -> .http converter.
 
-type Mode = 'notes' | 'compare' | 'http' | 'base64';
+type Mode = 'notes' | 'compare' | 'http' | 'base64' | 'docker' | 'commands';
 const PAGE_SIZE = 20;
 
 const relativeDate = (iso?: string) => {
@@ -338,6 +340,8 @@ function Notes() {
           </ToggleButton>
           <ToggleButton value="http">cURL → HTTP</ToggleButton>
           <ToggleButton value="base64">Base64</ToggleButton>
+          <ToggleButton value="docker">Docker</ToggleButton>
+          <ToggleButton value="commands">Commands</ToggleButton>
         </ToggleButtonGroup>
         {message && (
           <Chip size="small" color="success" label={message} sx={{ ml: 1 }} />
@@ -386,6 +390,16 @@ function Notes() {
       {mode === 'base64' && (
         <Box sx={{ flex: 1, minHeight: 0 }}>
           <Base64Tool />
+        </Box>
+      )}
+      {mode === 'commands' && (
+        <Box sx={{ flex: 1, minHeight: 0 }}>
+          <CommandsTool />
+        </Box>
+      )}
+      {mode === 'docker' && (
+        <Box sx={{ flex: 1, minHeight: 0 }}>
+          <DockerTool />
         </Box>
       )}
       {mode === 'http' && (

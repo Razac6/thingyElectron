@@ -246,6 +246,29 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.removeListener(channel, (event, ...args) => func(...args));
     },
   },
+  commands: {
+    run: (steps: any[], options: any) =>
+      ipcRenderer.invoke('commands:run', steps, options),
+    stop: (runId: string) => ipcRenderer.invoke('commands:stop', runId),
+    runs: () => ipcRenderer.invoke('commands:runs'),
+    output: (runId: string, step?: number | null) =>
+      ipcRenderer.invoke('commands:output', runId, step),
+    rerun: (runId: string, options?: { from?: number; only?: number }) =>
+      ipcRenderer.invoke('commands:rerun', runId, options),
+    clear: () => ipcRenderer.invoke('commands:clear'),
+    pickFolder: (current?: string) =>
+      ipcRenderer.invoke('commands:pick-folder', current),
+  },
+  docker: {
+    status: () => ipcRenderer.invoke('docker:status'),
+    list: () => ipcRenderer.invoke('docker:list'),
+    action: (ids: string[], action: string) =>
+      ipcRenderer.invoke('docker:action', ids, action),
+    logs: (id: string, tail?: number) =>
+      ipcRenderer.invoke('docker:logs', id, tail),
+    connections: (id: string) => ipcRenderer.invoke('docker:connections', id),
+    startColima: () => ipcRenderer.invoke('docker:start-colima'),
+  },
   shell: {
     openExternal: (url: string) =>
       ipcRenderer.send('electron-shell-open-external', url),

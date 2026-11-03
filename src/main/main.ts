@@ -31,6 +31,8 @@ import {
   sell as sellJourneyItem,
 } from './journey';
 import { resolveHtmlPath } from './util';
+import { registerDockerIpc } from './docker';
+import { registerCommandIpc, stopAllRuns } from './commandRunner';
 import {
   initDB,
   getTasks,
@@ -743,6 +745,11 @@ ipcMain.handle('db:delete-note', (event, noteId) => deleteNote(noteId));
 
 // Notes <-> files. The renderer does the (de)serialising; main only shows the dialogs and
 // reads/writes the bytes.
+// Dev Notes > Docker
+registerDockerIpc(ipcMain);
+// Dev Notes > Commands
+registerCommandIpc(ipcMain);
+
 ipcMain.handle('notes:import-files', async () => {
   const result = await dialog.showOpenDialog({
     title: 'Import notes',
@@ -1716,6 +1723,7 @@ app
   .catch(app.quit);
 
 app.on('will-quit', () => {
+  stopAllRuns();
   stopServer();
   stopAppMonitor();
   globalShortcut.unregisterAll();
