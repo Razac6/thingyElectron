@@ -250,6 +250,8 @@ contextBridge.exposeInMainWorld('electron', {
     run: (steps: any[], options: any) =>
       ipcRenderer.invoke('commands:run', steps, options),
     stop: (runId: string) => ipcRenderer.invoke('commands:stop', runId),
+    stopStep: (runId: string, index: number) =>
+      ipcRenderer.invoke('commands:stop-step', runId, index),
     runs: () => ipcRenderer.invoke('commands:runs'),
     output: (runId: string, step?: number | null) =>
       ipcRenderer.invoke('commands:output', runId, step),

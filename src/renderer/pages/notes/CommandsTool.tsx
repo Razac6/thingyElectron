@@ -67,7 +67,11 @@ import {
   searchCommands,
   updateGroup,
 } from './commandsModel';
-import type { RunSnapshot, StepStatus } from '../../../main/commandRunner';
+import type {
+  RunSnapshot,
+  RunStep,
+  StepStatus,
+} from '../../../main/commandRunner';
 import {
   DEFAULT_READY_TIMEOUT,
   ReadyType,
@@ -95,14 +99,56 @@ const duration = (from: number | null, to: number | null) => {
   return `${Math.floor(ms / 60000)} min ${Math.round((ms % 60000) / 1000)} s`;
 };
 
+type ShownStatus = StepStatus | RunSnapshot['status'] | 'live' | null;
+
+/** A background process that is up (its "ready when" passed) - no spinner. */
+const stepShown = (step: RunStep): ShownStatus =>
+  step.status === 'running' &&
+  step.background &&
+  (!step.ready || step.readyState === 'ready')
+    ? 'live'
+    : step.status;
+/** A package whose background steps are all up counts as ready. */
+const runShown = (run: RunSnapshot): ShownStatus =>
+  run.status === 'running' && run.readyAt ? 'live' : run.status;
+
 function StatusIcon({
   status,
   size = 16,
 }: {
-  status: StepStatus | RunSnapshot['status'] | null;
+  status: ShownStatus;
   size?: number;
 }) {
   const sx = { fontSize: size };
+  if (status === 'live') {
+    return (
+      <Box
+        title="Ready - still running in the background"
+        sx={{
+          width: size,
+          height: size,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}
+      >
+        <Box
+          sx={{
+            width: size * 0.55,
+            height: size * 0.55,
+            borderRadius: '50%',
+            bgcolor: 'success.main',
+            animation: 'thingyLive 2s ease-in-out infinite',
+            '@keyframes thingyLive': {
+              '0%, 100%': { boxShadow: '0 0 0 0 rgba(34,197,94,.55)' },
+              '50%': { boxShadow: '0 0 0 4px rgba(34,197,94,0)' },
+            },
+          }}
+        />
+      </Box>
+    );
+  }
   if (status === 'running')
     return <CircularProgress size={size - 2} thickness={5} />;
   if (status === 'waiting') {
@@ -600,23 +646,43 @@ export default function CommandsTool() {
 
   // Latest status of each command (from the newest run it was part of)
   const lastStatus = useMemo(() => {
-    const map = new Map<string, StepStatus>();
+    const map = new Map<string, ShownStatus>();
     runs.forEach((run) =>
-      run.steps.forEach((s) => {
-        if (!map.has(s.id) && s.status !== 'pending') map.set(s.id, s.status);
+      run.steps.forEach((st) => {
+        if (!map.has(st.id) && st.status !== 'pending') {
+          map.set(st.id, stepShown(st));
+        }
       }),
     );
     return map;
   }, [runs]);
-  const runningGroups = useMemo(
-    () =>
-      new Set(
-        runs
-          .filter((r) => r.status === 'running' && r.groupId)
-          .map((r) => r.groupId),
-      ),
-    [runs],
-  );
+  // command id -> the live step running it (run + index), for its Stop button
+  const liveSteps = useMemo(() => {
+    const map = new Map<string, { runId: string; index: number }>();
+    runs
+      .filter((r) => r.status === 'running')
+      .forEach((run) =>
+        run.steps.forEach((st, index) => {
+          if (
+            !map.has(st.id) &&
+            (st.status === 'running' || st.status === 'waiting')
+          ) {
+            map.set(st.id, { runId: run.id, index });
+          }
+        }),
+      );
+    return map;
+  }, [runs]);
+  // package id -> its running run (newest first)
+  const runningGroups = useMemo(() => {
+    const map = new Map<string, RunSnapshot>();
+    runs.forEach((r) => {
+      if (r.status === 'running' && r.groupId && !map.has(r.groupId)) {
+        map.set(r.groupId, r);
+      }
+    });
+    return map;
+  }, [runs]);
 
   // --- drag & drop ---
   const onRowDragOver = (
@@ -820,7 +886,11 @@ export default function CommandsTool() {
           </Tooltip>
           <Box
             className="row-actions"
-            sx={{ display: 'flex', opacity: 0.5, transition: 'opacity .15s' }}
+            sx={{
+              display: 'flex',
+              opacity: liveSteps.has(c.id) ? 1 : 0.5,
+              transition: 'opacity .15s',
+            }}
           >
             <Tooltip title="Edit">
               <IconButton
@@ -831,16 +901,32 @@ export default function CommandsTool() {
                 <EditOutlinedIcon sx={{ fontSize: 17 }} />
               </IconButton>
             </Tooltip>
-            <Tooltip title="Run this command">
-              <IconButton
-                size="small"
-                color="primary"
-                onClick={() => start([c], commandLabel(c))}
-                aria-label={`Run ${commandLabel(c)}`}
-              >
-                <PlayArrowIcon sx={{ fontSize: 19 }} />
-              </IconButton>
-            </Tooltip>
+            {liveSteps.has(c.id) ? (
+              <Tooltip title="Stop it (a package it runs in goes on with the next step)">
+                <IconButton
+                  size="small"
+                  color="error"
+                  onClick={() => {
+                    const live = liveSteps.get(c.id)!;
+                    window.electron.commands.stopStep(live.runId, live.index);
+                  }}
+                  aria-label={`Stop ${commandLabel(c)}`}
+                >
+                  <StopIcon sx={{ fontSize: 19 }} />
+                </IconButton>
+              </Tooltip>
+            ) : (
+              <Tooltip title="Run this command">
+                <IconButton
+                  size="small"
+                  color="primary"
+                  onClick={() => start([c], commandLabel(c))}
+                  aria-label={`Run ${commandLabel(c)}`}
+                >
+                  <PlayArrowIcon sx={{ fontSize: 19 }} />
+                </IconButton>
+              </Tooltip>
+            )}
           </Box>
         </Box>
       </React.Fragment>
@@ -848,7 +934,8 @@ export default function CommandsTool() {
   };
 
   const renderGroup = (group: CommandGroup, index: number) => {
-    const running = runningGroups.has(group.id);
+    const groupRun = runningGroups.get(group.id);
+    const groupReady = !!groupRun?.readyAt;
     const open = !group.collapsed || searching;
     const isDropBefore = drop?.type === 'group' && drop.index === index;
     const dropAtEnd =
@@ -993,23 +1080,58 @@ export default function CommandsTool() {
             >
               <MoreHorizIcon fontSize="small" />
             </IconButton>
-            <Button
-              size="small"
-              variant="contained"
-              disableElevation
-              disabled={!group.commands.length || running}
-              onClick={() => start(group.commands, group.name, group)}
-              startIcon={
-                running ? (
-                  <CircularProgress size={12} color="inherit" />
-                ) : (
-                  <PlayArrowIcon />
-                )
-              }
-              sx={{ ml: 0.5, py: 0.25, minWidth: 0 }}
-            >
-              {running ? 'Running' : 'Run all'}
-            </Button>
+            {groupRun ? (
+              <>
+                <Tooltip
+                  title={
+                    groupReady
+                      ? 'Ready - its background steps keep running'
+                      : 'Running - click to see it'
+                  }
+                >
+                  <Button
+                    size="small"
+                    color={groupReady ? 'success' : 'primary'}
+                    onClick={() => {
+                      setSelectedRun(groupRun.id);
+                      setSelectedStep(null);
+                    }}
+                    startIcon={
+                      groupReady ? (
+                        <StatusIcon status="live" size={14} />
+                      ) : (
+                        <CircularProgress size={12} color="inherit" />
+                      )
+                    }
+                    sx={{ ml: 0.5, py: 0.25, minWidth: 0 }}
+                  >
+                    {groupReady ? 'Ready' : 'Running'}
+                  </Button>
+                </Tooltip>
+                <Tooltip title="Stop the package (and everything it started)">
+                  <IconButton
+                    size="small"
+                    color="error"
+                    onClick={() => window.electron.commands.stop(groupRun.id)}
+                    aria-label={`Stop ${group.name}`}
+                  >
+                    <StopIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </>
+            ) : (
+              <Button
+                size="small"
+                variant="contained"
+                disableElevation
+                disabled={!group.commands.length}
+                onClick={() => start(group.commands, group.name, group)}
+                startIcon={<PlayArrowIcon />}
+                sx={{ ml: 0.5, py: 0.25, minWidth: 0 }}
+              >
+                Run all
+              </Button>
+            )}
           </Box>
           {open && (
             <Box
@@ -1179,10 +1301,20 @@ export default function CommandsTool() {
             renderValue={() =>
               selected ? (
                 <>
-                  <StatusIcon status={selected.status} />
+                  <StatusIcon status={runShown(selected)} />
                   <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
                     {selected.label}
                   </Typography>
+                  {selected.status === 'running' && selected.readyAt && (
+                    <Typography
+                      variant="caption"
+                      color="success.main"
+                      sx={{ fontWeight: 600 }}
+                      noWrap
+                    >
+                      ready in {duration(selected.startedAt, selected.readyAt)}
+                    </Typography>
+                  )}
                   <Typography variant="caption" color="text.secondary" noWrap>
                     {new Date(selected.startedAt).toLocaleTimeString()} ·{' '}
                     {duration(selected.startedAt, selected.endedAt)}
@@ -1197,7 +1329,7 @@ export default function CommandsTool() {
           >
             {runs.map((r) => (
               <MenuItem key={r.id} value={r.id} sx={{ gap: 1 }}>
-                <StatusIcon status={r.status} />
+                <StatusIcon status={runShown(r)} />
                 <Typography variant="body2" noWrap sx={{ flex: 1 }}>
                   {r.label}
                 </Typography>
@@ -1215,7 +1347,7 @@ export default function CommandsTool() {
               startIcon={<StopIcon />}
               onClick={() => window.electron.commands.stop(selected.id)}
             >
-              Stop
+              {selected.readyAt ? 'Stop all' : 'Stop'}
             </Button>
           ) : (
             selected && (
@@ -1321,7 +1453,7 @@ export default function CommandsTool() {
                     '&:hover .step-actions': { opacity: 1 },
                   }}
                 >
-                  <StatusIcon status={step.status} size={15} />
+                  <StatusIcon status={stepShown(step)} size={15} />
                   <Typography
                     variant="body2"
                     noWrap
@@ -1375,6 +1507,30 @@ export default function CommandsTool() {
                   >
                     {duration(step.startedAt, step.endedAt)}
                   </Typography>
+                  {selected.status === 'running' &&
+                    (step.status === 'running' ||
+                      step.status === 'waiting') && (
+                      <Tooltip
+                        title={
+                          step.status === 'waiting'
+                            ? 'Stop waiting - the package goes on'
+                            : 'Stop this step - the package goes on'
+                        }
+                      >
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            window.electron.commands.stopStep(selected.id, i);
+                          }}
+                          aria-label={`Stop ${step.name}`}
+                          sx={{ p: 0.25 }}
+                        >
+                          <StopIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                      </Tooltip>
+                    )}
                   {selected.status !== 'running' && (
                     <Box
                       className="step-actions"

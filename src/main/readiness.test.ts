@@ -10,6 +10,7 @@ import {
   setContainerProbe,
   startRun,
   stopRun,
+  stopStep,
 } from './commandRunner';
 
 jest.mock('electron', () => ({
@@ -175,5 +176,72 @@ describe('commandRunner with "ready when"', () => {
     expect(Date.now() - started).toBeLessThan(20000);
     expect(getOutput(run.id)).toContain('not ready: it exited with code 2');
     expect(getOutput(run.id)).not.toContain('should-not-run');
+  });
+});
+
+describe('package ready state and stopping single steps', () => {
+  const server = (name: string, line: string) => ({
+    id: name,
+    name,
+    command: sh(
+      `echo ${line}; sleep 60`,
+      `Write-Output '${line}'; Start-Sleep -Seconds 60`,
+    ),
+    wait: false,
+    ready: { type: 'output' as const, target: line, timeout: 30 },
+  });
+
+  it('is ready when everything ran and the servers are up, then Stop ends it', async () => {
+    const run = startRun(
+      [
+        server('api', 'NEST STARTED'),
+        { id: 'p', name: 'ping', command: 'echo pinged' },
+      ],
+      { label: 'dev' },
+    )!;
+    await waitFor(() => /── Ready in/.test(getOutput(run.id)));
+    expect(getOutput(run.id)).toContain('pinged');
+    expect(getOutput(run.id)).toContain('1 still running in the background');
+    stopRun(run.id);
+    await waitFor(() => /Stopped in/.test(getOutput(run.id)));
+  });
+
+  it('treats a foreground step that prints its ready line as a server', async () => {
+    const run = startRun(
+      [
+        {
+          ...server('nest', 'Nest application successfully started'),
+          wait: true,
+        },
+        { id: 'after', name: 'after', command: 'echo next-step-ran' },
+      ],
+      { label: 'fg' },
+    )!;
+    await waitFor(() => /── Ready in/.test(getOutput(run.id)));
+    expect(getOutput(run.id)).toContain('keeps running in the background');
+    expect(getOutput(run.id)).toContain('next-step-ran');
+    stopRun(run.id);
+    await waitFor(() => /Stopped in/.test(getOutput(run.id)));
+  });
+
+  it('stops one step and goes on with the package', async () => {
+    const run = startRun(
+      [
+        {
+          id: 'slow',
+          name: 'slow',
+          command: sh('sleep 60', 'Start-Sleep -Seconds 60'),
+        },
+        { id: 'then', name: 'then', command: 'echo went-on' },
+      ],
+      { label: 'stop-one' },
+    )!;
+    await waitFor(() => getOutput(run.id).includes('$ '));
+    // eslint-disable-next-line no-promise-executor-return
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(stopStep(run.id, 0)).toBe(true);
+    await waitFor(() => /(Done|Failed|Stopped) in/.test(getOutput(run.id)));
+    expect(getOutput(run.id)).toContain('went-on');
+    expect(getOutput(run.id)).toMatch(/Done in/);
   });
 });

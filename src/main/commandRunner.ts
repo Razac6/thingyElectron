@@ -54,6 +54,8 @@ export interface CommandRun {
   status: 'running' | 'ok' | 'failed' | 'stopped';
   startedAt: number;
   endedAt: number | null;
+  // everything started and the background steps are ready (they keep running)
+  readyAt: number | null;
   steps: RunStep[];
   output: string;
 }
@@ -91,6 +93,8 @@ export const normalizeReady = (
 const runs = new Map<string, CommandRun>();
 const children = new Map<string, ChildProcess[]>(); // runId -> live processes
 const stopRequested = new Set<string>();
+const stepChildren = new Map<string, ChildProcess>(); // "runId:index" -> its process
+const stepStops = new Set<string>(); // "runId:index" - steps stopped on their own
 let counter = 0;
 
 const send = (channel: string, payload: unknown) => {
@@ -198,14 +202,28 @@ const killTree = (child: ChildProcess) => {
 const finishRun = (run: CommandRun) => {
   // background steps still going, or the chain hasn't reached the end yet
   if (run.status !== 'running') return;
-  if (
-    run.steps.some(
+  const live = run.steps.filter(
+    (s) =>
+      s.status === 'running' ||
+      s.status === 'pending' ||
+      s.status === 'waiting',
+  );
+  if (live.length) {
+    // only background processes left and they are up: the package is ready
+    const allUp = live.every(
       (s) =>
-        s.status === 'running' ||
-        s.status === 'pending' ||
-        s.status === 'waiting',
-    )
-  ) {
+        s.status === 'running' &&
+        s.background &&
+        (!s.ready || s.readyState === 'ready'),
+    );
+    if (allUp && !run.readyAt && !stopRequested.has(run.id)) {
+      run.readyAt = Date.now();
+      append(
+        run,
+        `\n── Ready in ${((run.readyAt - run.startedAt) / 1000).toFixed(1)} s · ${live.length} still running in the background (Stop ends ${live.length > 1 ? 'them' : 'it'}) ──\n`,
+      );
+      publish(run);
+    }
     return;
   }
   run.endedAt = Date.now();
@@ -214,6 +232,10 @@ const finishRun = (run: CommandRun) => {
     run.status = run.steps.some((s) => s.status === 'failed') ? 'failed' : 'ok';
   stopRequested.delete(run.id);
   children.delete(run.id);
+  run.steps.forEach((s, i) => {
+    stepChildren.delete(`${run.id}:${i}`);
+    stepStops.delete(`${run.id}:${i}`);
+  });
   append(
     run,
     `\n── ${run.status === 'ok' ? 'Done' : run.status === 'stopped' ? 'Stopped' : 'Failed'} in ${((run.endedAt - run.startedAt) / 1000).toFixed(1)} s ──\n`,
@@ -241,6 +263,8 @@ const startStep = (
 ) => {
   const step = run.steps[index];
   const check = input.ready || null;
+  const key = `${run.id}:${index}`;
+  const stepStopped = () => stepStops.has(key);
   const next = () => {
     if (run.status !== 'running' || stopRequested.has(run.id)) return;
     if (index + 1 < run.steps.length) {
@@ -284,19 +308,42 @@ const startStep = (
     windowsHide: true,
   });
   children.set(run.id, [...(children.get(run.id) || []), child]);
+  stepChildren.set(key, child);
   const prefix =
     step.background && run.steps.length > 1 ? `[${input.name}] ` : '';
   let lastOutputAt: number | null = null;
+  let settled = false;
+  const liveMatch =
+    !step.background && check?.type === 'output'
+      ? outputMatcher(check.target)
+      : null;
   const onData = (data: Buffer) => {
     const text = data.toString();
     lastOutputAt = Date.now();
     processOutput = (processOutput + text.replace(ANSI, '')).slice(-MAX_OUTPUT);
     append(run, prefix ? text.replace(/^(?=.)/gm, prefix) : text, index);
+    if (
+      liveMatch &&
+      !settled &&
+      !step.background &&
+      run.status === 'running' &&
+      !stopRequested.has(run.id) &&
+      liveMatch(processOutput)
+    ) {
+      step.background = true;
+      step.readyState = 'ready';
+      step.readyDetail = 'line found';
+      append(
+        run,
+        '✔ ready (line found) - it keeps running in the background\n',
+        index,
+      );
+      publish(run);
+      next();
+    }
   };
   child.stdout?.on('data', onData);
   child.stderr?.on('data', onData);
-
-  let settled = false;
 
   // "Ready when…": what the next step waits for
   const waitReady = async () => {
@@ -309,7 +356,7 @@ const startStep = (
       output: ownOutput,
       lastOutputAt: () => lastOutputAt,
       aborted: () => {
-        if (stopRequested.has(run.id)) return 'stopped';
+        if (stopRequested.has(run.id) || stepStopped()) return 'stopped';
         if (!settled) return null;
         // a background process that ended: fatal unless it exited fine and the
         // check is about something else (a container, a port...)
@@ -342,7 +389,7 @@ const startStep = (
     settled = true;
     step.code = code;
     step.endedAt = Date.now();
-    if (stopRequested.has(run.id)) step.status = 'stopped';
+    if (stopRequested.has(run.id) || stepStopped()) step.status = 'stopped';
     else step.status = code === 0 ? 'ok' : 'failed';
     if (error) append(run, `${error.message}\n`, index);
     if (step.status === 'failed') {
@@ -361,6 +408,12 @@ const startStep = (
     if (stopRequested.has(run.id)) {
       publish(run);
       skipRest(run, index);
+      return;
+    }
+    if (stepStopped()) {
+      // only this step was stopped: the package goes on
+      publish(run);
+      next();
       return;
     }
     if (step.status === 'failed') {
@@ -401,6 +454,12 @@ const startStep = (
         skipRest(run, index);
         return result;
       }
+      if (stepStopped()) {
+        step.status = 'stopped';
+        publish(run);
+        next();
+        return result;
+      }
       step.status = result.ok ? 'ok' : 'failed';
       if (!result.ok) step.tail = `Not ready: ${result.detail}`;
       publish(run);
@@ -427,6 +486,13 @@ const startStep = (
       }
       if (stopRequested.has(run.id)) {
         publish(run);
+        finishRun(run);
+        return result;
+      }
+      if (stepStopped()) {
+        step.status = 'stopped';
+        publish(run);
+        next();
         finishRun(run);
         return result;
       }
@@ -466,6 +532,7 @@ export const startRun = (
     status: 'running',
     startedAt: Date.now(),
     endedAt: null,
+    readyAt: null,
     output: '',
     steps: steps.map((s) => ({
       id: String(s.id),
@@ -547,6 +614,23 @@ export const stopRun = (runId: string) => {
   return true;
 };
 
+/** Stops one step (its process, or its "ready when" wait); the package goes on. */
+export const stopStep = (runId: string, index: number) => {
+  const run = runs.get(runId);
+  const step = run?.steps[index];
+  if (!run || !step || run.status !== 'running') return false;
+  if (step.status !== 'running' && step.status !== 'waiting') return false;
+  const key = `${runId}:${index}`;
+  stepStops.add(key);
+  append(run, `■ Stopping ${step.name}\n`, index);
+  const child = stepChildren.get(key);
+  if (child && child.exitCode === null && child.signalCode === null) {
+    killTree(child);
+  }
+  publish(run);
+  return true;
+};
+
 export const stopAllRuns = () => {
   [...runs.values()]
     .filter((r) => r.status === 'running')
@@ -563,6 +647,9 @@ export const registerCommandIpc = (
   );
   ipcMain.handle('commands:stop', (event, runId: string) =>
     stopRun(String(runId)),
+  );
+  ipcMain.handle('commands:stop-step', (event, runId: string, index: number) =>
+    stopStep(String(runId), Number(index)),
   );
   ipcMain.handle('commands:runs', () =>
     [...runs.values()].map(snapshot).sort((a, b) => b.startedAt - a.startedAt),
