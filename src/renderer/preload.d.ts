@@ -2,7 +2,11 @@ import { IpcRendererEvent } from 'electron';
 import { StandupData } from '../main/DailyStandupAI';
 import type { DockerStatus } from '../main/docker';
 import type { RunSnapshot, RunStepInput } from '../main/commandRunner';
-import type { ConnectionString, DockerContainer } from '../main/dockerTools';
+import type {
+  ConnectionString,
+  DockerContainer,
+  DockerVolume,
+} from '../main/dockerTools';
 
 export interface IElectronAPI {
   ipcRenderer: {
@@ -45,6 +49,39 @@ export interface IElectronAPI {
     logs: (id: string, tail?: number) => Promise<{ ok: boolean; text: string }>;
     connections: (id: string) => Promise<ConnectionString[]>;
     startColima: () => Promise<{ ok: boolean; error: string | null }>;
+    remove: (
+      id: string,
+      options: {
+        force?: boolean;
+        anonymousVolumes?: boolean;
+        volumes?: string[];
+      },
+    ) => Promise<{ ok: boolean; error: string | null }>;
+    volumes: (
+      withSizes?: boolean,
+    ) => Promise<{ volumes: DockerVolume[]; error: string | null }>;
+    removeVolumes: (
+      names: string[],
+    ) => Promise<{ ok: boolean; error: string | null }>;
+    resetInfo: (
+      id: string,
+      dbName?: string,
+    ) => Promise<{
+      supported: boolean;
+      kind?: string;
+      dbName?: string;
+      error: string | null;
+      command?: string;
+    }>;
+    resetDb: (
+      id: string,
+      dbName: string,
+    ) => Promise<{ ok: boolean; error: string | null; output?: string }>;
+    pruneVolumes: (all?: boolean) => Promise<{
+      ok: boolean;
+      error: string | null;
+      reclaimed: string | null;
+    }>;
   };
   shell: {
     openExternal: (url: string) => void;

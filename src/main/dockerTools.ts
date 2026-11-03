@@ -40,6 +40,7 @@ export interface DockerContainer {
   status: string; // "Up 2 hours", "Exited (0) 3 days ago"
   ports: PortMapping[];
   project: string | null; // docker compose project
+  volumes: string[]; // named + anonymous volumes it mounts (bind mounts left out)
   createdAt: string;
   db: DbKind | null;
 }
@@ -127,6 +128,16 @@ export const parsePorts = (ports: string): PortMapping[] => {
   return out;
 };
 
+/** `docker ps` "Mounts": volume names and bind paths, comma separated - keep the volumes. */
+export const parseMounts = (mounts: string) =>
+  (mounts || '')
+    .split(',')
+    .map((m) => m.trim())
+    .filter(
+      (m) =>
+        m && !m.includes('/') && !m.includes('\\') && !m.endsWith('\u2026'),
+    );
+
 const parseLabels = (labels: string) => {
   const map: Record<string, string> = {};
   (labels || '').split(',').forEach((pair) => {
@@ -168,6 +179,7 @@ export const parseContainers = (output: string): DockerContainer[] =>
           null,
         createdAt: String(raw.CreatedAt || ''),
         db: detectDb(image),
+        volumes: parseMounts(String(raw.Mounts || '')),
       };
     });
 
@@ -292,3 +304,232 @@ export const dbHostPort = (container: DockerContainer): number | null => {
 /** Containers with no ID or a weird one are never passed to the CLI. */
 export const isSafeContainerRef = (ref: string) =>
   /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/.test(ref);
+
+export interface DockerVolume {
+  name: string;
+  driver: string;
+  project: string | null; // compose project that created it
+  anonymous: boolean; // 64-hex name, created for a container without a name
+  size: string | null; // from `docker system df -v`, when available
+  usedBy: string[]; // container names (running or not)
+}
+
+const parseJsonLines = (output: string) =>
+  output
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch (e) {
+        return null;
+      }
+    })
+    .filter(Boolean);
+
+/**
+ * `docker volume ls --format '{{json .}}'` + the containers (for "used by") + optional
+ * sizes from `docker system df -v --format '{{json .}}'`.
+ */
+export const parseVolumes = (
+  output: string,
+  containers: DockerContainer[],
+  dfOutput = '',
+): DockerVolume[] => {
+  const sizes = new Map<string, string>();
+  parseJsonLines(dfOutput).forEach((df: any) => {
+    (Array.isArray(df?.Volumes) ? df.Volumes : []).forEach((v: any) => {
+      if (v?.Name && v.Size) sizes.set(String(v.Name), String(v.Size));
+    });
+  });
+  return parseJsonLines(output)
+    .map((raw: any) => {
+      const name = String(raw.Name || '');
+      return {
+        name,
+        driver: String(raw.Driver || 'local'),
+        project:
+          parseLabels(String(raw.Labels || ''))['com.docker.compose.project'] ||
+          null,
+        anonymous: /^[0-9a-f]{64}$/.test(name),
+        size:
+          sizes.get(name) ||
+          (raw.Size && raw.Size !== 'N/A' ? String(raw.Size) : null),
+        usedBy: containers
+          .filter((c) => c.volumes.includes(name))
+          .map((c) => c.name),
+      };
+    })
+    .filter((v) => v.name)
+    .sort(
+      (a, b) =>
+        Number(a.anonymous) - Number(b.anonymous) ||
+        a.name.localeCompare(b.name),
+    );
+};
+
+/** "Total reclaimed space: 1.2GB" from prune output. */
+export const reclaimedSpace = (output: string) => {
+  const m = output.match(/reclaimed space:\s*(.+)/i);
+  return m ? m[1].trim() : null;
+};
+
+// --- database reset (drop + recreate, e.g. before `flyway migrate`) ---------------
+
+export const RESETTABLE: DbKind[] = [
+  'postgres',
+  'mysql',
+  'mariadb',
+  'mongo',
+  'redis',
+];
+
+export interface ExecStep {
+  env: Record<string, string>; // passed with `docker exec -e`
+  argv: string[];
+  alt?: string[]; // same thing with another client binary (mysql / mariadb, mongosh / mongo)
+}
+
+const isSafeDbName = (name: string) => /^[A-Za-z0-9_$-]{1,64}$/.test(name);
+
+/** The default database a reset applies to, from the container env. */
+export const defaultDbName = (kind: DbKind, env: Record<string, string>) => {
+  if (kind === 'postgres')
+    return env.POSTGRES_DB || env.POSTGRES_USER || 'postgres';
+  if (kind === 'mysql' || kind === 'mariadb') {
+    return env.MARIADB_DATABASE || env.MYSQL_DATABASE || '';
+  }
+  if (kind === 'mongo') return env.MONGO_INITDB_DATABASE || 'test';
+  return '';
+};
+
+/**
+ * Commands (run inside the container with `docker exec`) that leave an empty database:
+ * Postgres / MySQL / MariaDB drop and recreate it (same owner), Mongo drops it, Redis is
+ * flushed. Returns an error for anything else.
+ */
+export const resetDbPlan = (
+  kind: DbKind,
+  env: Record<string, string>,
+  dbName: string,
+): { steps: ExecStep[]; error: string | null } => {
+  if (!RESETTABLE.includes(kind)) {
+    return { steps: [], error: `Reset isn't supported for ${kind}` };
+  }
+  if (kind !== 'redis' && !isSafeDbName(dbName)) {
+    return {
+      steps: [],
+      error: 'Enter a database name (letters, digits, _ $ -)',
+    };
+  }
+  if (kind === 'postgres') {
+    const user = env.POSTGRES_USER || 'postgres';
+    const base = [
+      'psql',
+      '-U',
+      user,
+      '-d',
+      'template1',
+      '-v',
+      'ON_ERROR_STOP=1',
+    ];
+    const pgEnv: Record<string, string> = env.POSTGRES_PASSWORD
+      ? { PGPASSWORD: env.POSTGRES_PASSWORD }
+      : {};
+    return {
+      error: null,
+      steps: [
+        {
+          env: pgEnv,
+          argv: [
+            ...base,
+            '-c',
+            `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${dbName}' AND pid <> pg_backend_pid();`,
+            '-c',
+            `DROP DATABASE IF EXISTS "${dbName}";`,
+            '-c',
+            `CREATE DATABASE "${dbName}" OWNER "${user}";`,
+          ],
+        },
+      ],
+    };
+  }
+  if (kind === 'mysql' || kind === 'mariadb') {
+    const get = (k: string) => env[`MARIADB_${k}`] || env[`MYSQL_${k}`];
+    const rootPassword = get('ROOT_PASSWORD');
+    const user = rootPassword || !get('USER') ? 'root' : get('USER');
+    const password = user === 'root' ? rootPassword : get('PASSWORD');
+    const appUser = get('USER');
+    const sql = [
+      `DROP DATABASE IF EXISTS \`${dbName}\`;`,
+      `CREATE DATABASE \`${dbName}\`;`,
+      appUser && user === 'root'
+        ? `GRANT ALL PRIVILEGES ON \`${dbName}\`.* TO '${appUser.replace(/'/g, '')}'@'%';`
+        : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+    const args = ['-u', user, '-e', sql];
+    const [first, second] =
+      kind === 'mariadb' ? ['mariadb', 'mysql'] : ['mysql', 'mariadb'];
+    return {
+      error: null,
+      steps: [
+        {
+          env: password ? { MYSQL_PWD: password } : {},
+          argv: [first, ...args],
+          alt: [second, ...args],
+        },
+      ],
+    };
+  }
+  if (kind === 'mongo') {
+    const user = env.MONGO_INITDB_ROOT_USERNAME;
+    const password = env.MONGO_INITDB_ROOT_PASSWORD;
+    const mongoAuth = user
+      ? ['-u', user, '-p', password || '', '--authenticationDatabase', 'admin']
+      : [];
+    const args = [
+      '--quiet',
+      ...mongoAuth,
+      dbName,
+      '--eval',
+      'db.dropDatabase()',
+    ];
+    return {
+      error: null,
+      steps: [{ env: {}, argv: ['mongosh', ...args], alt: ['mongo', ...args] }],
+    };
+  }
+  // redis
+  const password = env.REDIS_PASSWORD;
+  return {
+    error: null,
+    steps: [
+      {
+        env: password ? { REDISCLI_AUTH: password } : {},
+        argv: ['redis-cli', 'FLUSHALL'],
+      },
+    ],
+  };
+};
+
+const shellQuote = (arg: string) =>
+  /^[A-Za-z0-9_./:=@%+-]+$/.test(arg) ? arg : `'${arg.replace(/'/g, "'\\''")}'`;
+
+/** The same reset as one shell command (to save it as a step in Dev Notes > Commands). */
+export const resetDbShellCommand = (container: string, steps: ExecStep[]) =>
+  steps
+    .map((step) =>
+      [
+        'docker',
+        'exec',
+        ...Object.entries(step.env).flatMap(([k, v]) => ['-e', `${k}=${v}`]),
+        container,
+        ...step.argv,
+      ]
+        .map(shellQuote)
+        .join(' '),
+    )
+    .join(' && ');

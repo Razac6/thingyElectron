@@ -35,10 +35,15 @@ import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import LinkIcon from '@mui/icons-material/Link';
 import StorageOutlinedIcon from '@mui/icons-material/StorageOutlined';
 import CheckIcon from '@mui/icons-material/Check';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import CleaningServicesOutlinedIcon from '@mui/icons-material/CleaningServicesOutlined';
 import CodeArea from './CodeArea';
 import { MONO_FONT } from './highlight';
 import useCopy from './useCopy';
+import { RemoveContainerDialog, VolumesView } from './DockerVolumes';
+import ResetDbDialog from './ResetDbDialog';
 import type { DockerStatus } from '../../../main/docker';
+import { RESETTABLE } from '../../../main/dockerTools';
 import type {
   ConnectionString,
   DockerContainer,
@@ -55,7 +60,13 @@ const STORE_KEY = 'docker_tool_filters';
 const isUp = (c: DockerContainer) =>
   c.state === 'running' || c.state === 'restarting' || c.state === 'paused';
 
-const loadFilters = (): { state: StateFilter; dbOnly: boolean } => {
+type View = 'containers' | 'volumes';
+
+const loadFilters = (): {
+  state: StateFilter;
+  dbOnly: boolean;
+  view: View;
+} => {
   try {
     const saved = JSON.parse(localStorage.getItem(STORE_KEY) || '{}');
     return {
@@ -63,9 +74,10 @@ const loadFilters = (): { state: StateFilter; dbOnly: boolean } => {
         ? saved.state
         : 'all',
       dbOnly: !!saved.dbOnly,
+      view: saved.view === 'volumes' ? 'volumes' : 'containers',
     };
   } catch (e) {
-    return { state: 'all', dbOnly: false };
+    return { state: 'all', dbOnly: false, view: 'containers' };
   }
 };
 
@@ -254,6 +266,8 @@ function ContainerRow({
   onAction,
   onLogs,
   onConnect,
+  onRemove,
+  onReset,
   onCopy,
   copiedKey,
 }: {
@@ -265,6 +279,8 @@ function ContainerRow({
   ) => void;
   onLogs: () => void;
   onConnect: (anchor: HTMLElement) => void;
+  onRemove: () => void;
+  onReset: () => void;
   onCopy: (text: string, key: string) => void;
   copiedKey: string | null;
 }) {
@@ -373,6 +389,29 @@ function ContainerRow({
             </span>
           </Tooltip>
         )}
+        {container.db && RESETTABLE.includes(container.db) && (
+          <Tooltip title="Reset database (empty it, e.g. before flyway migrate)">
+            <IconButton
+              size="small"
+              onClick={onReset}
+              aria-label={`Reset database in ${container.name}`}
+            >
+              <CleaningServicesOutlinedIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        )}
+        <Tooltip title="Remove container">
+          <span>
+            <IconButton
+              size="small"
+              disabled={busy}
+              onClick={onRemove}
+              aria-label={`Remove ${container.name}`}
+            >
+              <DeleteOutlineIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
         <Tooltip title="Logs">
           <IconButton
             size="small"
@@ -450,6 +489,9 @@ export default function DockerTool() {
     strings: ConnectionString[] | null;
   } | null>(null);
   const [colimaStarting, setColimaStarting] = useState(false);
+  const [removing, setRemoving] = useState<DockerContainer | null>(null);
+  const [resetting, setResetting] = useState<DockerContainer | null>(null);
+  const [volumesKey, setVolumesKey] = useState(0);
   const { copy, copied } = useCopy();
   const engineUp = useRef(false);
 
@@ -636,9 +678,23 @@ export default function DockerTool() {
       <Box
         sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}
       >
+        <ToggleButtonGroup
+          size="small"
+          exclusive
+          value={filters.view}
+          onChange={(_, v) => v && setFilters((f) => ({ ...f, view: v }))}
+          aria-label="docker view"
+        >
+          <ToggleButton value="containers">Containers</ToggleButton>
+          <ToggleButton value="volumes">Volumes</ToggleButton>
+        </ToggleButtonGroup>
         <TextField
           size="small"
-          placeholder="Search name, image, port…"
+          placeholder={
+            filters.view === 'volumes'
+              ? 'Search volume, project, container…'
+              : 'Search name, image, port…'
+          }
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           sx={{ width: 260 }}
@@ -659,46 +715,55 @@ export default function DockerTool() {
             ) : undefined,
           }}
         />
-        <ToggleButtonGroup
-          size="small"
-          exclusive
-          value={filters.state}
-          onChange={(_, v) => v && setFilters((f) => ({ ...f, state: v }))}
-          aria-label="container state"
-        >
-          <ToggleButton value="running">Running {counts.running}</ToggleButton>
-          <ToggleButton value="stopped">Stopped {counts.stopped}</ToggleButton>
-          <ToggleButton value="all">All {counts.all}</ToggleButton>
-        </ToggleButtonGroup>
-        <ToggleButton
-          size="small"
-          value="db"
-          selected={filters.dbOnly}
-          onChange={() => setFilters((f) => ({ ...f, dbOnly: !f.dbOnly }))}
-          aria-label="Databases only"
-        >
-          <StorageOutlinedIcon fontSize="small" sx={{ mr: 0.75 }} /> Databases
-        </ToggleButton>
-        {projects.length > 0 && (
-          <Select
-            size="small"
-            displayEmpty
-            value={project}
-            onChange={(e) => setProject(String(e.target.value))}
-            sx={{
-              fontSize: 13,
-              minWidth: 140,
-              '& .MuiSelect-select': { py: 0.75 },
-            }}
-            aria-label="Compose project"
-          >
-            <MenuItem value="">All projects</MenuItem>
-            {projects.map((p) => (
-              <MenuItem key={p} value={p}>
-                {p}
-              </MenuItem>
-            ))}
-          </Select>
+        {filters.view === 'containers' && (
+          <>
+            <ToggleButtonGroup
+              size="small"
+              exclusive
+              value={filters.state}
+              onChange={(_, v) => v && setFilters((f) => ({ ...f, state: v }))}
+              aria-label="container state"
+            >
+              <ToggleButton value="running">
+                Running {counts.running}
+              </ToggleButton>
+              <ToggleButton value="stopped">
+                Stopped {counts.stopped}
+              </ToggleButton>
+              <ToggleButton value="all">All {counts.all}</ToggleButton>
+            </ToggleButtonGroup>
+            <ToggleButton
+              size="small"
+              value="db"
+              selected={filters.dbOnly}
+              onChange={() => setFilters((f) => ({ ...f, dbOnly: !f.dbOnly }))}
+              aria-label="Databases only"
+            >
+              <StorageOutlinedIcon fontSize="small" sx={{ mr: 0.75 }} />{' '}
+              Databases
+            </ToggleButton>
+            {projects.length > 0 && (
+              <Select
+                size="small"
+                displayEmpty
+                value={project}
+                onChange={(e) => setProject(String(e.target.value))}
+                sx={{
+                  fontSize: 13,
+                  minWidth: 140,
+                  '& .MuiSelect-select': { py: 0.75 },
+                }}
+                aria-label="Compose project"
+              >
+                <MenuItem value="">All projects</MenuItem>
+                {projects.map((p) => (
+                  <MenuItem key={p} value={p}>
+                    {p}
+                  </MenuItem>
+                ))}
+              </Select>
+            )}
+          </>
         )}
         {message && (
           <Chip
@@ -715,52 +780,57 @@ export default function DockerTool() {
               {status.context || 'docker'} · {status.version}
             </Typography>
           )}
-          {status?.engine && shown.length > 1 && (
-            <>
-              {shownStopped.length > 0 && (
-                <Tooltip
-                  title={`Start the ${shownStopped.length} shown stopped container(s)`}
-                >
-                  <Button
-                    size="small"
-                    startIcon={<PlayArrowIcon />}
-                    onClick={() =>
-                      runAction(
-                        shownStopped.map((c) => c.id),
-                        'start',
-                      )
-                    }
+          {status?.engine &&
+            filters.view === 'containers' &&
+            shown.length > 1 && (
+              <>
+                {shownStopped.length > 0 && (
+                  <Tooltip
+                    title={`Start the ${shownStopped.length} shown stopped container(s)`}
                   >
-                    Start {shownStopped.length}
-                  </Button>
-                </Tooltip>
-              )}
-              {shownRunning.length > 0 && (
-                <Tooltip
-                  title={`Stop the ${shownRunning.length} shown running container(s)`}
-                >
-                  <Button
-                    size="small"
-                    color="inherit"
-                    startIcon={<StopIcon />}
-                    onClick={() =>
-                      runAction(
-                        shownRunning.map((c) => c.id),
-                        'stop',
-                      )
-                    }
+                    <Button
+                      size="small"
+                      startIcon={<PlayArrowIcon />}
+                      onClick={() =>
+                        runAction(
+                          shownStopped.map((c) => c.id),
+                          'start',
+                        )
+                      }
+                    >
+                      Start {shownStopped.length}
+                    </Button>
+                  </Tooltip>
+                )}
+                {shownRunning.length > 0 && (
+                  <Tooltip
+                    title={`Stop the ${shownRunning.length} shown running container(s)`}
                   >
-                    Stop {shownRunning.length}
-                  </Button>
-                </Tooltip>
-              )}
-            </>
-          )}
+                    <Button
+                      size="small"
+                      color="inherit"
+                      startIcon={<StopIcon />}
+                      onClick={() =>
+                        runAction(
+                          shownRunning.map((c) => c.id),
+                          'stop',
+                        )
+                      }
+                    >
+                      Stop {shownRunning.length}
+                    </Button>
+                  </Tooltip>
+                )}
+              </>
+            )}
           <Tooltip title="Refresh">
             <span>
               <IconButton
                 size="small"
-                onClick={refreshAll}
+                onClick={() => {
+                  refreshAll();
+                  setVolumesKey((k) => k + 1);
+                }}
                 disabled={loading}
                 aria-label="Refresh containers"
               >
@@ -782,7 +852,16 @@ export default function DockerTool() {
         </Box>
       )}
 
-      {status?.engine && (
+      {status?.engine && filters.view === 'volumes' && (
+        <VolumesView
+          query={query}
+          refreshKey={volumesKey}
+          onMessage={flash}
+          onChanged={refreshList}
+        />
+      )}
+
+      {status?.engine && filters.view === 'containers' && (
         <Paper
           variant="outlined"
           sx={{ borderRadius: 3, flex: 1, minHeight: 0, overflow: 'auto' }}
@@ -811,6 +890,8 @@ export default function DockerTool() {
               onAction={runAction}
               onLogs={() => setLogsFor(c)}
               onConnect={(anchor) => openConnect(anchor, c)}
+              onRemove={() => setRemoving(c)}
+              onReset={() => setResetting(c)}
               onCopy={copy}
               copiedKey={copied}
             />
@@ -858,6 +939,24 @@ export default function DockerTool() {
       </Menu>
 
       <LogsDialog container={logsFor} onClose={() => setLogsFor(null)} />
+      <ResetDbDialog
+        container={resetting}
+        onClose={() => setResetting(null)}
+        onDone={(ok, text) => {
+          if (ok) setResetting(null);
+          flash(text, !ok);
+        }}
+      />
+      <RemoveContainerDialog
+        container={removing}
+        onClose={() => setRemoving(null)}
+        onDone={(ok, text) => {
+          setRemoving(null);
+          flash(text, !ok);
+          refreshList();
+          setVolumesKey((k) => k + 1);
+        }}
+      />
     </Box>
   );
 }

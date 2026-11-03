@@ -1,5 +1,7 @@
 import {
   CommandsState,
+  cloneGroupInto,
+  duplicateGroup,
   commandLabel,
   moveCommand,
   moveGroup,
@@ -98,5 +100,30 @@ describe('commandsModel', () => {
     expect(commandLabel({ ...cmd('x', 'npm run dev\nmore'), name: ' ' })).toBe(
       'npm run dev',
     );
+  });
+
+  it('copies a package into another one (independent copies)', () => {
+    const next = cloneGroupInto(state(), 'g1', 'g2', 0);
+    expect(next.groups[1].commands.map((c) => c.name)).toEqual([
+      'a',
+      'b',
+      'c',
+      'd',
+    ]);
+    const copyIds = next.groups[1].commands.slice(0, 3).map((c) => c.id);
+    expect(copyIds).not.toContain('a'); // new ids
+    expect(new Set(copyIds).size).toBe(3);
+    expect(next.groups[0].commands).toHaveLength(3); // source untouched
+    expect(
+      cloneGroupInto(state(), 'g2', 'g1').groups[0].commands.map((c) => c.name),
+    ).toEqual(['a', 'b', 'c', 'd']);
+    const same = state();
+    expect(cloneGroupInto(same, 'g1', 'g1')).toBe(same);
+  });
+
+  it('duplicates a package right after itself', () => {
+    const next = duplicateGroup(state(), 'g1');
+    expect(next.groups.map((g) => g.name)).toEqual(['DB', 'DB copy', 'App']);
+    expect(next.groups[1].commands[0].id).not.toBe('a');
   });
 });

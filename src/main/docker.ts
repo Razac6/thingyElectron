@@ -15,6 +15,12 @@ import {
   envToMap,
   isSafeContainerRef,
   parseContainers,
+  parseVolumes,
+  reclaimedSpace,
+  RESETTABLE,
+  defaultDbName,
+  resetDbPlan,
+  resetDbShellCommand,
 } from './dockerTools';
 
 const EXTRA_PATHS = [
@@ -223,6 +229,174 @@ export const startColima = () => {
   return colimaStarting;
 };
 
+/**
+ * Removes a container. `force` stops a running one first, `anonymousVolumes` = `rm -v`,
+ * `volumes` are named volumes to delete afterwards (e.g. a database's data - a reset).
+ */
+export const removeContainer = async (
+  id: string,
+  options: {
+    force?: boolean;
+    anonymousVolumes?: boolean;
+    volumes?: string[];
+  } = {},
+) => {
+  if (!isSafeContainerRef(id)) return { ok: false, error: 'No container' };
+  const args = ['rm'];
+  if (options.force) args.push('-f');
+  if (options.anonymousVolumes) args.push('-v');
+  const result = await docker([...args, id], 60000);
+  if (!result.ok) return { ok: false, error: firstLine(result.stderr) };
+  const volumes = (options.volumes || [])
+    .map(String)
+    .filter(isSafeContainerRef);
+  if (volumes.length) {
+    const rmVolumes = await docker(['volume', 'rm', ...volumes], 60000);
+    if (!rmVolumes.ok) {
+      return {
+        ok: false,
+        error: `Container removed, but: ${firstLine(rmVolumes.stderr)}`,
+      };
+    }
+  }
+  return { ok: true, error: null };
+};
+
+export const listVolumes = async () => {
+  const [volumes, containers] = await Promise.all([
+    docker(['volume', 'ls', '--format', '{{json .}}']),
+    listContainers(),
+  ]);
+  if (!volumes.ok) return { volumes: [], error: firstLine(volumes.stderr) };
+  return {
+    volumes: parseVolumes(volumes.stdout, containers.containers),
+    error: null,
+  };
+};
+
+/** Sizes are slow to compute (docker walks every volume), so they're fetched separately. */
+export const listVolumesWithSizes = async () => {
+  const [volumes, containers, df] = await Promise.all([
+    docker(['volume', 'ls', '--format', '{{json .}}']),
+    listContainers(),
+    docker(['system', 'df', '-v', '--format', '{{json .}}'], 60000),
+  ]);
+  if (!volumes.ok) return { volumes: [], error: firstLine(volumes.stderr) };
+  return {
+    volumes: parseVolumes(
+      volumes.stdout,
+      containers.containers,
+      df.ok ? df.stdout : '',
+    ),
+    error: null,
+  };
+};
+
+export const removeVolumes = async (names: string[]) => {
+  const safe = names.map(String).filter(isSafeContainerRef);
+  if (!safe.length) return { ok: false, error: 'No volume' };
+  const result = await docker(['volume', 'rm', ...safe], 60000);
+  return { ok: result.ok, error: result.ok ? null : firstLine(result.stderr) };
+};
+
+/**
+ * Deletes volumes no container uses. Docker 23+ prunes only anonymous ones unless
+ * `--all`; `all` asks for named ones too.
+ */
+export const pruneVolumes = async (all: boolean) => {
+  let result = await docker(
+    ['volume', 'prune', '-f', ...(all ? ['-a'] : [])],
+    120000,
+  );
+  // older engines don't know -a (and prune named volumes anyway)
+  if (
+    !result.ok &&
+    all &&
+    /unknown shorthand flag|unknown flag/i.test(result.stderr)
+  ) {
+    result = await docker(['volume', 'prune', '-f'], 120000);
+  }
+  return {
+    ok: result.ok,
+    error: result.ok ? null : firstLine(result.stderr),
+    reclaimed: result.ok ? reclaimedSpace(result.stdout) : null,
+  };
+};
+
+const inspectContainer = async (id: string) => {
+  const [list, inspect] = await Promise.all([
+    listContainers(),
+    docker(['inspect', '--format', '{{json .Config.Env}}', id], 8000),
+  ]);
+  const container = list.containers.find(
+    (c) => c.id === id.slice(0, 12) || c.name === id,
+  );
+  let env: string[] = [];
+  try {
+    env = JSON.parse(inspect.stdout || '[]') || [];
+  } catch (e) {
+    env = [];
+  }
+  return { container, env: envToMap(env) };
+};
+
+/** What "Reset database" would do for this container (for the confirm dialog). */
+export const resetInfo = async (id: string, dbName?: string) => {
+  if (!isSafeContainerRef(id))
+    return { supported: false, error: 'No container' };
+  const { container, env } = await inspectContainer(id);
+  if (!container?.db || !RESETTABLE.includes(container.db)) {
+    return { supported: false, error: 'Not a supported database' };
+  }
+  const name = dbName ?? defaultDbName(container.db, env);
+  const plan = resetDbPlan(container.db, env, name);
+  return {
+    supported: true,
+    kind: container.db,
+    dbName: name,
+    error: plan.error,
+    command: plan.error ? '' : resetDbShellCommand(container.name, plan.steps),
+  };
+};
+
+/** Drops and recreates the database inside the (running) container. */
+export const resetDatabase = async (id: string, dbName: string) => {
+  if (!isSafeContainerRef(id)) return { ok: false, error: 'No container' };
+  const { container, env } = await inspectContainer(id);
+  if (!container?.db) return { ok: false, error: 'Not a database container' };
+  if (container.state !== 'running') {
+    return { ok: false, error: 'Start the container first' };
+  }
+  const plan = resetDbPlan(container.db, env, dbName);
+  if (plan.error) return { ok: false, error: plan.error };
+  const output: string[] = [];
+  // eslint-disable-next-line no-restricted-syntax
+  for (const step of plan.steps) {
+    const envArgs = Object.entries(step.env).flatMap(([k, v]) => [
+      '-e',
+      `${k}=${v}`,
+    ]);
+    // eslint-disable-next-line no-await-in-loop
+    let result = await docker(['exec', ...envArgs, id, ...step.argv], 120000);
+    if (
+      !result.ok &&
+      step.alt &&
+      /executable file not found|not found in \$PATH|no such file/i.test(
+        result.stderr,
+      )
+    ) {
+      // eslint-disable-next-line no-await-in-loop
+      result = await docker(['exec', ...envArgs, id, ...step.alt], 120000);
+    }
+    output.push(result.stdout.trim());
+    if (!result.ok) {
+      log.warn('[DOCKER] reset failed', result.stderr);
+      return { ok: false, error: firstLine(result.stderr) || 'Reset failed' };
+    }
+  }
+  return { ok: true, error: null, output: output.filter(Boolean).join('\n') };
+};
+
 export const registerDockerIpc = (ipcMain: IpcMain) => {
   ipcMain.handle('docker:status', () => getDockerStatus());
   ipcMain.handle('docker:list', () => listContainers());
@@ -241,4 +415,22 @@ export const registerDockerIpc = (ipcMain: IpcMain) => {
     containerConnections(String(id)),
   );
   ipcMain.handle('docker:start-colima', () => startColima());
+  ipcMain.handle('docker:remove', (event, id: string, options) =>
+    removeContainer(String(id), options || {}),
+  );
+  ipcMain.handle('docker:volumes', (event, withSizes?: boolean) =>
+    withSizes ? listVolumesWithSizes() : listVolumes(),
+  );
+  ipcMain.handle('docker:remove-volumes', (event, names: string[]) =>
+    removeVolumes(Array.isArray(names) ? names : [String(names)]),
+  );
+  ipcMain.handle('docker:reset-info', (event, id: string, dbName?: string) =>
+    resetInfo(String(id), typeof dbName === 'string' ? dbName : undefined),
+  );
+  ipcMain.handle('docker:reset-db', (event, id: string, dbName: string) =>
+    resetDatabase(String(id), String(dbName || '')),
+  );
+  ipcMain.handle('docker:prune-volumes', (event, all?: boolean) =>
+    pruneVolumes(!!all),
+  );
 };

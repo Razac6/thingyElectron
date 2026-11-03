@@ -50,7 +50,9 @@ import {
   CommandGroup,
   CommandsState,
   SETTINGS_KEY,
+  cloneGroupInto,
   commandLabel,
+  duplicateGroup,
   emptyCommand,
   emptyGroup,
   moveCommand,
@@ -366,6 +368,7 @@ export default function CommandsTool() {
   const [selectedStep, setSelectedStep] = useState<number | null>(null);
   const [output, setOutput] = useState('');
   const [logFilter, setLogFilter] = useState('');
+  const [hint, setHint] = useState<string | null>(null);
   const [, tick] = useState(0);
   const { copy, copied } = useCopy();
   const saveTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -508,7 +511,9 @@ export default function CommandsTool() {
     groupId: string,
     index: number,
   ) => {
-    if (drag?.type !== 'command') return;
+    if (!drag) return;
+    // a package dragged into another package is copied in at that spot
+    if (drag.type === 'group' && drag.id === groupId) return;
     e.preventDefault();
     e.stopPropagation();
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -546,6 +551,15 @@ export default function CommandsTool() {
         change(moveCommand(state, drag.id, drop.groupId, drop.index));
       } else if (drag.type === 'group' && drop.type === 'group') {
         change(moveGroup(state, drag.id, drop.index));
+      } else if (drag.type === 'group' && drop.type === 'command') {
+        const source = state.groups.find((g) => g.id === drag.id);
+        change(cloneGroupInto(state, drag.id, drop.groupId, drop.index));
+        if (source) {
+          setHint(
+            `Copied ${source.commands.length} command(s) from \u201c${source.name}\u201d`,
+          );
+          setTimeout(() => setHint(null), 3000);
+        }
       }
     }
     setDrag(null);
@@ -566,8 +580,33 @@ export default function CommandsTool() {
 
   const groups = searchCommands(state, query);
   const searching = !!query.trim();
+  const draggedGroup =
+    drag?.type === 'group' ? state.groups.find((g) => g.id === drag.id) : null;
   const dropLine = (
-    <Box sx={{ height: 2, mx: 1, borderRadius: 1, bgcolor: 'primary.main' }} />
+    <Box
+      sx={{ position: 'relative', height: 2, mx: 1, my: draggedGroup ? 1 : 0 }}
+    >
+      <Box sx={{ height: 2, borderRadius: 1, bgcolor: 'primary.main' }} />
+      {draggedGroup && drop?.type === 'command' && (
+        <Typography
+          variant="caption"
+          sx={{
+            position: 'absolute',
+            left: 24,
+            top: -9,
+            px: 0.75,
+            borderRadius: 1,
+            bgcolor: 'primary.main',
+            color: 'primary.contrastText',
+            fontSize: 10,
+            lineHeight: '18px',
+          }}
+        >
+          copy {draggedGroup.commands.length} command(s) of {draggedGroup.name}{' '}
+          here
+        </Typography>
+      )}
+    </Box>
   );
 
   const renderCommand = (group: CommandGroup, c: CliCommand, index: number) => {
@@ -700,9 +739,7 @@ export default function CommandsTool() {
             p: 1,
             opacity: drag?.type === 'group' && drag.id === group.id ? 0.4 : 1,
             borderColor:
-              drag?.type === 'command' &&
-              drop?.type === 'command' &&
-              drop.groupId === group.id
+              drag && drop?.type === 'command' && drop.groupId === group.id
                 ? 'primary.main'
                 : 'divider',
           }}
@@ -835,7 +872,21 @@ export default function CommandsTool() {
             </Button>
           </Box>
           {open && (
-            <Box sx={{ mt: 0.5 }}>
+            <Box
+              sx={{ mt: 0.5 }}
+              onDragOver={(e) => {
+                if (drag?.type !== 'group' || drag.id === group.id) return;
+                e.preventDefault();
+                e.stopPropagation();
+                if (drop?.type !== 'command' || drop.groupId !== group.id) {
+                  setDrop({
+                    type: 'command',
+                    groupId: group.id,
+                    index: group.commands.length,
+                  });
+                }
+              }}
+            >
               {group.commands.map((c, i) => renderCommand(group, c, i))}
               {dropAtEnd && dropLine}
               {!group.commands.length && (
@@ -845,9 +896,9 @@ export default function CommandsTool() {
                   component="div"
                   sx={{ px: 4, py: 1 }}
                 >
-                  {drag?.type === 'command'
+                  {drag
                     ? 'Drop here'
-                    : 'Empty - add a command or drag one here.'}
+                    : 'Empty - add a command, drag one here, or drop a whole package to copy it in.'}
                 </Typography>
               )}
             </Box>
@@ -899,6 +950,7 @@ export default function CommandsTool() {
               ) : undefined,
             }}
           />
+          {hint && <Chip size="small" color="success" label={hint} />}
           <Button
             size="small"
             startIcon={<AddIcon />}
@@ -1309,23 +1361,29 @@ export default function CommandsTool() {
         </MenuItem>
         <MenuItem
           onClick={() => {
-            if (groupMenu) {
-              const copyGroup = {
-                ...groupMenu.group,
-                ...emptyGroup(`${groupMenu.group.name} copy`),
-                stopOnError: groupMenu.group.stopOnError,
-              };
-              copyGroup.commands = groupMenu.group.commands.map((c) => ({
-                ...c,
-                ...{ id: emptyCommand().id },
-              }));
-              change({ groups: [...state.groups, copyGroup] });
-            }
+            if (groupMenu) change(duplicateGroup(state, groupMenu.group.id));
             setGroupMenu(null);
           }}
         >
           Duplicate
         </MenuItem>
+        {groupMenu &&
+          groupMenu.group.commands.length > 0 &&
+          state.groups
+            .filter((g) => g.id !== groupMenu.group.id)
+            .map((g) => (
+              <MenuItem
+                key={g.id}
+                onClick={() => {
+                  change(cloneGroupInto(state, groupMenu.group.id, g.id));
+                  setGroupMenu(null);
+                }}
+              >
+                <Typography variant="body2" noWrap>
+                  Copy into <b>{g.name}</b>
+                </Typography>
+              </MenuItem>
+            ))}
         <MenuItem
           sx={{ color: 'error.main' }}
           onClick={() => {

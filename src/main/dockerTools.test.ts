@@ -5,8 +5,12 @@ import {
   envToMap,
   isSafeContainerRef,
   parseContainers,
+  parseMounts,
   parsePorts,
+  parseVolumes,
+  reclaimedSpace,
 } from './dockerTools';
+import { filterVolumes } from '../renderer/pages/notes/DockerVolumes';
 import { filterContainers } from '../renderer/pages/notes/DockerTool';
 
 const psLine = (o: Record<string, string>) => JSON.stringify(o);
@@ -20,6 +24,7 @@ const OUTPUT = [
     Status: 'Up 2 hours',
     Ports: '0.0.0.0:5433->5432/tcp, :::5433->5432/tcp',
     Labels: 'com.docker.compose.project=shop,com.docker.compose.service=db',
+    Mounts: 'shop_pgdata,/Users/me/init.sql',
     CreatedAt: '2026-11-01 10:00:00 +0100 CET',
   }),
   psLine({
@@ -147,5 +152,111 @@ describe('dockerTools', () => {
     expect(
       filterContainers(list, { ...base, project: 'shop', state: 'running' }),
     ).toHaveLength(2);
+  });
+
+  it('lists volumes with users, projects and sizes', () => {
+    const containers = parseContainers(OUTPUT);
+    expect(containers[0].volumes).toEqual(['shop_pgdata']);
+    expect(parseMounts('a,/abs/path,C:\\dir,b')).toEqual(['a', 'b']);
+    const anon = 'f'.repeat(64);
+    const volumes = parseVolumes(
+      [
+        JSON.stringify({ Name: anon, Driver: 'local', Labels: '' }),
+        JSON.stringify({
+          Name: 'shop_pgdata',
+          Driver: 'local',
+          Labels: 'com.docker.compose.project=shop',
+        }),
+        JSON.stringify({ Name: 'old_data', Driver: 'local', Labels: '' }),
+      ].join('\n'),
+      containers,
+      JSON.stringify({ Volumes: [{ Name: 'shop_pgdata', Size: '48.2MB' }] }),
+    );
+    expect(volumes.map((v) => v.name)).toEqual([
+      'old_data',
+      'shop_pgdata',
+      anon,
+    ]);
+    expect(volumes[1]).toMatchObject({
+      project: 'shop',
+      usedBy: ['shop-db-1'],
+      size: '48.2MB',
+    });
+    expect(volumes[2].anonymous).toBe(true);
+    expect(filterVolumes(volumes, '', true).map((v) => v.name)).toEqual([
+      'old_data',
+      anon,
+    ]);
+    expect(filterVolumes(volumes, 'shop-db', false).map((v) => v.name)).toEqual(
+      ['shop_pgdata'],
+    );
+    expect(
+      reclaimedSpace('Deleted Volumes:\nx\n\nTotal reclaimed space: 1.2GB'),
+    ).toBe('1.2GB');
+  });
+});
+
+describe('database reset', () => {
+  // eslint-disable-next-line global-require
+  const {
+    resetDbPlan,
+    resetDbShellCommand,
+    defaultDbName,
+  } = require('./dockerTools');
+
+  it('drops and recreates a postgres database', () => {
+    const env = {
+      POSTGRES_USER: 'app',
+      POSTGRES_PASSWORD: "it's",
+      POSTGRES_DB: 'shop',
+    };
+    expect(defaultDbName('postgres', env)).toBe('shop');
+    const plan = resetDbPlan('postgres', env, 'shop');
+    expect(plan.error).toBeNull();
+    const [step] = plan.steps;
+    expect(step.env).toEqual({ PGPASSWORD: "it's" });
+    expect(step.argv.slice(0, 4)).toEqual(['psql', '-U', 'app', '-d']);
+    expect(step.argv).toContain('template1');
+    expect(step.argv).toContain('DROP DATABASE IF EXISTS "shop";');
+    expect(step.argv).toContain('CREATE DATABASE "shop" OWNER "app";');
+    const shell = resetDbShellCommand('shop-db-1', plan.steps);
+    expect(
+      shell.startsWith(
+        "docker exec -e 'PGPASSWORD=it'\\''s' shop-db-1 psql -U app",
+      ),
+    ).toBe(true);
+  });
+
+  it('uses root for mysql and re-grants the app user', () => {
+    const plan = resetDbPlan(
+      'mysql',
+      {
+        MYSQL_ROOT_PASSWORD: 'root',
+        MYSQL_USER: 'app',
+        MYSQL_DATABASE: 'shop',
+      },
+      'shop',
+    );
+    const [step] = plan.steps;
+    expect(step.env).toEqual({ MYSQL_PWD: 'root' });
+    expect(step.argv.slice(0, 3)).toEqual(['mysql', '-u', 'root']);
+    expect(step.argv[4]).toContain('DROP DATABASE IF EXISTS `shop`;');
+    expect(step.argv[4]).toContain(
+      "GRANT ALL PRIVILEGES ON `shop`.* TO 'app'@'%';",
+    );
+    expect(step.alt[0]).toBe('mariadb');
+    expect(resetDbPlan('mariadb', {}, 'x').steps[0].argv[0]).toBe('mariadb');
+  });
+
+  it('rejects odd names and unsupported kinds', () => {
+    expect(resetDbPlan('postgres', {}, 'x"; DROP').error).toMatch(
+      /database name/,
+    );
+    expect(resetDbPlan('mysql', {}, '').error).toMatch(/database name/);
+    expect(resetDbPlan('oracle', {}, 'x').error).toMatch(/supported/);
+    expect(resetDbPlan('redis', { REDIS_PASSWORD: 'p' }, '').steps[0]).toEqual({
+      env: { REDISCLI_AUTH: 'p' },
+      argv: ['redis-cli', 'FLUSHALL'],
+    });
   });
 });

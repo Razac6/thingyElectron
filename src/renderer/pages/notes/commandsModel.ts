@@ -114,6 +114,59 @@ export const moveCommand = (
   return { groups };
 };
 
+/**
+ * Copies every command of package `sourceId` into package `targetId` at `toIndex` (new
+ * ids, so the copies are independent) - packages made of other packages.
+ */
+export const cloneGroupInto = (
+  state: CommandsState,
+  sourceId: string,
+  targetId: string,
+  toIndex?: number,
+): CommandsState => {
+  const source = state.groups.find((g) => g.id === sourceId);
+  const target = state.groups.find((g) => g.id === targetId);
+  if (
+    !source ||
+    !target ||
+    source.id === target.id ||
+    !source.commands.length
+  ) {
+    return state;
+  }
+  const copies = source.commands.map((c) => ({ ...c, id: newId('c') }));
+  const index = Math.max(
+    0,
+    Math.min(toIndex ?? target.commands.length, target.commands.length),
+  );
+  return updateGroup(state, targetId, {
+    commands: [
+      ...target.commands.slice(0, index),
+      ...copies,
+      ...target.commands.slice(index),
+    ],
+  });
+};
+
+/** Copy of a package (new ids) added right after it. */
+export const duplicateGroup = (
+  state: CommandsState,
+  groupId: string,
+): CommandsState => {
+  const index = state.groups.findIndex((g) => g.id === groupId);
+  if (index < 0) return state;
+  const source = state.groups[index];
+  const copy: CommandGroup = {
+    ...source,
+    id: newId('g'),
+    name: `${source.name} copy`,
+    commands: source.commands.map((c) => ({ ...c, id: newId('c') })),
+  };
+  const groups = [...state.groups];
+  groups.splice(index + 1, 0, copy);
+  return { groups };
+};
+
 /** Moves a whole group to `toIndex` (index before the move). */
 export const moveGroup = (
   state: CommandsState,

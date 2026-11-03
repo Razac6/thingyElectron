@@ -268,6 +268,18 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('docker:logs', id, tail),
     connections: (id: string) => ipcRenderer.invoke('docker:connections', id),
     startColima: () => ipcRenderer.invoke('docker:start-colima'),
+    remove: (id: string, options: any) =>
+      ipcRenderer.invoke('docker:remove', id, options),
+    volumes: (withSizes?: boolean) =>
+      ipcRenderer.invoke('docker:volumes', withSizes),
+    removeVolumes: (names: string[]) =>
+      ipcRenderer.invoke('docker:remove-volumes', names),
+    resetInfo: (id: string, dbName?: string) =>
+      ipcRenderer.invoke('docker:reset-info', id, dbName),
+    resetDb: (id: string, dbName: string) =>
+      ipcRenderer.invoke('docker:reset-db', id, dbName),
+    pruneVolumes: (all?: boolean) =>
+      ipcRenderer.invoke('docker:prune-volumes', all),
   },
   shell: {
     openExternal: (url: string) =>
