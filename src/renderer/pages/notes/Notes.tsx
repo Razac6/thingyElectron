@@ -30,6 +30,7 @@ import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import DataObjectIcon from '@mui/icons-material/DataObject';
 import NotesIcon from '@mui/icons-material/Notes';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
+import StorageOutlinedIcon from '@mui/icons-material/StorageOutlined';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined';
 import CheckIcon from '@mui/icons-material/Check';
@@ -60,6 +61,7 @@ import {
   paginate,
   snippet,
   sortNotes,
+  toNoteFormat,
 } from './notesModel';
 
 // Notes: notebooks + tags + search + pagination on the left, the editor on the right,
@@ -195,7 +197,7 @@ function Notes() {
       ...selected,
       title: version.title,
       content: version.content,
-      format: version.format === 'json' ? 'json' : 'markdown',
+      format: toNoteFormat(version.format),
     };
     // forceVersion: the current text is kept as a version, so a restore can be undone
     const saved = normalizeNote(
@@ -247,11 +249,15 @@ function Notes() {
     if (written) flash(`Exported ${written} file${written === 1 ? '' : 's'}`);
   };
 
-  const saveAsNote = async (content: string, title: string) => {
+  const saveAsNote = async (
+    content: string,
+    title: string,
+    format?: NoteFormat,
+  ) => {
     await create({
       title,
       content,
-      format: isJsonText(content) ? 'json' : 'markdown',
+      format: format || (isJsonText(content) ? 'json' : 'markdown'),
       notebook: '',
       tags: [],
     });
@@ -268,6 +274,7 @@ function Notes() {
   const filterLabel = [
     filter.pinnedOnly && 'Pinned',
     filter.format === 'json' && 'JSON',
+    filter.format === 'sql' && 'SQL',
     filter.notebook !== null && (filter.notebook || 'No notebook'),
     filter.tag !== null && `#${filter.tag}`,
   ]
@@ -327,7 +334,7 @@ function Notes() {
             <NotesIcon fontSize="small" sx={{ mr: 1 }} /> Notes
           </ToggleButton>
           <ToggleButton value="compare">
-            <DataObjectIcon fontSize="small" sx={{ mr: 1 }} /> Compare JSON
+            <DataObjectIcon fontSize="small" sx={{ mr: 1 }} /> Compare
           </ToggleButton>
           <ToggleButton value="http">cURL → HTTP</ToggleButton>
           <ToggleButton value="base64">Base64</ToggleButton>
@@ -534,6 +541,11 @@ function Notes() {
                           sx={{ fontSize: 13, color: 'text.secondary' }}
                         />
                       )}
+                      {n.format === 'sql' && (
+                        <StorageOutlinedIcon
+                          sx={{ fontSize: 13, color: 'text.secondary' }}
+                        />
+                      )}
                       {n.format === 'json' && (
                         <DataObjectIcon
                           sx={{ fontSize: 13, color: 'text.secondary' }}
@@ -561,7 +573,7 @@ function Notes() {
                       noWrap
                       sx={{
                         fontFamily:
-                          n.format === 'json' ? 'monospace' : undefined,
+                          n.format !== 'markdown' ? 'monospace' : undefined,
                       }}
                     >
                       {[
@@ -661,6 +673,18 @@ function Notes() {
           <ListItemText>JSON only</ListItemText>
           <Typography variant="caption" color="text.secondary">
             {notes.filter((n) => n.format === 'json').length}
+          </Typography>
+        </MenuItem>
+        <MenuItem
+          dense
+          onClick={() =>
+            setF({ format: filter.format === 'sql' ? null : 'sql' })
+          }
+        >
+          {check(filter.format === 'sql')}
+          <ListItemText>SQL only</ListItemText>
+          <Typography variant="caption" color="text.secondary">
+            {notes.filter((n) => n.format === 'sql').length}
           </Typography>
         </MenuItem>
         {notebooks.length > 0 && <ListSubheader>Notebooks</ListSubheader>}

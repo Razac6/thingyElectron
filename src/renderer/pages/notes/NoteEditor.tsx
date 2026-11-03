@@ -42,6 +42,7 @@ import CodeArea from './CodeArea';
 import MarkdownView from './MarkdownView';
 import { Note, NoteFormat, normalizeTag } from './notesModel';
 import { formatJson, parseJson, sortKeysDeep } from './jsonTools';
+import { checkSql, formatSql, minifySql } from './sqlTools';
 import useCopy from './useCopy';
 
 // Editor pane for one note, built to leave the writing area as large as possible:
@@ -181,6 +182,37 @@ export default function NoteEditor({
   };
 
   const parsed = draft.format === 'json' ? parseJson(draft.content) : null;
+  const sqlCheck = draft.format === 'sql' ? checkSql(draft.content) : null;
+
+  // Code tools per format (Markdown has its own toolbar)
+  const codeTools: { key: string; label: string; run: () => string | null }[] =
+    [];
+  if (draft.format === 'json') {
+    const value = parsed?.ok ? parsed.value : undefined;
+    const ok = !!parsed?.ok;
+    codeTools.push(
+      {
+        key: 'format',
+        label: 'Format',
+        run: () => (ok ? formatJson(value) : null),
+      },
+      {
+        key: 'minify',
+        label: 'Minify',
+        run: () => (ok ? JSON.stringify(value) : null),
+      },
+      {
+        key: 'sort',
+        label: 'Sort keys',
+        run: () => (ok ? formatJson(sortKeysDeep(value)) : null),
+      },
+    );
+  } else if (draft.format === 'sql') {
+    codeTools.push(
+      { key: 'format', label: 'Format', run: () => formatSql(draft.content) },
+      { key: 'minify', label: 'Minify', run: () => minifySql(draft.content) },
+    );
+  }
 
   const applyMd = (action: (typeof MD_ACTIONS)[number]) => {
     const textarea = editorWrap.current?.querySelector('textarea');
@@ -232,24 +264,38 @@ export default function NoteEditor({
       <CodeArea
         value={draft.content}
         onChange={(content) => update({ content })}
-        language={draft.format === 'json' ? 'json' : 'markdown'}
+        language={draft.format}
         ariaLabel="Note content"
         placeholder={
-          draft.format === 'json'
-            ? '{\n  "paste": "JSON here"\n}'
-            : 'Write in Markdown…'
+          {
+            json: '{\n  "paste": "JSON here"\n}',
+            sql: 'SELECT …\nFROM …\nWHERE …',
+            markdown: 'Write in Markdown…',
+          }[draft.format]
         }
-        errorLine={
-          parsed && !parsed.ok && draft.content.trim() ? parsed.line : undefined
-        }
+        errorLine={(() => {
+          if (!draft.content.trim()) return undefined;
+          if (parsed && !parsed.ok) return parsed.line;
+          if (sqlCheck && !sqlCheck.ok) return sqlCheck.line;
+          return undefined;
+        })()}
         minHeight={0}
       />
     </Box>
   );
 
-  let jsonStatus = '';
-  if (parsed && draft.content.trim()) {
-    jsonStatus = parsed.ok ? 'Valid JSON' : parsed.error;
+  let codeStatus = '';
+  let codeOk = true;
+  if (draft.content.trim()) {
+    if (parsed) {
+      codeOk = parsed.ok;
+      codeStatus = parsed.ok ? 'Valid JSON' : parsed.error;
+    } else if (sqlCheck) {
+      codeOk = sqlCheck.ok;
+      codeStatus = sqlCheck.ok
+        ? 'Brackets and quotes balanced'
+        : `${sqlCheck.error} (line ${sqlCheck.line})`;
+    }
   }
 
   return (
@@ -382,6 +428,9 @@ export default function NoteEditor({
           <ToggleButton value="json" sx={smallToggle}>
             JSON
           </ToggleButton>
+          <ToggleButton value="sql" sx={smallToggle}>
+            SQL
+          </ToggleButton>
         </ToggleButtonGroup>
         <Divider orientation="vertical" flexItem sx={{ mx: 0.75 }} />
         {draft.format === 'markdown' ? (
@@ -439,31 +488,16 @@ export default function NoteEditor({
           </>
         ) : (
           <>
-            {[
-              {
-                key: 'format',
-                label: 'Format',
-                run: (v: unknown) => formatJson(v),
-              },
-              {
-                key: 'minify',
-                label: 'Minify',
-                run: (v: unknown) => JSON.stringify(v),
-              },
-              {
-                key: 'sort',
-                label: 'Sort keys',
-                run: (v: unknown) => formatJson(sortKeysDeep(v)),
-              },
-            ].map((tool) => (
+            {codeTools.map((tool) => (
               <ToggleButton
                 key={tool.key}
                 size="small"
                 value={tool.key}
-                disabled={!parsed?.ok}
-                onClick={() =>
-                  parsed?.ok && update({ content: tool.run(parsed.value) })
-                }
+                disabled={tool.run() === null}
+                onClick={() => {
+                  const next = tool.run();
+                  if (next !== null) update({ content: next });
+                }}
                 sx={{ ...smallToggle, mr: 0.5 }}
               >
                 {tool.label}
@@ -472,15 +506,15 @@ export default function NoteEditor({
             <Typography
               variant="caption"
               noWrap
-              title={jsonStatus}
+              title={codeStatus}
               sx={{
                 ml: 0.5,
-                color: parsed?.ok ? 'success.main' : 'error.main',
+                color: codeOk ? 'success.main' : 'error.main',
                 minWidth: 0,
                 flex: 1,
               }}
             >
-              {jsonStatus}
+              {codeStatus}
             </Typography>
           </>
         )}
@@ -502,7 +536,7 @@ export default function NoteEditor({
 
       {/* Body */}
       <Box sx={{ flex: 1, minHeight: 0 }}>
-        {(draft.format === 'json' || mdView === 'write') && editor}
+        {(draft.format !== 'markdown' || mdView === 'write') && editor}
         {draft.format === 'markdown' && mdView === 'preview' && (
           <Box sx={{ height: '100%', overflow: 'auto', pr: 1 }}>
             {draft.content.trim() ? (
@@ -619,7 +653,7 @@ export default function NoteEditor({
             <FileDownloadOutlinedIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText>
-            {draft.format === 'json' ? 'Export .json' : 'Export .md'}
+            {`Export .${draft.format === 'markdown' ? 'md' : draft.format}`}
           </ListItemText>
         </MenuItem>
         <MenuItem

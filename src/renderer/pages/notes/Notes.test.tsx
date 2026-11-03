@@ -121,3 +121,25 @@ describe('renderMarkdown', () => {
     expect(html).not.toContain('onerror');
   });
 });
+
+describe('Compare', () => {
+  // eslint-disable-next-line global-require
+  const JsonCompare = require('./JsonCompare').default;
+
+  it('treats differently formatted SQL as identical and shows real changes', () => {
+    render(<JsonCompare notes={[]} onSaveAsNote={jest.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'SQL' }));
+    fireEvent.change(screen.getByLabelText('Left SQL'), {
+      target: { value: 'select a, b from t where x = 1' },
+    });
+    fireEvent.change(screen.getByLabelText('Right SQL'), {
+      target: { value: 'SELECT\n  a,\n  b\nFROM t\nWHERE x = 1' },
+    });
+    expect(screen.getAllByText('Identical').length).toBeGreaterThan(0);
+
+    fireEvent.change(screen.getByLabelText('Right SQL'), {
+      target: { value: 'SELECT a, c FROM t WHERE x = 2' },
+    });
+    expect(screen.getByText(/changed line/)).toBeInTheDocument();
+  });
+});

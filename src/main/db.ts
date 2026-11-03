@@ -1499,6 +1499,10 @@ export const updateSprint = (sprint: any) => {
   return sprint;
 };
 
+// Note formats the editor supports; anything else is stored as markdown
+const noteFormat = (value: unknown) =>
+  value === 'json' || value === 'sql' ? value : 'markdown';
+
 const parseNoteTags = (value: unknown): string[] => {
   if (Array.isArray(value)) return value.map(String);
   try {
@@ -1514,7 +1518,7 @@ const noteFromRow = (row: any) => ({
   notebook: row.notebook || '',
   tags: parseNoteTags(row.tags),
   pinned: Number(row.pinned) === 1,
-  format: row.format === 'json' ? 'json' : 'markdown',
+  format: noteFormat(row.format),
   updatedAt: row.updatedAt || row.createdAt,
 });
 
@@ -1545,7 +1549,7 @@ export const createNote = (note: any, userId: number) => {
       note.notebook || '',
       JSON.stringify(parseNoteTags(note.tags)),
       note.pinned ? 1 : 0,
-      note.format === 'json' ? 'json' : 'markdown',
+      noteFormat(note.format),
       note.updatedAt || createdAt,
     ],
   );
@@ -1616,7 +1620,7 @@ export const updateNote = (
     previous &&
     (previous[0] !== note.title ||
       previous[1] !== note.content ||
-      previous[2] !== (note.format === 'json' ? 'json' : 'markdown'));
+      previous[2] !== noteFormat(note.format));
   if (textChanged) snapshotNote(note.id, !!options.forceVersion);
 
   const updatedAt = new Date().toISOString();
@@ -1628,7 +1632,7 @@ export const updateNote = (
       note.notebook || '',
       JSON.stringify(parseNoteTags(note.tags)),
       note.pinned ? 1 : 0,
-      note.format === 'json' ? 'json' : 'markdown',
+      noteFormat(note.format),
       updatedAt,
       note.id,
     ],

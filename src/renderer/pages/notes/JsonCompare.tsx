@@ -22,13 +22,17 @@ import CheckIcon from '@mui/icons-material/Check';
 import CodeArea from './CodeArea';
 import DiffView from './DiffView';
 import { diffJson, formatJson, parseJson, JsonDifference } from './jsonTools';
-import { Note } from './notesModel';
+import { checkSql, formatSql, normalizeSql } from './sqlTools';
+import { Note, NoteFormat } from './notesModel';
 import { MONO_FONT } from './highlight';
 import useCopy from './useCopy';
 
-// Compare two JSON documents (e.g. API responses copied from the browser): both sides are
-// editable, the diff is computed on normalised (pretty-printed, optionally key-sorted)
-// JSON, shown either side by side or as a list of changes by JSON path.
+// Compare two documents - JSON (e.g. API responses from the browser), SQL (two versions of
+// a query) or plain text. Both sides are editable. JSON and SQL are normalised before the
+// diff, so formatting, key order (JSON, optional) and keyword case / whitespace (SQL)
+// don't show up as differences. JSON can also be compared by path.
+
+type Kind = 'json' | 'sql' | 'text';
 
 const preview = (value: unknown) => {
   const text = JSON.stringify(value);
@@ -36,22 +40,55 @@ const preview = (value: unknown) => {
   return text.length > 80 ? `${text.slice(0, 80)}…` : text;
 };
 
+const validate = (kind: Kind, value: string) => {
+  if (!value.trim()) return { ok: true, message: ' ', line: undefined };
+  if (kind === 'json') {
+    const p = parseJson(value);
+    return p.ok
+      ? { ok: true, message: 'Valid JSON', line: undefined }
+      : { ok: false, message: p.error, line: p.line };
+  }
+  if (kind === 'sql') {
+    const c = checkSql(value);
+    return c.ok
+      ? { ok: true, message: 'Brackets and quotes balanced', line: undefined }
+      : { ok: false, message: `${c.error} (line ${c.line})`, line: c.line };
+  }
+  return {
+    ok: true,
+    message: `${value.split('\n').length} lines`,
+    line: undefined,
+  };
+};
+
+const prettify = (kind: Kind, value: string) => {
+  if (kind === 'json') {
+    const p = parseJson(value);
+    return p.ok ? formatJson(p.value) : null;
+  }
+  if (kind === 'sql') return formatSql(value);
+  return null;
+};
+
 function Side({
   label,
+  kind,
   value,
   onChange,
   notes,
   onSaveAsNote,
 }: {
   label: string;
+  kind: Kind;
   value: string;
   onChange: (v: string) => void;
   notes: Note[];
-  onSaveAsNote: (content: string, title: string) => void;
+  onSaveAsNote: (content: string, title: string, format?: NoteFormat) => void;
 }) {
-  const parsed = parseJson(value);
+  const status = validate(kind, value);
   const { copy, copied } = useCopy();
-  const jsonNotes = notes.filter((n) => n.format === 'json');
+  const noteFormat: NoteFormat = kind === 'text' ? 'markdown' : kind;
+  const loadable = notes.filter((n) => n.format === noteFormat);
 
   return (
     <Box
@@ -75,18 +112,23 @@ function Side({
             <ContentPasteIcon fontSize="small" />
           </IconButton>
         </Tooltip>
-        <Tooltip title="Format">
-          <span>
-            <IconButton
-              size="small"
-              aria-label={`Format ${label}`}
-              disabled={!parsed.ok}
-              onClick={() => parsed.ok && onChange(formatJson(parsed.value))}
-            >
-              <FormatAlignLeftIcon fontSize="small" />
-            </IconButton>
-          </span>
-        </Tooltip>
+        {kind !== 'text' && (
+          <Tooltip title="Format">
+            <span>
+              <IconButton
+                size="small"
+                aria-label={`Format ${label}`}
+                disabled={prettify(kind, value) === null || !value.trim()}
+                onClick={() => {
+                  const next = prettify(kind, value);
+                  if (next !== null) onChange(next);
+                }}
+              >
+                <FormatAlignLeftIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+        )}
         <Tooltip title={copied ? 'Copied!' : 'Copy'}>
           <IconButton
             size="small"
@@ -100,19 +142,19 @@ function Side({
             )}
           </IconButton>
         </Tooltip>
-        {jsonNotes.length > 0 && (
+        {loadable.length > 0 && (
           <Select
             size="small"
             value=""
             displayEmpty
             onChange={(e) => {
-              const n = jsonNotes.find((x) => x.id === Number(e.target.value));
+              const n = loadable.find((x) => x.id === Number(e.target.value));
               if (n) onChange(n.content);
             }}
             renderValue={() => 'Load note…'}
             sx={{ ml: 'auto', fontSize: '0.8rem', height: 30, minWidth: 120 }}
           >
-            {jsonNotes.map((n) => (
+            {loadable.map((n) => (
               <MenuItem key={n.id} value={n.id}>
                 {n.title || 'Untitled'}
               </MenuItem>
@@ -121,9 +163,11 @@ function Side({
         )}
         <Button
           size="small"
-          disabled={!parsed.ok}
-          onClick={() => onSaveAsNote(value, `${label} JSON`)}
-          sx={{ ml: jsonNotes.length ? 0 : 'auto', whiteSpace: 'nowrap' }}
+          disabled={!value.trim() || !status.ok}
+          onClick={() =>
+            onSaveAsNote(value, `${label} ${kind.toUpperCase()}`, noteFormat)
+          }
+          sx={{ ml: loadable.length ? 0 : 'auto', whiteSpace: 'nowrap' }}
         >
           Save as note
         </Button>
@@ -132,22 +176,28 @@ function Side({
         <CodeArea
           value={value}
           onChange={onChange}
-          language="json"
-          ariaLabel={`${label} JSON`}
-          placeholder="Paste JSON here…"
-          errorLine={!parsed.ok && value.trim() ? parsed.line : undefined}
+          language={kind === 'text' ? 'plain' : kind}
+          ariaLabel={`${label} ${kind.toUpperCase()}`}
+          placeholder={
+            {
+              json: 'Paste JSON here…',
+              sql: 'Paste SQL here…',
+              text: 'Paste text here…',
+            }[kind]
+          }
+          errorLine={status.line}
         />
       </Box>
       <Typography
         variant="caption"
         sx={{
           mt: 0.5,
-          color: parsed.ok || !value.trim() ? 'text.secondary' : 'error.main',
+          color: status.ok ? 'text.secondary' : 'error.main',
           minHeight: 20,
         }}
         noWrap
       >
-        {!value.trim() ? ' ' : parsed.ok ? 'Valid JSON' : parsed.error}
+        {status.message}
       </Typography>
     </Box>
   );
@@ -158,29 +208,47 @@ export default function JsonCompare({
   onSaveAsNote,
 }: {
   notes: Note[];
-  onSaveAsNote: (content: string, title: string) => void;
+  onSaveAsNote: (content: string, title: string, format?: NoteFormat) => void;
 }) {
   const theme = useTheme();
+  const [kind, setKind] = useState<Kind>('json');
   const [left, setLeft] = useState('');
   const [right, setRight] = useState('');
   const [sortKeys, setSortKeys] = useState(true);
+  const [ignoreComments, setIgnoreComments] = useState(true);
   const [mode, setMode] = useState<'lines' | 'paths'>('lines');
   const [onlyChanges, setOnlyChanges] = useState(true);
   const { copy, copied } = useCopy();
 
-  const a = parseJson(left);
-  const b = parseJson(right);
-  const ready = a.ok && b.ok;
-
   const normalized = useMemo(() => {
-    if (!a.ok || !b.ok) return null;
-    return {
-      left: formatJson(a.value, 2, sortKeys),
-      right: formatJson(b.value, 2, sortKeys),
-      differences: diffJson(a.value, b.value),
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [left, right, sortKeys]);
+    if (!left.trim() || !right.trim()) return null;
+    if (kind === 'json') {
+      const a = parseJson(left);
+      const b = parseJson(right);
+      if (!a.ok || !b.ok) return null;
+      return {
+        left: formatJson(a.value, 2, sortKeys),
+        right: formatJson(b.value, 2, sortKeys),
+        differences: diffJson(a.value, b.value) as JsonDifference[] | null,
+      };
+    }
+    if (kind === 'sql') {
+      if (!checkSql(left).ok || !checkSql(right).ok) return null;
+      return {
+        left: normalizeSql(left, ignoreComments),
+        right: normalizeSql(right, ignoreComments),
+        differences: null,
+      };
+    }
+    return { left, right, differences: null };
+  }, [kind, left, right, sortKeys, ignoreComments]);
+
+  const changedLines = useMemo(() => {
+    if (!normalized) return 0;
+    const a = normalized.left.split('\n');
+    const b = normalized.right.split('\n');
+    return a.join('\n') === b.join('\n') ? 0 : 1;
+  }, [normalized]);
 
   const kindColor = (d: JsonDifference) =>
     ({
@@ -188,6 +256,8 @@ export default function JsonCompare({
       removed: theme.palette.error.main,
       changed: theme.palette.warning.main,
     })[d.kind];
+
+  const byPath = kind === 'json' && mode === 'paths';
 
   return (
     <Box
@@ -199,6 +269,19 @@ export default function JsonCompare({
         minHeight: 0,
       }}
     >
+      <ToggleButtonGroup
+        size="small"
+        exclusive
+        value={kind}
+        onChange={(_, v) => v && setKind(v)}
+        aria-label="What to compare"
+        sx={{ alignSelf: 'flex-start' }}
+      >
+        <ToggleButton value="json">JSON</ToggleButton>
+        <ToggleButton value="sql">SQL</ToggleButton>
+        <ToggleButton value="text">Text</ToggleButton>
+      </ToggleButtonGroup>
+
       <Paper
         sx={{
           p: 2,
@@ -210,6 +293,7 @@ export default function JsonCompare({
       >
         <Side
           label="Left"
+          kind={kind}
           value={left}
           onChange={setLeft}
           notes={notes}
@@ -230,6 +314,7 @@ export default function JsonCompare({
         </Box>
         <Side
           label="Right"
+          kind={kind}
           value={right}
           onChange={setRight}
           notes={notes}
@@ -258,25 +343,43 @@ export default function JsonCompare({
           <Typography variant="subtitle2">Differences</Typography>
           {normalized && (
             <Typography variant="body2" color="text.secondary">
-              {normalized.differences.length === 0
-                ? 'No differences'
-                : `${normalized.differences.length} difference${normalized.differences.length === 1 ? '' : 's'}`}
+              {normalized.differences
+                ? `${normalized.differences.length || 'No'} difference${normalized.differences.length === 1 ? '' : 's'}`
+                : changedLines
+                  ? ''
+                  : 'Identical'}
             </Typography>
           )}
           <Box
             sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1 }}
           >
-            <FormControlLabel
-              control={
-                <Switch
-                  size="small"
-                  checked={sortKeys}
-                  onChange={(e) => setSortKeys(e.target.checked)}
-                />
-              }
-              label={<Typography variant="body2">Ignore key order</Typography>}
-            />
-            {mode === 'lines' && (
+            {kind === 'json' && (
+              <FormControlLabel
+                control={
+                  <Switch
+                    size="small"
+                    checked={sortKeys}
+                    onChange={(e) => setSortKeys(e.target.checked)}
+                  />
+                }
+                label={
+                  <Typography variant="body2">Ignore key order</Typography>
+                }
+              />
+            )}
+            {kind === 'sql' && (
+              <FormControlLabel
+                control={
+                  <Switch
+                    size="small"
+                    checked={ignoreComments}
+                    onChange={(e) => setIgnoreComments(e.target.checked)}
+                  />
+                }
+                label={<Typography variant="body2">Ignore comments</Typography>}
+              />
+            )}
+            {!byPath && (
               <FormControlLabel
                 control={
                   <Switch
@@ -288,39 +391,43 @@ export default function JsonCompare({
                 label={<Typography variant="body2">Only changes</Typography>}
               />
             )}
-            <ToggleButtonGroup
-              size="small"
-              exclusive
-              value={mode}
-              onChange={(_, v) => v && setMode(v)}
-            >
-              <ToggleButton value="lines">Side by side</ToggleButton>
-              <ToggleButton value="paths">By path</ToggleButton>
-            </ToggleButtonGroup>
+            {kind === 'json' && (
+              <ToggleButtonGroup
+                size="small"
+                exclusive
+                value={mode}
+                onChange={(_, v) => v && setMode(v)}
+              >
+                <ToggleButton value="lines">Side by side</ToggleButton>
+                <ToggleButton value="paths">By path</ToggleButton>
+              </ToggleButtonGroup>
+            )}
           </Box>
         </Box>
 
-        {!ready && (
+        {!normalized && (
           <Typography
             variant="body2"
             color="text.secondary"
             sx={{ py: 3, textAlign: 'center' }}
           >
-            Paste valid JSON on both sides to see the differences.
+            {kind === 'text'
+              ? 'Paste text on both sides to see the differences.'
+              : `Paste valid ${kind.toUpperCase()} on both sides to see the differences.`}
           </Typography>
         )}
 
-        {normalized && mode === 'lines' && (
+        {normalized && !byPath && (
           <DiffView
             left={normalized.left}
             right={normalized.right}
-            leftLabel="Left"
-            rightLabel="Right"
+            leftLabel={kind === 'sql' ? 'Left (normalised)' : 'Left'}
+            rightLabel={kind === 'sql' ? 'Right (normalised)' : 'Right'}
             onlyChanges={onlyChanges}
           />
         )}
 
-        {normalized && mode === 'paths' && (
+        {normalized && byPath && normalized.differences && (
           <Box
             sx={{ overflow: 'auto', fontFamily: MONO_FONT, fontSize: '0.8rem' }}
           >

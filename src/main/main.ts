@@ -746,7 +746,9 @@ ipcMain.handle('notes:import-files', async () => {
   const result = await dialog.showOpenDialog({
     title: 'Import notes',
     properties: ['openFile', 'multiSelections'],
-    filters: [{ name: 'Notes', extensions: ['md', 'markdown', 'txt', 'json'] }],
+    filters: [
+      { name: 'Notes', extensions: ['md', 'markdown', 'txt', 'json', 'sql'] },
+    ],
   });
   if (result.canceled) return [];
   return result.filePaths.map((filePath) => ({

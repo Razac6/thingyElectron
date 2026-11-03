@@ -282,3 +282,72 @@ describe('base64Tools', () => {
     expect(bytesToBase64(new Uint8Array([104, 105]))).toBe('aGk=');
   });
 });
+
+describe('sqlTools', () => {
+  // eslint-disable-next-line global-require
+  const {
+    formatSql,
+    minifySql,
+    checkSql,
+    normalizeSql,
+  } = require('./sqlTools');
+
+  it('formats clauses, lists and conditions; leaves strings alone', () => {
+    expect(
+      formatSql(
+        "select a, count(b) as n from t left join u on u.id = t.id and u.x = 'and from' where a > 1 group by a",
+      ),
+    ).toBe(
+      [
+        'SELECT',
+        '  a,',
+        '  COUNT(b) AS n',
+        'FROM t',
+        'LEFT JOIN u',
+        '  ON u.id = t.id',
+        "  AND u.x = 'and from'",
+        'WHERE a > 1',
+        'GROUP BY',
+        '  a',
+      ].join('\n'),
+    );
+  });
+
+  it('keeps IN ( spaced, nests subqueries, escapes quotes', () => {
+    const out = formatSql(
+      "delete from t where id in (select id from x where n = 'it''s')",
+    );
+    expect(out).toContain('DELETE FROM t');
+    expect(out).toContain('WHERE id IN (');
+    expect(out).toContain("WHERE n = 'it''s')");
+  });
+
+  it('minifies to one line', () => {
+    expect(
+      minifySql('SELECT\n  a,\n  b -- note\nFROM t\nWHERE ( x = 1 )'),
+    ).toBe('SELECT a, b FROM t WHERE (x = 1)');
+  });
+
+  it('normalises so formatting and keyword case do not count as differences', () => {
+    expect(normalizeSql('select a from t')).toBe(
+      normalizeSql('SELECT\n   a\nFROM   t'),
+    );
+  });
+
+  it('finds unbalanced brackets and quotes', () => {
+    expect(checkSql('select (a from t')).toEqual({
+      ok: false,
+      error: 'Missing )',
+      line: 1,
+    });
+    expect(checkSql("select 1\nwhere a = 'x")).toMatchObject({
+      ok: false,
+      line: 2,
+    });
+    expect(checkSql('select a) from t')).toMatchObject({
+      ok: false,
+      error: 'Unexpected )',
+    });
+    expect(checkSql("select '[x]' from [my table]")).toEqual({ ok: true });
+  });
+});

@@ -1,7 +1,10 @@
 // Notes: data shape, filtering/sorting/paging, and .md / .json file (de)serialisation.
 // Pure functions - the page and the tests share them.
 
-export type NoteFormat = 'markdown' | 'json';
+export type NoteFormat = 'markdown' | 'json' | 'sql';
+
+export const toNoteFormat = (value: unknown): NoteFormat =>
+  value === 'json' || value === 'sql' ? value : 'markdown';
 
 export interface Note {
   id?: number;
@@ -47,7 +50,7 @@ export const normalizeNote = (raw: any): Note => ({
   notebook: raw.notebook || '',
   tags: Array.isArray(raw.tags) ? raw.tags.map(String) : [],
   pinned: !!raw.pinned,
-  format: raw.format === 'json' ? 'json' : 'markdown',
+  format: toNoteFormat(raw.format),
 });
 
 // Every search word must appear in the title, content, notebook or tags (any order)
@@ -104,7 +107,7 @@ export const countBy = (values: string[]) => {
 // Plain-text preview for the list: markdown syntax stripped, JSON collapsed
 export const snippet = (note: Note, length = 140) => {
   const text =
-    note.format === 'json'
+    note.format !== 'markdown'
       ? note.content.replace(/\s+/g, ' ')
       : note.content
           .replace(/```[\s\S]*?```/g, ' ')
@@ -131,8 +134,11 @@ const yamlString = (value: string) =>
 
 /** Markdown notes export with YAML front matter (title, notebook, tags...); JSON notes as .json */
 export const noteToFile = (note: Note) => {
-  if (note.format === 'json') {
-    return { fileName: `${slug(note.title)}.json`, content: note.content };
+  if (note.format !== 'markdown') {
+    return {
+      fileName: `${slug(note.title)}.${note.format}`,
+      content: note.content,
+    };
   }
   const front = [
     '---',
@@ -182,9 +188,9 @@ export const fileToNote = (fileName: string, text: string): Note => {
     notebook: '',
     tags: [],
     pinned: false,
-    format: /\.json$/i.test(fileName) ? 'json' : 'markdown',
+    format: toNoteFormat(fileName.match(/\.(json|sql)$/i)?.[1].toLowerCase()),
   };
-  if (note.format === 'json') return note;
+  if (note.format !== 'markdown') return note;
 
   // Strip a byte-order mark
   const body = text.replace(/^\uFEFF/, '');

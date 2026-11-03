@@ -60,7 +60,7 @@ const FEATURES: { icon: React.ReactNode; title: string; text: string }[] = [
   {
     icon: <CodeIcon />,
     title: 'Dev Notes',
-    text: 'Markdown and JSON notes with syntax highlighting, notebooks, tags, search, version history and .md import/export, plus tools: JSON compare, DevTools cURL/fetch → WebStorm HTTP Client, and Base64 ↔ file.',
+    text: 'Markdown, JSON and SQL notes with syntax highlighting, formatting and validation, notebooks, tags, search, version history and .md/.json/.sql import/export, plus tools: compare JSON, SQL or text side by side, DevTools cURL/fetch → WebStorm HTTP Client, and Base64 ↔ file.',
   },
   {
     icon: <PetsOutlinedIcon />,
