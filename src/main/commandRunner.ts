@@ -45,6 +45,7 @@ export interface RunStep {
   ready: string | null; // "port 5432 open"...
   readyState: 'waiting' | 'ready' | 'failed' | null;
   readyDetail: string | null; // the latest probe result
+  readyAt: number | null; // when it was up (its clock stops there)
 }
 
 export interface CommandRun {
@@ -332,6 +333,7 @@ const startStep = (
     ) {
       step.background = true;
       step.readyState = 'ready';
+      step.readyAt = Date.now();
       step.readyDetail = 'line found';
       append(
         run,
@@ -373,6 +375,7 @@ const startStep = (
       },
     });
     step.readyState = result.ok ? 'ready' : 'failed';
+    if (result.ok) step.readyAt = Date.now();
     step.readyDetail = result.detail;
     append(
       run,
@@ -475,7 +478,12 @@ const startStep = (
     if (!check) {
       // No "ready when": give it a moment to start before the next step
       setTimeout(() => {
-        if (!stopRequested.has(run.id)) next();
+        if (stopRequested.has(run.id)) return;
+        if (step.status === 'running') {
+          step.readyAt = Date.now(); // no "ready when": started counts as up
+          publish(run);
+        }
+        next();
       }, 1500);
       return;
     }
@@ -547,6 +555,7 @@ export const startRun = (
       ready: describeReady(normalizeReady(s.ready)) || null,
       readyState: null,
       readyDetail: null,
+      readyAt: null,
     })),
   };
   runs.set(run.id, run);

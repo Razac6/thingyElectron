@@ -1317,7 +1317,10 @@ export default function CommandsTool() {
                   )}
                   <Typography variant="caption" color="text.secondary" noWrap>
                     {new Date(selected.startedAt).toLocaleTimeString()} ·{' '}
-                    {duration(selected.startedAt, selected.endedAt)}
+                    {duration(
+                      selected.startedAt,
+                      selected.endedAt ?? selected.readyAt,
+                    )}
                   </Typography>
                 </>
               ) : (
@@ -1505,7 +1508,7 @@ export default function CommandsTool() {
                     color="text.secondary"
                     sx={{ minWidth: 48, textAlign: 'right' }}
                   >
-                    {duration(step.startedAt, step.endedAt)}
+                    {duration(step.startedAt, step.endedAt ?? step.readyAt)}
                   </Typography>
                   {selected.status === 'running' &&
                     (step.status === 'running' ||
