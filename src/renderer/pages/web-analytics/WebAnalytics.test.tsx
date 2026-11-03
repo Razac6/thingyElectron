@@ -9,11 +9,6 @@ import {
 } from '@testing-library/react';
 import WebAnalytics from './WebAnalytics';
 
-// Mock Chart.js Doughnut component
-jest.mock('react-chartjs-2', () => ({
-  Doughnut: () => <div data-testid="doughnut-mock" />,
-}));
-
 // Mock window.electron
 const mockDatabase = {
   getWebStats: jest.fn(),
@@ -63,9 +58,12 @@ describe('WebAnalytics Component', () => {
       expect(screen.getByText('google.com')).toBeInTheDocument();
       expect(screen.getByText('youtube.com')).toBeInTheDocument();
       expect(screen.getByText('WebStorm')).toBeInTheDocument();
-      expect(screen.getByText('10m')).toBeInTheDocument();
-      expect(screen.getByText('20m')).toBeInTheDocument();
-      expect(screen.getByText('1h 0m')).toBeInTheDocument();
+      // Times show in the rows (and again in card totals / summary tiles)
+      expect(screen.getAllByText('10m').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('20m').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('1h 0m').length).toBeGreaterThan(0);
+      // Productive = google.com (WORK) + WebStorm (WORK)
+      expect(screen.getByText('1h 10m')).toBeInTheDocument();
     });
   });
 
@@ -80,10 +78,10 @@ describe('WebAnalytics Component', () => {
 
     // Material UI Select uses hidden input or text for current value
     // We'll look for the select button and click it, then click the menu item
-    const webCategorySelect = screen.getAllByRole('combobox')[1]; // First is Time Range, Second is Google.com Category
+    const webCategorySelect = screen.getAllByRole('combobox')[0]; // google.com's category
 
     fireEvent.mouseDown(webCategorySelect);
-    const option = await screen.findByRole('option', { name: 'LEARNING' });
+    const option = await screen.findByRole('option', { name: 'Learning' });
     fireEvent.click(option);
 
     expect(mockDatabase.setDomainCategory).toHaveBeenCalledWith(
@@ -97,11 +95,7 @@ describe('WebAnalytics Component', () => {
       render(<WebAnalytics />);
     });
 
-    const rangeSelect = screen.getAllByRole('combobox')[0];
-    fireEvent.mouseDown(rangeSelect);
-
-    const option = await screen.findByRole('option', { name: 'Last 7 Days' });
-    fireEvent.click(option);
+    fireEvent.click(screen.getByRole('button', { name: '7 days' }));
 
     await waitFor(() =>
       expect(mockDatabase.getWebStats).toHaveBeenCalledWith(7),

@@ -70,8 +70,7 @@ function TaskDetail() {
   const navigate = useNavigate();
   const barColor = useTheme().palette.text.primary;
   const { tasks, updateTask, startTimer, stopTimer } = useTimer();
-  const { addXp, checkForAchievements, triggerRewardAnimation } =
-    useGamification();
+  const { checkForAchievements, triggerRewardAnimation } = useGamification();
   const { settings } = useSettings();
 
   const [task, setTask] = useState<any>(null);
@@ -260,7 +259,7 @@ function TaskDetail() {
       originalTask.status !== StatusEnum.COMPLETED &&
       task.status === StatusEnum.COMPLETED
     ) {
-      addXp(10);
+      // XP for the completion is awarded by the main process (once per task)
       const achievementEarned = await checkForAchievements('TASK_COMPLETED', {
         task,
       });

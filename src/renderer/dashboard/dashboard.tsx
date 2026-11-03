@@ -10,6 +10,7 @@ import ContributionGraph from '../components/ContributionGraph';
 import SmartInsightWidget from '../components/SmartInsightWidget';
 import FavoriteHabitWidget from '../components/FavoriteHabitWidget';
 import MountainClimbBeta from '../components/MountainClimbBeta';
+import JourneyMap from '../components/journey/JourneyMap';
 import DailyChallengeWidget from '../components/DailyChallengeWidget';
 import useDashboardViews from './useDashboardViews';
 import LumaDashboard from './LumaDashboard';
@@ -40,6 +41,7 @@ export default function Dashboard() {
     activeView,
     availableViews,
     isMountainClimbEnabled,
+    isJourneyEnabled,
     handleViewChange,
   } = useDashboardViews();
 
@@ -134,7 +136,7 @@ export default function Dashboard() {
                 <Box
                   sx={{ height: '320px', animation: 'fadeIn 0.4s ease-out' }}
                 >
-                  <MountainClimbBeta />
+                  {isJourneyEnabled ? <JourneyMap /> : <MountainClimbBeta />}
                 </Box>
               ) : activeView === 2 ? (
                 <Box

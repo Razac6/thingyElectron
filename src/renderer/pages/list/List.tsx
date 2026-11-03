@@ -80,8 +80,9 @@ import {
   toggleChecklistItem,
 } from '../../services/DatabaseService';
 import { KanbanBoard } from '../../components/KanbanBoard';
-import { usePageActions } from '../../context/PageActionsContext';
+import { useIsLuma } from '../../themes';
 import { LiquidLoader } from '../../components/LiquidFill';
+import NewItemButton from '../../components/NewItemButton';
 
 // Flowing highlight sweep for the active timer's row - plain CSS animation, no JS ticking
 // involved at all. Color is picked once per row-class evaluation (see getActiveRowLiquidClass)
@@ -122,8 +123,7 @@ function List() {
     createTask,
     deleteTask,
   } = useTimer();
-  const { addXp, checkForAchievements, triggerRewardAnimation } =
-    useGamification();
+  const { checkForAchievements, triggerRewardAnimation } = useGamification();
   const [sprints, setSprints] = useState<any[]>([]);
   const [openDialog, setOpenDialog] = useState(false);
   const [newTask, setNewTask] = useState<Partial<Task>>({
@@ -621,7 +621,7 @@ function List() {
     await updateTask(updatedTask);
 
     if (newStatus === StatusEnum.COMPLETED) {
-      addXp(10);
+      // XP for the completion is awarded by the main process (once per task)
       const achievementEarned = await checkForAchievements('TASK_COMPLETED', {
         task: updatedTask,
       });
@@ -1100,28 +1100,8 @@ function List() {
     (t) => t.id === currentMenuTaskId,
   );
 
-  // Luma shows these next to search instead of the SpeedDial
-  const actionsInToolbar = usePageActions([
-    {
-      key: 'toggle-completed',
-      label: showCompletedTasks ? 'Hide Completed' : 'Show Completed',
-      icon: showCompletedTasks ? <VisibilityOffIcon /> : <VisibilityIcon />,
-      onClick: () => setShowCompletedTasks(!showCompletedTasks),
-    },
-    {
-      key: 'ai-schedule',
-      label: 'AI Auto-Planner',
-      icon: <AutoFixHighIcon />,
-      onClick: handleAutoSchedule,
-    },
-    {
-      key: 'add',
-      label: 'New task',
-      icon: <AddIcon fontSize="small" />,
-      onClick: () => setOpenDialog(true),
-      primary: true,
-    },
-  ]);
+  // Luma: the actions sit in the toolbar row above the table instead of the SpeedDial
+  const actionsInToolbar = useIsLuma();
 
   return (
     <Box
@@ -1138,41 +1118,38 @@ function List() {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
+          gap: 2,
           mb: 2,
           flexShrink: 0,
         }}
       >
-        <ToggleButtonGroup
-          value={view}
-          exclusive
-          onChange={(e, next) => {
-            if (next) {
-              setView(next);
-              localStorage.setItem('task_view', next);
-            }
+        <Box
+          sx={{
+            display: 'flex',
+            gap: 2,
+            alignItems: 'center',
+            flexWrap: 'wrap',
           }}
-          size="small"
-          aria-label="view switcher"
         >
-          <ToggleButton value="list" aria-label="list view">
-            <ViewListIcon fontSize="small" sx={{ mr: 1 }} /> List
-          </ToggleButton>
-          <ToggleButton value="board" aria-label="board view">
-            <ViewWeekIcon fontSize="small" sx={{ mr: 1 }} /> Board
-          </ToggleButton>
-        </ToggleButtonGroup>
-
-        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-          <Tooltip title="Work History">
-            <IconButton
-              size="small"
-              onClick={() =>
-                navigate('/statistics', { state: { tab: 'history' } })
+          <ToggleButtonGroup
+            value={view}
+            exclusive
+            onChange={(e, next) => {
+              if (next) {
+                setView(next);
+                localStorage.setItem('task_view', next);
               }
-            >
-              <HistoryIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
+            }}
+            size="small"
+            aria-label="view switcher"
+          >
+            <ToggleButton value="list" aria-label="list view">
+              <ViewListIcon fontSize="small" sx={{ mr: 1 }} /> List
+            </ToggleButton>
+            <ToggleButton value="board" aria-label="board view">
+              <ViewWeekIcon fontSize="small" sx={{ mr: 1 }} /> Board
+            </ToggleButton>
+          </ToggleButtonGroup>
           <Autocomplete
             size="small"
             sx={{ minWidth: 200 }}
@@ -1212,6 +1189,56 @@ function List() {
               <MenuItem value={TaskTypeEnum.DOC}>Doc</MenuItem>
             </Select>
           </FormControl>
+        </Box>
+
+        <Box
+          sx={{ display: 'flex', gap: 1, alignItems: 'center', flexShrink: 0 }}
+        >
+          <Tooltip title="Work History">
+            <IconButton
+              size="small"
+              onClick={() =>
+                navigate('/statistics', { state: { tab: 'history' } })
+              }
+            >
+              <HistoryIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          {actionsInToolbar && (
+            <>
+              <Tooltip
+                title={showCompletedTasks ? 'Hide completed' : 'Show completed'}
+              >
+                <IconButton
+                  size="small"
+                  onClick={() => setShowCompletedTasks(!showCompletedTasks)}
+                  aria-label={
+                    showCompletedTasks ? 'Hide completed' : 'Show completed'
+                  }
+                >
+                  {showCompletedTasks ? (
+                    <VisibilityOffIcon fontSize="small" />
+                  ) : (
+                    <VisibilityIcon fontSize="small" />
+                  )}
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="AI Auto-Planner">
+                <IconButton
+                  size="small"
+                  onClick={handleAutoSchedule}
+                  aria-label="AI Auto-Planner"
+                >
+                  <AutoFixHighIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <NewItemButton
+                label="New task"
+                onClick={() => setOpenDialog(true)}
+                sx={{ ml: 1 }}
+              />
+            </>
+          )}
         </Box>
       </Box>
 

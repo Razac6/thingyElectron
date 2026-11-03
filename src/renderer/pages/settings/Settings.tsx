@@ -320,6 +320,16 @@ function Settings() {
           value={normalizeCharacter(settings.companion_character)}
           onChange={(value) => updateSetting('companion_character', value)}
         />
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ display: 'block', mt: 1 }}
+        >
+          The Warrior turns on the journey: finished tasks, focus blocks, habits
+          and quests earn dice rolls on a map with treasure, gold and battles
+          (Dashboard), and gear to equip (Profile). Other characters keep things
+          simple.
+        </Typography>
         {(settings.ui_theme || DEFAULT_THEME) === 'luma' && (
           <>
             <LumaColorSettings />

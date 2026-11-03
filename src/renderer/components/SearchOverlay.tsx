@@ -276,7 +276,7 @@ export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
     if (result.resultType === 'task') {
       navigate(`/task/${result.id}`);
     } else {
-      navigate(`/notes`);
+      navigate(`/notes`, { state: { noteId: result.id } });
     }
   };
 

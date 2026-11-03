@@ -37,7 +37,8 @@ import {
 } from '../../services/SprintService';
 import { useGamification } from '../../context/GamificationContext';
 import { SprintInterface } from '../../../interfaces/sprint.interface';
-import { usePageActions } from '../../context/PageActionsContext';
+import { useIsLuma } from '../../themes';
+import NewItemButton from '../../components/NewItemButton';
 
 // Custom styles for the calendar to match the theme
 const calendarStyle = `
@@ -315,15 +316,8 @@ function Sprints() {
     },
   ];
 
-  const actionsInToolbar = usePageActions([
-    {
-      key: 'add',
-      label: 'New sprint',
-      icon: <AddIcon fontSize="small" />,
-      onClick: () => handleOpenForm(),
-      primary: true,
-    },
-  ]);
+  // Luma: "New sprint" sits in a toolbar row above the table instead of the SpeedDial
+  const actionsInToolbar = useIsLuma();
 
   return (
     <Box
@@ -336,6 +330,20 @@ function Sprints() {
       }}
     >
       <style>{calendarStyle}</style>
+
+      {actionsInToolbar && (
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            alignItems: 'center',
+            mb: 2,
+            flexShrink: 0,
+          }}
+        >
+          <NewItemButton label="New sprint" onClick={() => handleOpenForm()} />
+        </Box>
+      )}
 
       <Paper
         elevation={0}

@@ -1,184 +1,130 @@
 import React from 'react';
+import '@testing-library/jest-dom';
 import { render, act, screen, waitFor } from '@testing-library/react';
-import {
-  GamificationProvider,
-  useGamification,
-  getRankForLevel,
-} from './GamificationContext';
+import { GamificationProvider, useGamification } from './GamificationContext';
 
-// Mock window.electron
+const listeners: Record<string, (payload?: any) => void> = {};
 const mockDatabase = {
-  getProfile: jest.fn(),
-  getEarnedAchievements: jest.fn(),
-  updateProfile: jest.fn(),
-  grantAchievement: jest.fn(),
-  getTasks: jest.fn(),
-  getLifetimeStats: jest.fn(),
-};
-
-const mockIpcRenderer = {
-  on: jest.fn(),
-  removeListener: jest.fn(),
+  getGamificationState: jest.fn(),
+  awardXp: jest.fn(),
+  syncAchievements: jest.fn(),
 };
 
 beforeAll(() => {
   (global as any).window.electron = {
     database: mockDatabase,
-    ipcRenderer: mockIpcRenderer,
+    ipcRenderer: {
+      on: jest.fn((channel: string, fn: (payload?: any) => void) => {
+        listeners[channel] = fn;
+        return () => delete listeners[channel];
+      }),
+    },
   };
 });
 
-// Mock SettingsContext
 jest.mock('./SettingsContext', () => ({
-  useSettings: () => ({
-    settings: { enableRewardAnimations: 'true' },
-  }),
+  useSettings: () => ({ settings: { enableRewardAnimations: 'true' } }),
 }));
 
 function TestComponent() {
-  const { profile, earnedAchievements, addXp, rank, checkForAchievements } =
-    useGamification();
+  const {
+    profile,
+    earnedAchievements,
+    addXp,
+    checkForAchievements,
+    rewardAnimation,
+  } = useGamification();
   return (
     <div>
       <div data-testid="level">{profile?.level}</div>
       <div data-testid="xp">{profile?.xp}</div>
-      <div data-testid="rank">{rank}</div>
       <div data-testid="achievements">{earnedAchievements.join(',')}</div>
-      <button type="button" onClick={() => addXp(50)}>
-        Add 50 XP
-      </button>
+      <div data-testid="animation">{rewardAnimation}</div>
       <button
         type="button"
-        onClick={() => checkForAchievements('TASK_COMPLETED')}
+        onClick={() => addXp(15, 'Habit: Read', 'habit:1:2026-11-03')}
       >
-        Check Task
+        Add XP
+      </button>
+      <button type="button" onClick={() => checkForAchievements()}>
+        Check
       </button>
     </div>
   );
 }
 
-describe('GamificationContext', () => {
-  const initialProfile = { userId: 1, level: 1, xp: 0 };
-  const initialAchievements: string[] = [];
+const renderProvider = async () => {
+  await act(async () => {
+    render(
+      <GamificationProvider>
+        <TestComponent />
+      </GamificationProvider>,
+    );
+  });
+};
 
+describe('GamificationContext', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockDatabase.getProfile.mockResolvedValue(initialProfile);
-    mockDatabase.getEarnedAchievements.mockResolvedValue(initialAchievements);
-  });
-
-  it('should load initial profile and rank', async () => {
-    await act(async () => {
-      render(
-        <GamificationProvider>
-          <TestComponent />
-        </GamificationProvider>,
-      );
-    });
-
-    await waitFor(() => {
-      expect(screen.getByTestId('level').textContent).toBe('1');
-      expect(screen.getByTestId('rank').textContent).toBe('Utopiec');
+    mockDatabase.getGamificationState.mockResolvedValue({
+      profile: { userId: 1, level: 4, xp: 320 },
+      achievements: [
+        { id: 'FIRST_TASK', earnedAt: '2026-01-01' },
+        { id: 'FIVE_TASKS', earnedAt: null },
+      ],
+      recentXp: [],
     });
   });
 
-  it('should increase XP and level up', async () => {
-    await act(async () => {
-      render(
-        <GamificationProvider>
-          <TestComponent />
-        </GamificationProvider>,
-      );
-    });
-
-    // Level 1 needs 1 * 100 = 100 XP
-    await act(async () => {
-      screen.getByText('Add 50 XP').click();
-    });
-
-    expect(screen.getByTestId('xp').textContent).toBe('50');
-
-    await act(async () => {
-      screen.getByText('Add 50 XP').click();
-    });
-
-    // Should level up to 2
-    expect(screen.getByTestId('level').textContent).toBe('2');
-    expect(screen.getByTestId('xp').textContent).toBe('0');
-    // Level 5 is Leszy, so at 2 it should still be Utopiec or next?
-    // Wait, getRankForLevel logic:
-    // 1: Utopiec, 5: Leszy
-    expect(screen.getByTestId('rank').textContent).toBe('Utopiec');
+  it('loads the profile and earned achievements from the main process', async () => {
+    await renderProvider();
+    expect(screen.getByTestId('level')).toHaveTextContent('4');
+    expect(screen.getByTestId('xp')).toHaveTextContent('320');
+    expect(screen.getByTestId('achievements')).toHaveTextContent('FIRST_TASK');
   });
 
-  it('should grant FIRST_TASK achievement', async () => {
-    mockDatabase.getTasks.mockResolvedValue([]);
-
+  it('forwards XP awards with reason and once-only key', async () => {
+    mockDatabase.awardXp.mockResolvedValue({ userId: 1, level: 4, xp: 335 });
+    await renderProvider();
     await act(async () => {
-      render(
-        <GamificationProvider>
-          <TestComponent />
-        </GamificationProvider>,
-      );
+      screen.getByText('Add XP').click();
     });
-
-    await act(async () => {
-      screen.getByText('Check Task').click();
-    });
-
-    await waitFor(() => {
-      expect(mockDatabase.grantAchievement).toHaveBeenCalledWith(
-        1,
-        'FIRST_TASK',
-      );
-      expect(screen.getByTestId('achievements').textContent).toContain(
-        'FIRST_TASK',
-      );
-    });
+    expect(mockDatabase.awardXp).toHaveBeenCalledWith(
+      15,
+      'Habit: Read',
+      'habit:1:2026-11-03',
+    );
+    expect(screen.getByTestId('xp')).toHaveTextContent('335');
   });
 
-  it('should grant FIVE_TASKS achievement when 5 tasks are completed', async () => {
-    mockDatabase.getEarnedAchievements.mockResolvedValue(['FIRST_TASK']);
-    mockDatabase.getTasks.mockResolvedValue([
-      { status: 'Completed' },
-      { status: 'Completed' },
-      { status: 'Completed' },
-      { status: 'Completed' },
-      { status: 'Completed' },
-    ]);
-
+  it('shows the trophy when the main process reports a new achievement', async () => {
+    await renderProvider();
     await act(async () => {
-      render(
-        <GamificationProvider>
-          <TestComponent />
-        </GamificationProvider>,
-      );
+      listeners['gamification:updated']({
+        profile: { userId: 1, level: 5, xp: 10 },
+        newAchievements: [{ id: 'FIVE_TASKS', name: 'Apprentice', xp: 50 }],
+      });
     });
+    expect(screen.getByTestId('level')).toHaveTextContent('5');
+    expect(screen.getByTestId('achievements')).toHaveTextContent(
+      'FIRST_TASK,FIVE_TASKS',
+    );
+    expect(screen.getByTestId('animation')).toHaveTextContent('trophy');
+  });
 
+  it('checkForAchievements syncs with the main process', async () => {
+    mockDatabase.syncAchievements.mockResolvedValue({
+      profile: { userId: 1, level: 4, xp: 370 },
+      newAchievements: [{ id: 'FIVE_TASKS', name: 'Apprentice', xp: 50 }],
+    });
+    await renderProvider();
     await act(async () => {
-      screen.getByText('Check Task').click();
+      screen.getByText('Check').click();
     });
-
-    await waitFor(() => {
-      expect(mockDatabase.grantAchievement).toHaveBeenCalledWith(
-        1,
+    await waitFor(() =>
+      expect(screen.getByTestId('achievements')).toHaveTextContent(
         'FIVE_TASKS',
-      );
-      expect(screen.getByTestId('achievements').textContent).toContain(
-        'FIVE_TASKS',
-      );
-    });
-  });
-});
-
-describe('getRankForLevel', () => {
-  it('should return correct ranks', () => {
-    expect(getRankForLevel(1)).toBe('Utopiec');
-    expect(getRankForLevel(4)).toBe('Utopiec');
-    expect(getRankForLevel(5)).toBe('Leszy');
-    expect(getRankForLevel(9)).toBe('Leszy');
-    expect(getRankForLevel(10)).toBe('Bies');
-    expect(getRankForLevel(25)).toBe('Wąpierz');
-    expect(getRankForLevel(100)).toBe('Wąpierz');
+      ),
+    );
   });
 });

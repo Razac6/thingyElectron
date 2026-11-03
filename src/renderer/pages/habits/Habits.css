@@ -62,13 +62,22 @@
 }
 
 .day-bubble.today-bubble {
-  border-color: var(--thingy-secondary, #ffb703); /* Highlight current day border */
+  border-color: var(
+    --thingy-secondary,
+    #ffb703
+  ); /* Highlight current day border */
 }
 
 @keyframes pulse {
-  0% { box-shadow: 0 0 0 0 rgba(255, 183, 3, 0.4); }
-  70% { box-shadow: 0 0 0 8px rgba(255, 183, 3, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(255, 183, 3, 0); }
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 183, 3, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(255, 183, 3, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 183, 3, 0);
+  }
 }
 
 .day-bubble.pending-today {
@@ -79,5 +88,66 @@
 
 /* Override default heatmap hidden now */
 .heatmap-container {
-  display: none; 
+  display: none;
+}
+
+/* Days the habit isn't scheduled for */
+.day-column.off-day .day-bubble:not(.done) {
+  opacity: 0.4;
+  border-style: dashed;
+}
+
+/* Luma: flat cards, ink bubbles, accent ring for today */
+.habit-card.luma {
+  box-shadow: none !important;
+  border: 1px solid rgba(17, 18, 20, 0.08);
+}
+
+.habit-card.luma:hover {
+  transform: none;
+  box-shadow: 0 8px 24px rgba(17, 18, 20, 0.06) !important;
+}
+
+.habit-card.luma .day-label {
+  color: rgba(17, 18, 20, 0.4);
+}
+
+.habit-card.luma .day-label.today {
+  color: var(--thingy-text, #111214);
+}
+
+.habit-card.luma .day-bubble {
+  background-color: transparent;
+  border-color: rgba(17, 18, 20, 0.12);
+}
+
+.habit-card.luma .day-bubble.done {
+  background-color: var(--thingy-primary, #111214);
+  border-color: var(--thingy-primary, #111214);
+  box-shadow: none;
+}
+
+.habit-card.luma .day-bubble.today-bubble {
+  border-color: var(--thingy-primary, #111214);
+}
+
+.habit-card.luma .day-bubble.today-bubble.done {
+  box-shadow: 0 0 0 3px var(--thingy-secondary, #c5e84a);
+}
+
+@keyframes lumaPulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--thingy-secondary, #c5e84a);
+  }
+  70% {
+    box-shadow: 0 0 0 7px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.habit-card.luma .day-bubble.pending-today {
+  animation: lumaPulse 2s infinite;
+  border-color: var(--thingy-primary, #111214);
 }

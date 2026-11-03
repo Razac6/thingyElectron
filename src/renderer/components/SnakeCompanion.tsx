@@ -20,7 +20,13 @@ const SEGMENTS = 34;
 const SPACING = 7; // px between segments along x
 const BODY_LENGTH = SEGMENTS * SPACING;
 const WAVELENGTH = 90; // px
-const SPEED = 170; // px/s while travelling
+const SPEED = 170; // px/s - minimum travel speed
+// A trip across a wide window would take longer than the companion stays visible, so far
+// from the target the snake goes faster (speed ~ remaining distance / TRIP_SECONDS), which
+// also makes it ease in to a stop
+const TRIP_SECONDS = 1;
+// Once coiled it stays at least this long, even if it was told to leave on the way
+const MIN_DWELL_MS = 2500;
 const STRIP_HEIGHT = 72;
 const BASE_Y = 46; // body centre line within the strip
 const HOME_OFFSET = 72; // head stops this far from the right edge
@@ -124,7 +130,13 @@ export default function SnakeCompanion({
     phase: 0,
     coil: 0,
   });
-  const state = useRef({ headX: -BODY_LENGTH, phase: 0, coil: 0, last: 0 });
+  const state = useRef({
+    headX: -BODY_LENGTH,
+    phase: 0,
+    coil: 0,
+    last: 0,
+    coiledAt: 0, // rAF time the coil completed (0 = not coiled yet this visit)
+  });
   const moodRef = useRef(mood);
   moodRef.current = mood;
 
@@ -137,7 +149,11 @@ export default function SnakeCompanion({
   useEffect(() => {
     if (visible) {
       // Enter from the left edge unless already on screen
-      if (!rendered) state.current.headX = -SPACING;
+      if (!rendered) {
+        state.current.headX = -SPACING;
+        state.current.coil = 0;
+      }
+      state.current.coiledAt = 0;
       setRendered(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -153,20 +169,26 @@ export default function SnakeCompanion({
       s.last = t;
 
       const home = width - HOME_OFFSET;
-      const target = visible ? home : width + BODY_LENGTH;
+      // Always finish the visit: reach home, coil up and rest a moment before leaving -
+      // even when hidden on the way (otherwise it could slither past without stopping)
+      const dwelt = s.coiledAt > 0 && t - s.coiledAt >= MIN_DWELL_MS;
+      const leaving = !visible && dwelt;
+      const target = leaving ? width + BODY_LENGTH : home;
       const distance = target - s.headX;
 
       // Coil up once home; when leaving (or the window resized), uncoil before moving
-      const atHome = visible && Math.abs(home - s.headX) <= 1;
+      const atHome = !leaving && Math.abs(home - s.headX) <= 1;
       const coilTarget = atHome ? 1 : 0;
       s.coil +=
         Math.sign(coilTarget - s.coil) *
         Math.min(Math.abs(coilTarget - s.coil), COIL_SPEED * dt);
+      if (s.coil >= 1 && !s.coiledAt) s.coiledAt = t;
 
       const travelling = Math.abs(distance) > 1 && s.coil < 0.01;
       if (travelling) {
+        const speed = Math.max(SPEED, Math.abs(distance) / TRIP_SECONDS);
         s.headX +=
-          Math.sign(distance) * Math.min(Math.abs(distance), SPEED * dt);
+          Math.sign(distance) * Math.min(Math.abs(distance), speed * dt);
       }
 
       const currentMood = moodRef.current;
@@ -179,9 +201,10 @@ export default function SnakeCompanion({
 
       setFrame({ headX: s.headX, phase: s.phase, coil: s.coil });
 
-      if (!visible && s.headX >= width + BODY_LENGTH - 1) {
+      if (leaving && s.headX >= width + BODY_LENGTH - 1) {
         setRendered(false);
         s.last = 0;
+        s.coiledAt = 0;
         return;
       }
       raf = requestAnimationFrame(tick);

@@ -6,14 +6,22 @@ import DropletCompanion from './DropletCompanion';
 import OwlCompanion from './OwlCompanion';
 import DogCompanion from './DogCompanion';
 import { SnakePreview } from './SnakeCompanion';
+import WarriorCompanion from './journey/WarriorCompanion';
 
 // Assistant character picker with live previews - each card shows the character the way
 // it appears in the app (the animals peeking over the bottom edge), and hovering a card
 // shows its happy reaction.
 
-export type CompanionCharacter = 'droplet' | 'owl' | 'dog' | 'snake' | 'cat';
+export type CompanionCharacter =
+  | 'warrior'
+  | 'droplet'
+  | 'owl'
+  | 'dog'
+  | 'snake'
+  | 'cat';
 
 const CHARACTERS: { id: CompanionCharacter; label: string }[] = [
+  { id: 'warrior', label: 'Warrior' },
   { id: 'droplet', label: 'Drop' },
   { id: 'owl', label: 'Owl' },
   { id: 'dog', label: 'Dog' },
@@ -43,6 +51,8 @@ function Preview({
       return <Lottie animationData={catAnimation} loop />;
     case 'snake':
       return <SnakePreview hovered={hovered} />;
+    case 'warrior':
+      return <WarriorCompanion mood={mood} size={120} />;
     default:
       return <DropletCompanion mood={mood} />;
   }

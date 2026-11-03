@@ -24,9 +24,9 @@ import {
   Collapse,
   ToggleButtonGroup,
   ToggleButton,
+  LinearProgress,
 } from '@mui/material';
 import { Theme, alpha, useTheme } from '@mui/material/styles';
-import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import WhatshotIcon from '@mui/icons-material/Whatshot';
@@ -49,6 +49,9 @@ import {
 import { Line } from 'react-chartjs-2';
 import 'react-calendar-heatmap/dist/styles.css';
 import './Habits.css';
+import NewItemButton from '../../components/NewItemButton';
+import { useIsLuma } from '../../themes';
+import { computeHabitStatus, isHabitDueOn } from '../../../main/habitStatus';
 import { useGamification } from '../../context/GamificationContext';
 import {
   toLocalISOString,
@@ -212,6 +215,7 @@ function HabitCard({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [range, setRange] = useState<'7d' | '30d' | 'all'>('7d');
+  const isLuma = useIsLuma();
 
   const today = new Date();
   const currentMonday = getMonday(today);
@@ -223,31 +227,48 @@ function HabitCard({
   const isCompleted = (dateStr: string) =>
     logs.some((l) => l.date === dateStr && l.value >= 1);
 
+  let favoriteColor = habit.isFavorite ? '#ffb703' : '#9e9e9e';
+  if (isLuma)
+    favoriteColor = habit.isFavorite ? 'warning.main' : 'text.disabled';
+
   return (
     <Card
-      className="habit-card"
-      sx={{ mb: 2, borderRadius: 3, overflow: 'visible' }}
+      className={`habit-card${isLuma ? ' luma' : ''}`}
+      sx={{ mb: 2, borderRadius: isLuma ? '22px' : 3, overflow: 'visible' }}
     >
       <CardContent
-        sx={{ p: '24px !important', cursor: 'pointer' }}
+        sx={{
+          p: isLuma ? '18px 22px !important' : '24px !important',
+          cursor: 'pointer',
+        }}
         onClick={() => setExpanded(!expanded)}
       >
         <Grid container alignItems="center" spacing={2}>
           <Grid item xs={12} md={4}>
             <Box display="flex" alignItems="center" gap={2}>
               <Avatar
-                sx={{
-                  bgcolor: (t: Theme) => alpha(t.palette.primary.main, 0.1),
-                  color: 'primary.main',
-                  borderRadius: 2,
-                }}
+                sx={
+                  isLuma
+                    ? {
+                        bgcolor: 'secondary.main',
+                        color: 'secondary.contrastText',
+                        borderRadius: '14px',
+                        fontWeight: 600,
+                      }
+                    : {
+                        bgcolor: (t: Theme) =>
+                          alpha(t.palette.primary.main, 0.1),
+                        color: 'primary.main',
+                        borderRadius: 2,
+                      }
+                }
               >
                 {habit.title.charAt(0).toUpperCase()}
               </Avatar>
               <Box>
                 <Typography
-                  variant="h6"
-                  fontWeight="bold"
+                  variant={isLuma ? 'subtitle1' : 'h6'}
+                  fontWeight={isLuma ? 600 : 'bold'}
                   sx={{ lineHeight: 1.2 }}
                 >
                   {habit.title}
@@ -256,12 +277,18 @@ function HabitCard({
                   <Chip
                     label={habit.category}
                     size="small"
-                    sx={{ fontSize: '0.65rem', height: 20, bgcolor: '#f0f0f0' }}
+                    sx={{
+                      fontSize: '0.65rem',
+                      height: 20,
+                      bgcolor: isLuma ? 'action.hover' : '#f0f0f0',
+                    }}
                   />
                   <Box
                     display="flex"
                     alignItems="center"
-                    color="warning.main"
+                    color={
+                      isLuma && streak === 0 ? 'text.disabled' : 'warning.main'
+                    }
                     gap={0.5}
                   >
                     <WhatshotIcon sx={{ fontSize: 16 }} />
@@ -283,11 +310,13 @@ function HabitCard({
                 const dateStr = toLocalISOString(date);
                 const done = isCompleted(dateStr);
                 const isToday = dateStr === todayStr;
-                const isPendingToday = isToday && !done;
+                // Days the habit isn't scheduled for are dimmed (still clickable)
+                const due = isHabitDueOn(habit, date);
+                const isPendingToday = isToday && due && !done;
                 return (
                   <Box
                     key={dateStr}
-                    className="day-column"
+                    className={`day-column${due ? '' : ' off-day'}`}
                     onClick={() => onToggleDate(dateStr)}
                   >
                     <Typography
@@ -302,7 +331,12 @@ function HabitCard({
                       className={`day-bubble ${done ? 'done' : ''} ${isToday ? 'today-bubble' : ''} ${isPendingToday ? 'pending-today' : ''}`}
                     >
                       {done && (
-                        <CheckIcon sx={{ fontSize: 14, color: 'white' }} />
+                        <CheckIcon
+                          sx={{
+                            fontSize: 14,
+                            color: isLuma ? 'primary.contrastText' : 'white',
+                          }}
+                        />
                       )}
                     </Box>
                   </Box>
@@ -323,17 +357,31 @@ function HabitCard({
             <IconButton
               size="small"
               onClick={onToggleFavorite}
-              sx={{ color: habit.isFavorite ? '#ffb703' : '#9e9e9e' }}
+              aria-label={habit.isFavorite ? 'Unfavorite' : 'Favorite'}
+              sx={{ color: favoriteColor }}
             >
               {habit.isFavorite ? <StarIcon /> : <StarBorderIcon />}
             </IconButton>
-            <IconButton size="small" onClick={onEdit} sx={{ color: '#9e9e9e' }}>
+            <IconButton
+              size="small"
+              onClick={onEdit}
+              aria-label="Edit habit"
+              sx={{ color: isLuma ? 'text.disabled' : '#9e9e9e' }}
+            >
               <EditIcon fontSize="small" />
             </IconButton>
             <IconButton
               size="small"
               onClick={onDelete}
-              sx={{ color: '#ef476f' }}
+              aria-label="Delete habit"
+              sx={
+                isLuma
+                  ? {
+                      color: 'text.disabled',
+                      '&:hover': { color: 'error.main' },
+                    }
+                  : { color: '#ef476f' }
+              }
             >
               <DeleteIcon fontSize="small" />
             </IconButton>
@@ -352,8 +400,9 @@ function HabitCard({
         <Box
           sx={{
             p: 3,
-            borderTop: '1px solid rgba(0,0,0,0.05)',
-            bgcolor: '#fafafa',
+            borderTop: 1,
+            borderColor: 'divider',
+            bgcolor: isLuma ? 'transparent' : '#fafafa',
           }}
         >
           <Box
@@ -390,7 +439,8 @@ export default function Habits() {
   const [habits, setHabits] = useState<Habit[]>([]);
   const [habitLogs, setHabitLogs] = useState<Record<number, HabitLog[]>>({});
   const [openDialog, setOpenDialog] = useState(false);
-  const { addXp, triggerRewardAnimation } = useGamification();
+  const { addXp, checkForAchievements, triggerRewardAnimation } =
+    useGamification();
 
   // Form State
   const [currentHabit, setCurrentHabit] = useState<Partial<Habit>>({
@@ -485,12 +535,26 @@ export default function Habits() {
     // Only reward if toggling ON and it's TODAY
     const today = toLocalISOString(new Date());
     if (newValue === 1 && dateStr === today) {
-      addXp(15);
+      const habit = habits.find((h) => h.id === habitId);
+      // Once per habit per day - unticking and ticking again doesn't pay twice
+      addXp(
+        15,
+        `Habit: ${habit?.title || 'habit'}`,
+        `habit:${habitId}:${dateStr}`,
+      );
+      checkForAchievements();
       triggerRewardAnimation('standard');
     }
 
     loadData();
   };
+
+  // Today's progress counts only habits scheduled for today (same rule as notifications)
+  const todayStatus = useMemo(
+    () => computeHabitStatus(habits, Object.values(habitLogs).flat()),
+    [habits, habitLogs],
+  );
+  const isLuma = useIsLuma();
 
   const handleToggleFavorite = async (habitId: number) => {
     await window.electron.database.toggleHabitFavorite(habitId, userId);
@@ -498,28 +562,44 @@ export default function Habits() {
   };
 
   return (
-    <Box sx={{ height: '100%', overflow: 'auto', p: 2 }}>
+    <Box sx={{ height: '100%', overflow: 'auto', p: isLuma ? 0 : 2 }}>
       <Box
         sx={{
           display: 'flex',
-          justifyContent: 'flex-end',
+          justifyContent: isLuma ? 'space-between' : 'flex-end',
           alignItems: 'center',
-          mb: 3,
+          gap: 2,
+          mb: 2,
         }}
       >
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => handleOpenDialog()}
-          sx={{
-            borderRadius: 2,
-            textTransform: 'none',
-            fontSize: '1rem',
-            px: 3,
-          }}
-        >
-          New Habit
-        </Button>
+        {isLuma && habits.length > 0 && (
+          <Box sx={{ minWidth: 0, flex: '0 1 320px' }}>
+            <Typography variant="body2" color="text.secondary">
+              {todayStatus.due.length === 0 ? (
+                'Nothing scheduled for today'
+              ) : (
+                <>
+                  Today{' '}
+                  <Box
+                    component="span"
+                    sx={{ color: 'text.primary', fontWeight: 600 }}
+                  >
+                    {todayStatus.done.length} / {todayStatus.due.length}
+                  </Box>{' '}
+                  done
+                </>
+              )}
+            </Typography>
+            {todayStatus.due.length > 0 && (
+              <LinearProgress
+                variant="determinate"
+                value={(todayStatus.score ?? 0) * 100}
+                sx={{ mt: 0.75, height: 6, borderRadius: 999 }}
+              />
+            )}
+          </Box>
+        )}
+        <NewItemButton label="New habit" onClick={() => handleOpenDialog()} />
       </Box>
 
       <Grid container spacing={3}>

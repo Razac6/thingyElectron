@@ -12,9 +12,23 @@ import {
   globalShortcut,
   Notification,
   powerMonitor,
+  dialog,
 } from 'electron';
+import fs from 'fs';
 import log from 'electron-log';
 import MenuBuilder from './menu';
+import { XP } from './gamification';
+import {
+  ROLLS,
+  rollsForTask,
+  sprintOver,
+  startNextGame,
+  roll as rollJourney,
+  openChest,
+  equip as equipJourneyItem,
+  upgrade as upgradeJourneyItem,
+  sell as sellJourneyItem,
+} from './journey';
 import { resolveHtmlPath } from './util';
 import {
   initDB,
@@ -36,6 +50,14 @@ import {
   updateProfile,
   getEarnedAchievements,
   grantAchievement,
+  awardXp,
+  syncAchievements,
+  getGamificationProfile,
+  getGamificationState,
+  getJourneyState,
+  saveJourneyState,
+  grantJourneyRolls,
+  getJourneySprint,
   globalSearch,
   getAverageTimeForTaskType,
   getAverageSprintCapacity,
@@ -97,6 +119,7 @@ import {
   getSuggestedCommitMessage,
   updateNote,
   deleteNote,
+  getNoteVersions,
   startNewExpedition,
   getCurrentStreak,
   getAverageVelocity,
@@ -467,21 +490,20 @@ const destroyTray = () => {
 ipcMain.handle('db:log-work-session', async (event, session) => {
   logWorkSession(session);
   if (activeTaskInfo && activeTaskInfo.userId) {
-    const { userId } = activeTaskInfo;
-    const today = new Date().toISOString().split('T')[0];
-    const challenge: any = getDailyChallenge(userId, today);
+    const challenge: any = getTodaysChallenge();
     if (challenge && challenge.status === 'ACTIVE') {
       let newProgress = challenge.progress;
       if (challenge.type === 'TOTAL_DURATION')
         newProgress += Math.round(session.duration / 60000);
       else if (challenge.type === 'DEEP_WORK' && session.duration >= 1200000)
         newProgress += Math.round(session.duration / 60000);
-      const status = newProgress >= challenge.target ? 'COMPLETED' : 'ACTIVE';
-      updateDailyChallengeProgress(challenge.id, newProgress, status);
-      if (status === 'COMPLETED')
-        sendAiNotification('🎉 Challenge Completed!', challenge.description);
+      if (newProgress !== challenge.progress) {
+        advanceDailyChallenge(challenge, newProgress);
+      }
     }
   }
+  // Long sessions / streaks / solid days can unlock achievements
+  refreshGamification();
 });
 
 // Manual "Actual Time Spent" corrections - deliberately does not touch daily challenge
@@ -503,42 +525,172 @@ ipcMain.handle('db:get-tasks', (event, userId) => {
 ipcMain.handle('db:create-task', (event, task, userId) =>
   createTask(task, userId),
 );
+// --- Gamification -----------------------------------------------------------------------
+// XP and achievements live in the main process (db.ts awardXp / syncAchievements); the
+// renderer is told about changes so the profile and reward animations stay in sync.
+const refreshGamification = () => {
+  const newAchievements = syncAchievements();
+  grantChests(newAchievements);
+  mainWindow?.webContents.send('gamification:updated', {
+    profile: getGamificationProfile(),
+    newAchievements,
+  });
+  newAchievements.forEach((a) =>
+    sendAiNotification('🏆 Achievement unlocked', `${a.name} (+${a.xp} XP)`),
+  );
+};
+
+// Today's quest - challenges are stored per user id, which differs between the login
+// user and the device user, so look under both
+const getTodaysChallenge = () => {
+  const today = new Date().toISOString().split('T')[0];
+  return (
+    getDailyChallenge(getActiveUserId(), today) || getDailyChallenge(1, today)
+  );
+};
+// (challengeId:taskId) pairs already counted, so re-completing a task doesn't count twice
+const challengeCounted = new Set<string>();
+
+const advanceDailyChallenge = (challenge: any, progress: number) => {
+  const status = progress >= challenge.target ? 'COMPLETED' : 'ACTIVE';
+  updateDailyChallengeProgress(challenge.id, progress, status);
+  if (status === 'COMPLETED' && challenge.status !== 'COMPLETED') {
+    sendAiNotification('🎉 Challenge Completed!', challenge.description);
+    awardXp(
+      Number(challenge.xpReward) || 0,
+      `Daily quest: ${challenge.description}`,
+      `challenge:${challenge.id}`,
+    );
+    grantRoll(ROLLS.QUEST, 'Daily quest', `challenge:${challenge.id}`);
+    refreshGamification();
+  }
+};
+
+// --- Journey (optional mini-game, on when the warrior is the assistant character) -------
+const journeyEnabled = () => getSetting('companion_character') === 'warrior';
+
+const notifyJourney = () =>
+  mainWindow?.webContents.send('journey:updated', getJourneyState());
+
+const localToday = () => {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 10);
+};
+
+/**
+ * One game per sprint: when the sprint changes (or the current one has ended), the game is
+ * archived and a new one starts - next land, new map, new loot.
+ */
+const ensureJourneyGame = () => {
+  const state = getJourneyState();
+  const today = localToday();
+  const sprint = getJourneySprint(today);
+  const followsOtherSprint = (sprint?.id ?? null) !== state.sprintId;
+  if (
+    (followsOtherSprint && (sprint || state.sprintId !== null)) ||
+    sprintOver(state, today)
+  ) {
+    const next = startNextGame(
+      state,
+      sprintOver(state, today) && sprint?.id === state.sprintId ? null : sprint,
+    );
+    saveJourneyState(next);
+    log.info(
+      `[JOURNEY] New game ${next.gameNo + 1}: ${next.sprintName || 'free play'}, ${next.length} tiles`,
+    );
+    return next;
+  }
+  return state;
+};
+
+/** A dice roll for real work, once per key. No-op while the game is off. */
+const grantRoll = (rolls: number, reason: string, key: string, penalty = 0) => {
+  if (!journeyEnabled()) return;
+  ensureJourneyGame();
+  if (grantJourneyRolls(rolls, reason, key, penalty)) notifyJourney();
+};
+
+/** Achievement chests (one per achievement, kept even if earned while the game was off). */
+const grantChests = (achievements: { id: string; name: string }[]) => {
+  if (!journeyEnabled() || !achievements.length) return;
+  let state = getJourneyState();
+  achievements.forEach(() => {
+    state = openChest(state).state;
+  });
+  saveJourneyState(state);
+  notifyJourney();
+};
+
+ipcMain.handle('journey:get', () =>
+  journeyEnabled() ? ensureJourneyGame() : getJourneyState(),
+);
+ipcMain.handle('journey:roll', () => {
+  const result = rollJourney(getJourneyState());
+  if (!result) return null;
+  saveJourneyState(result.state);
+  return result;
+});
+ipcMain.handle('journey:equip', (event, uid: string) =>
+  saveJourneyState(equipJourneyItem(getJourneyState(), uid)),
+);
+ipcMain.handle('journey:upgrade', (event, uid: string) => {
+  const next = upgradeJourneyItem(getJourneyState(), uid);
+  return next ? saveJourneyState(next) : null;
+});
+ipcMain.handle('journey:sell', (event, uid: string) => {
+  const next = sellJourneyItem(getJourneyState(), uid);
+  return next ? saveJourneyState(next) : null;
+});
+
+ipcMain.handle('gamification:get-state', () => getGamificationState());
+ipcMain.handle(
+  'gamification:award-xp',
+  (event, amount: number, reason: string, key?: string) => {
+    const result = awardXp(amount, reason, key);
+    refreshGamification();
+    return result ? result.profile : getGamificationProfile();
+  },
+);
+ipcMain.handle('gamification:sync', () => {
+  const newAchievements = syncAchievements();
+  return { profile: getGamificationProfile(), newAchievements };
+});
+
 ipcMain.handle('db:update-task', (event, task) => {
   const updated = updateTask(task);
-  if (task.status === 'Completed' && task.userId) {
-    const today = new Date().toISOString().split('T')[0];
-    const challenge: any = getDailyChallenge(task.userId, today);
-    if (challenge && challenge.status === 'ACTIVE') {
-      let newProgress = challenge.progress;
-      let shouldUpdate = false;
-      if (challenge.type === 'FROG_EATER' && task.priority === 'High') {
-        newProgress += 1;
-        shouldUpdate = true;
-      } else if (challenge.type === 'BACKLOG_CLEANER') {
-        newProgress += 1;
-        shouldUpdate = true;
-      } else if (
-        challenge.type === 'TASK_SPRINTER' &&
-        (task.estimate || 0) < 1
-      ) {
-        newProgress += 1;
-        shouldUpdate = true;
-      }
-      if (shouldUpdate) {
-        const status = newProgress >= challenge.target ? 'COMPLETED' : 'ACTIVE';
-        updateDailyChallengeProgress(challenge.id, newProgress, status);
-        if (status === 'COMPLETED') {
-          sendAiNotification('🎉 Challenge Completed!', challenge.description);
-          const profile = getProfile(task.userId);
-          if (profile)
-            updateProfile({
-              userId: profile.userId as number,
-              level: profile.level as number,
-              xp: (profile.xp as number) + challenge.xpReward,
-            });
-        }
+  if (task.status === 'Completed' && task.id) {
+    // XP once per task - re-completing a reopened task doesn't pay again
+    const award = awardXp(
+      XP.TASK_COMPLETED,
+      `Completed: ${task.title || 'task'}`,
+      `task:${task.id}`,
+    );
+    const challenge: any = getTodaysChallenge();
+    if (
+      challenge &&
+      challenge.status === 'ACTIVE' &&
+      !challengeCounted.has(`${challenge.id}:${task.id}`)
+    ) {
+      const counts =
+        (challenge.type === 'FROG_EATER' && task.priority === 'High') ||
+        challenge.type === 'BACKLOG_CLEANER' ||
+        (challenge.type === 'TASK_SPRINTER' && (task.estimate || 0) < 1);
+      if (counts) {
+        challengeCounted.add(`${challenge.id}:${task.id}`);
+        advanceDailyChallenge(challenge, challenge.progress + 1);
       }
     }
+    // Bigger tasks, more rolls; running over the estimate costs a step
+    const { rolls, penalty } = rollsForTask(task);
+    grantRoll(
+      rolls,
+      `Completed: ${task.title || 'task'}`,
+      `task:${task.id}`,
+      penalty,
+    );
+    if (award) refreshGamification();
   }
   return updated;
 });
@@ -580,8 +732,93 @@ ipcMain.handle('db:get-notes', (event, userId) => getNotes(userId));
 ipcMain.handle('db:create-note', (event, note, userId) =>
   createNote(note, userId),
 );
-ipcMain.handle('db:update-note', (event, note) => updateNote(note));
+ipcMain.handle('db:update-note', (event, note, options) =>
+  updateNote(note, options),
+);
+ipcMain.handle('db:get-note-versions', (event, noteId) =>
+  getNoteVersions(noteId),
+);
 ipcMain.handle('db:delete-note', (event, noteId) => deleteNote(noteId));
+
+// Notes <-> files. The renderer does the (de)serialising; main only shows the dialogs and
+// reads/writes the bytes.
+ipcMain.handle('notes:import-files', async () => {
+  const result = await dialog.showOpenDialog({
+    title: 'Import notes',
+    properties: ['openFile', 'multiSelections'],
+    filters: [{ name: 'Notes', extensions: ['md', 'markdown', 'txt', 'json'] }],
+  });
+  if (result.canceled) return [];
+  return result.filePaths.map((filePath) => ({
+    fileName: path.basename(filePath),
+    text: fs.readFileSync(filePath, 'utf-8'),
+  }));
+});
+
+// Binary files from base64 (Dev tools > Base64): save with a dialog, or open a temp copy
+// in the system's default app
+const safeFileName = (name: string) =>
+  path.basename(String(name || 'file')).replace(/[<>:"/\\|?*]/g, '_');
+
+ipcMain.handle(
+  'files:save-base64',
+  async (event, fileName: string, base64: string) => {
+    const result = await dialog.showSaveDialog({
+      title: 'Save file',
+      defaultPath: safeFileName(fileName),
+    });
+    if (result.canceled || !result.filePath) return null;
+    fs.writeFileSync(
+      result.filePath,
+      new Uint8Array(Buffer.from(base64, 'base64')),
+    );
+    return result.filePath;
+  },
+);
+
+ipcMain.handle(
+  'files:open-base64',
+  async (event, fileName: string, base64: string) => {
+    const filePath = path.join(
+      app.getPath('temp'),
+      `thingy-${Date.now()}-${safeFileName(fileName)}`,
+    );
+    fs.writeFileSync(filePath, new Uint8Array(Buffer.from(base64, 'base64')));
+    const error = await shell.openPath(filePath);
+    return error || null;
+  },
+);
+
+ipcMain.handle(
+  'notes:export-files',
+  async (event, files: { fileName: string; content: string }[]) => {
+    // Only plain file names - never let a note title escape the chosen folder
+    const safe = files.map((f) => ({
+      fileName: path.basename(f.fileName).replace(/[<>:"/\\|?*]/g, '_'),
+      content: f.content,
+    }));
+    if (safe.length === 0) return 0;
+    if (safe.length === 1) {
+      const result = await dialog.showSaveDialog({
+        title: 'Export note',
+        defaultPath: safe[0].fileName,
+      });
+      if (result.canceled || !result.filePath) return 0;
+      fs.writeFileSync(result.filePath, safe[0].content, 'utf-8');
+      return 1;
+    }
+    const result = await dialog.showOpenDialog({
+      title: 'Export notes to folder',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (result.canceled || !result.filePaths[0]) return 0;
+    const dir = result.filePaths[0];
+    safe.forEach((f) =>
+      fs.writeFileSync(path.join(dir, f.fileName), f.content, 'utf-8'),
+    );
+    return safe.length;
+  },
+);
 ipcMain.handle('db:login', async (event, { username, password }) => {
   const user = loginUser(username, password);
   if (user) {
@@ -664,25 +901,13 @@ ipcMain.handle('db:get-daily-bio', (event, date) => getDailyBio(date));
 ipcMain.handle('db:update-daily-bio', (event, date, data) => {
   const result = updateDailyBio(date, data);
   if (data.waterIntake !== undefined) {
-    const challenge: any = getDailyChallenge(getActiveUserId(), date);
+    const challenge: any = getTodaysChallenge();
     if (
       challenge &&
       challenge.status === 'ACTIVE' &&
       challenge.type === 'HYDRATION_HERO'
     ) {
-      const status =
-        data.waterIntake >= challenge.target ? 'COMPLETED' : 'ACTIVE';
-      updateDailyChallengeProgress(challenge.id, data.waterIntake, status);
-      if (status === 'COMPLETED') {
-        sendAiNotification('🎉 Challenge Completed!', challenge.description);
-        const p = getProfile(1);
-        if (p)
-          updateProfile({
-            userId: p.userId as number,
-            level: p.level as number,
-            xp: (p.xp as number) + challenge.xpReward,
-          });
-      }
+      advanceDailyChallenge(challenge, data.waterIntake);
     }
   }
   return result;
@@ -691,7 +916,11 @@ ipcMain.handle('db:get-habits', (event, userId) => getHabits(userId));
 ipcMain.handle('db:create-habit', (event, h, uid) => createHabit(h, uid));
 ipcMain.handle('db:update-habit', (event, h) => updateHabit(h));
 ipcMain.handle('db:delete-habit', (event, hid) => deleteHabit(hid));
-ipcMain.handle('db:log-habit', (event, hid, d, v) => logHabit(hid, d, v));
+ipcMain.handle('db:log-habit', (event, hid, d, v) => {
+  const result = logHabit(hid, d, v);
+  if (v >= 1) grantRoll(ROLLS.HABIT, 'Habit done', `habit:${hid}:${d}`);
+  return result;
+});
 ipcMain.handle('db:get-habit-logs', (event, uid, fd) => getHabitLogs(uid, fd));
 ipcMain.handle('db:get-top-habit', (event, uid) => getTopHabit(uid));
 ipcMain.handle('db:toggle-habit-favorite', (event, hid, uid) =>
@@ -810,18 +1039,15 @@ ipcMain.handle('notifications:check', async (event, userId) => {
   await contextNotificationEngine.checkAndNotify(userId);
 });
 
-ipcMain.handle('gamification:reward-fatigue-compliance', (event, uid) => {
-  const p = getProfile(uid);
-  if (p) {
-    updateProfile({
-      userId: p.userId as number,
-      level: p.level as number,
-      xp: (p.xp as number) + 15,
-    });
+ipcMain.handle('gamification:reward-fatigue-compliance', () => {
+  // At most once an hour, so the reward can't be farmed
+  const hourKey = new Date().toISOString().slice(0, 13);
+  if (awardXp(XP.FATIGUE_BREAK, 'Took a break when tired', `rest:${hourKey}`)) {
     sendAiNotification(
       'Mindful Rest Reward',
-      'Dobrze, że słuchasz swojego organizmu! +15 XP',
+      `Dobrze, że słuchasz swojego organizmu! +${XP.FATIGUE_BREAK} XP`,
     );
+    refreshGamification();
   }
 });
 ipcMain.handle('db:get-web-settings', () => getWebBlockingSettings());
@@ -844,9 +1070,12 @@ ipcMain.handle('db:get-last-activity-time', (event, start, end) =>
 ipcMain.handle('db:start-focus-block', (event, block) =>
   startFocusBlock(block),
 );
-ipcMain.handle('db:finish-focus-block', (event, id, achieved) =>
-  finishFocusBlock(id, achieved),
-);
+ipcMain.handle('db:finish-focus-block', (event, id, achieved) => {
+  const result = finishFocusBlock(id, achieved);
+  if (achieved) grantRoll(ROLLS.FOCUS_BLOCK, 'Focus block', `block:${id}`);
+  refreshGamification();
+  return result;
+});
 ipcMain.handle('db:get-today-wins', (event, userId) =>
   getTodayWins(userId || getActiveUserId()),
 );
@@ -897,19 +1126,15 @@ ipcMain.handle('app:meditation-completed', (event, uid, mins) => {
     meditationMinutes: (current.meditationMinutes || 0) + mins,
   });
   lastMeditationDate = new Date().toDateString();
-  const challenge: any = getDailyChallenge(uid, today);
+  const challenge: any = getTodaysChallenge();
   if (
     challenge &&
     challenge.status === 'ACTIVE' &&
     challenge.type === 'MINDFULNESS_MOMENT'
   ) {
-    const np = challenge.progress + mins;
-    updateDailyChallengeProgress(
-      challenge.id,
-      np,
-      np >= challenge.target ? 'COMPLETED' : 'ACTIVE',
-    );
+    advanceDailyChallenge(challenge, challenge.progress + mins);
   }
+  refreshGamification();
   mainWindow?.webContents.send(
     'ai-companion:show-message',
     `Wspaniale! 🧘‍♀️ Zaliczono ${mins} min.`,
@@ -1019,21 +1244,15 @@ ipcMain.handle('app:complete-pomodoro', (event, tid) => {
     }
 
     // ... rest of logic
-    const challenge: any = getDailyChallenge(
-      1,
-      new Date().toISOString().split('T')[0],
-    );
+    const challenge: any = getTodaysChallenge();
     if (
       challenge &&
       challenge.status === 'ACTIVE' &&
       challenge.type === 'POMODORO_MARATHON'
     ) {
-      updateDailyChallengeProgress(
-        challenge.id,
-        challenge.progress + 1,
-        challenge.progress + 1 >= challenge.target ? 'COMPLETED' : 'ACTIVE',
-      );
+      advanceDailyChallenge(challenge, challenge.progress + 1);
     }
+    refreshGamification();
     if (mainWindow) {
       mainWindow.webContents.send(
         'ai-companion:show-message',
@@ -1353,6 +1572,8 @@ const createWindow = async () => {
         ? path.join(__dirname, 'preload.js')
         : path.join(__dirname, '../../.erb/dll/preload.js'),
       devTools: true,
+      // Chromium's built-in PDF viewer - previews decoded base64 PDFs (Dev tools page)
+      plugins: true,
     },
     opacity: Number(getSetting('window_opacity')) || 1.0,
   });
@@ -1377,6 +1598,16 @@ app
   .whenReady()
   .then(async () => {
     await initDB();
+    try {
+      const granted = syncAchievements();
+      if (granted.length) {
+        log.info(
+          `[GAMIFICATION] Granted on startup: ${granted.map((a) => a.id).join(', ')}`,
+        );
+      }
+    } catch (e) {
+      log.error('[GAMIFICATION] Achievement sync failed', e);
+    }
     startServer();
     startAppMonitor();
     createWindow();

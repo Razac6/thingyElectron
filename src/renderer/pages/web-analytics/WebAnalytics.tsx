@@ -1,26 +1,23 @@
 import React, { useEffect, useState } from 'react';
-import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
-import { Doughnut } from 'react-chartjs-2';
 import {
   Box,
   Typography,
   Paper,
   Grid,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   Select,
   MenuItem,
-  FormControl,
-  InputLabel,
+  ToggleButton,
+  ToggleButtonGroup,
+  Tooltip,
 } from '@mui/material';
-import { useTheme } from '@mui/material/styles';
-import { renderTextWithIcons } from '../../utils/emojiIcons';
+import { Theme, alpha, useTheme } from '@mui/material/styles';
+import LanguageIcon from '@mui/icons-material/Language';
+import DesktopWindowsIcon from '@mui/icons-material/DesktopWindows';
+import { LiquidLoader } from '../../components/LiquidFill';
 
-ChartJS.register(ArcElement, Tooltip, Legend);
+// Web & app monitoring: where the time went, grouped by focus category. Compact by design -
+// a summary strip on top, then one card per source with a stacked category bar and a
+// ranked list (time bar + inline category picker) instead of doughnut charts.
 
 const CATEGORIES = [
   'WORK',
@@ -28,7 +25,253 @@ const CATEGORIES = [
   'DISTRACTION',
   'NEUTRAL',
   'UNCATEGORIZED',
-];
+] as const;
+type Category = (typeof CATEGORIES)[number];
+
+const CATEGORY_LABELS: Record<Category, string> = {
+  WORK: 'Work',
+  LEARNING: 'Learning',
+  DISTRACTION: 'Distraction',
+  NEUTRAL: 'Neutral',
+  UNCATEGORIZED: 'Uncategorized',
+};
+
+const categoryColor = (theme: Theme, category: Category) =>
+  ({
+    WORK: theme.palette.success.main,
+    LEARNING: theme.palette.progress?.main ?? theme.palette.info.main,
+    DISTRACTION: theme.palette.error.main,
+    NEUTRAL: theme.palette.text.disabled,
+    UNCATEGORIZED: alpha(theme.palette.text.primary, 0.12),
+  })[category];
+
+// Legacy/custom category names fall back to Uncategorized for display
+const toCategory = (value?: string): Category =>
+  CATEGORIES.includes(value as Category)
+    ? (value as Category)
+    : 'UNCATEGORIZED';
+
+interface Row {
+  name: string;
+  totalTime: number;
+  category: Category;
+}
+
+const formatDuration = (ms: number) => {
+  const minutes = Math.floor(ms / 60000);
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m`;
+};
+
+const sumBy = (rows: Row[], categories: Category[]) =>
+  rows
+    .filter((r) => categories.includes(r.category))
+    .reduce((sum, r) => sum + r.totalTime, 0);
+
+function Dot({ color }: { color: string }) {
+  return (
+    <Box
+      component="span"
+      sx={{
+        display: 'inline-block',
+        width: 8,
+        height: 8,
+        borderRadius: '50%',
+        bgcolor: color,
+        flexShrink: 0,
+      }}
+    />
+  );
+}
+
+// Time split by category as one thin stacked bar
+function CategoryBar({ rows }: { rows: Row[] }) {
+  const theme = useTheme();
+  const total = rows.reduce((sum, r) => sum + r.totalTime, 0);
+  if (!total) return null;
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        height: 8,
+        borderRadius: 999,
+        overflow: 'hidden',
+        gap: '2px',
+      }}
+    >
+      {CATEGORIES.map((category) => {
+        const ms = sumBy(rows, [category]);
+        if (!ms) return null;
+        return (
+          <Tooltip
+            key={category}
+            title={`${CATEGORY_LABELS[category]} · ${formatDuration(ms)}`}
+          >
+            <Box
+              sx={{
+                flex: ms,
+                bgcolor: categoryColor(theme, category),
+                minWidth: 4,
+              }}
+            />
+          </Tooltip>
+        );
+      })}
+    </Box>
+  );
+}
+
+function SourceCard({
+  title,
+  icon,
+  rows,
+  emptyText,
+  onCategoryChange,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  rows: Row[];
+  emptyText: string;
+  onCategoryChange: (name: string, category: string) => void;
+}) {
+  const theme = useTheme();
+  const total = rows.reduce((sum, r) => sum + r.totalTime, 0);
+  const max = Math.max(1, ...rows.map((r) => r.totalTime));
+
+  return (
+    <Paper sx={{ p: 2.5, height: '100%' }}>
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          mb: 1.5,
+          color: 'text.secondary',
+        }}
+      >
+        {icon}
+        <Typography variant="subtitle2" sx={{ color: 'text.primary' }}>
+          {title}
+        </Typography>
+        <Typography variant="subtitle2" sx={{ ml: 'auto' }}>
+          {formatDuration(total)}
+        </Typography>
+      </Box>
+
+      <CategoryBar rows={rows} />
+
+      {rows.length === 0 ? (
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          sx={{ py: 4, textAlign: 'center' }}
+        >
+          {emptyText}
+        </Typography>
+      ) : (
+        <Box sx={{ mt: 1.5 }}>
+          {rows.map((row) => (
+            <Box
+              key={row.name}
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0, 1fr) 128px 64px',
+                alignItems: 'center',
+                columnGap: 1.5,
+                py: 0.75,
+                borderTop: 1,
+                borderColor: 'divider',
+                '&:first-of-type': { borderTop: 0 },
+              }}
+            >
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="body2" noWrap title={row.name}>
+                  {row.name}
+                </Typography>
+                {/* Share of the longest entry */}
+                <Box
+                  sx={{
+                    mt: 0.5,
+                    height: 3,
+                    borderRadius: 999,
+                    width: `${(row.totalTime / max) * 100}%`,
+                    bgcolor: alpha(categoryColor(theme, row.category), 0.8),
+                  }}
+                />
+              </Box>
+              <Select
+                value={row.category}
+                size="small"
+                variant="standard"
+                disableUnderline
+                onChange={(e) =>
+                  onCategoryChange(row.name, e.target.value as string)
+                }
+                renderValue={(value) => (
+                  <Box
+                    sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}
+                  >
+                    <Dot color={categoryColor(theme, value as Category)} />
+                    {CATEGORY_LABELS[value as Category]}
+                  </Box>
+                )}
+                sx={{ fontSize: '0.8rem', color: 'text.secondary' }}
+              >
+                {CATEGORIES.map((category) => (
+                  <MenuItem
+                    key={category}
+                    value={category}
+                    sx={{ gap: 1, fontSize: '0.85rem' }}
+                  >
+                    <Dot color={categoryColor(theme, category)} />
+                    {CATEGORY_LABELS[category]}
+                  </MenuItem>
+                ))}
+              </Select>
+              <Typography
+                variant="body2"
+                sx={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}
+              >
+                {formatDuration(row.totalTime)}
+              </Typography>
+            </Box>
+          ))}
+        </Box>
+      )}
+    </Paper>
+  );
+}
+
+function SummaryTile({
+  label,
+  ms,
+  total,
+  color,
+}: {
+  label: string;
+  ms: number;
+  total: number;
+  color: string;
+}) {
+  return (
+    <Paper sx={{ p: 2, height: '100%' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+        <Dot color={color} />
+        <Typography variant="body2" color="text.secondary">
+          {label}
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ ml: 'auto' }}>
+          {total ? `${Math.round((ms / total) * 100)}%` : '–'}
+        </Typography>
+      </Box>
+      <Typography variant="h5" sx={{ fontWeight: 400 }}>
+        {formatDuration(ms)}
+      </Typography>
+    </Paper>
+  );
+}
 
 function WebAnalytics() {
   const theme = useTheme();
@@ -47,7 +290,6 @@ function WebAnalytics() {
     try {
       // @ts-ignore
       await window.electron.database.setDomainCategory(domain, category);
-      // Refresh stats
       // @ts-ignore
       const data = await window.electron.database.getWebStats(days);
       setStats(data);
@@ -60,7 +302,6 @@ function WebAnalytics() {
     try {
       // @ts-ignore
       await window.electron.database.setAppCategory(appName, category);
-      // Refresh stats
       // @ts-ignore
       const appData = await window.electron.database.getAppStats(days);
       setAppStats(appData);
@@ -96,263 +337,106 @@ function WebAnalytics() {
     // Refresh every minute
     const interval = setInterval(fetchStats, 60000);
     return () => clearInterval(interval);
-  }, [days]); // Re-fetch when days changes
+  }, [days]);
 
-  if (!stats) return <Typography>Loading analytics...</Typography>;
+  if (!stats) return <LiquidLoader label="Loading activity" />;
 
-  const chartData = {
-    labels: stats.topDomains.map((d) => d.domain),
-    datasets: [
-      {
-        label: '# of Minutes',
-        data: stats.topDomains.map((d) => Math.round(d.totalTime / 60000)),
-        backgroundColor: [
-          '#FF6384',
-          '#36A2EB',
-          '#FFCE56',
-          '#4BC0C0',
-          '#9966FF',
-          '#FF9F40',
-        ],
-        borderWidth: 1,
-      },
-    ],
-  };
-
-  const formatDuration = (ms: number) => {
-    const minutes = Math.floor(ms / 60000);
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    if (hours > 0) return `${hours}h ${mins}m`;
-    return `${mins}m`;
-  };
+  const webRows: Row[] = settings.integrationEnabled
+    ? stats.topDomains.map((d) => ({
+        name: d.domain,
+        totalTime: d.totalTime,
+        category: toCategory(d.category),
+      }))
+    : [];
+  const appRows: Row[] = settings.appMonitoringEnabled
+    ? appStats.map((a) => ({
+        name: a.appName,
+        totalTime: a.totalTime,
+        category: toCategory(a.category),
+      }))
+    : [];
+  const allRows = [...webRows, ...appRows];
+  const total = allRows.reduce((sum, r) => sum + r.totalTime, 0);
 
   return (
-    <Box sx={{ p: 3 }}>
-      <Box display="flex" justifyContent="flex-end" alignItems="center" mb={4}>
-        <FormControl sx={{ minWidth: 120 }} size="small">
-          <InputLabel>Time Range</InputLabel>
-          <Select
-            value={days}
-            label="Time Range"
-            onChange={(e) => setDays(Number(e.target.value))}
-          >
-            <MenuItem value={1}>Today</MenuItem>
-            <MenuItem value={7}>Last 7 Days</MenuItem>
-            <MenuItem value={30}>Last 30 Days</MenuItem>
-          </Select>
-        </FormControl>
+    <Box sx={{ pb: 2 }}>
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 2,
+          mb: 2,
+        }}
+      >
+        <Typography variant="body2" color="text.secondary">
+          Tracked{' '}
+          <Box component="span" sx={{ color: 'text.primary', fontWeight: 600 }}>
+            {formatDuration(total)}
+          </Box>
+        </Typography>
+        <ToggleButtonGroup
+          value={days}
+          exclusive
+          size="small"
+          onChange={(_, value) => value && setDays(value)}
+          aria-label="time range"
+        >
+          <ToggleButton value={1}>Today</ToggleButton>
+          <ToggleButton value={7}>7 days</ToggleButton>
+          <ToggleButton value={30}>30 days</ToggleButton>
+        </ToggleButtonGroup>
       </Box>
 
-      {settings.integrationEnabled && (
-        <>
-          <Typography variant="h5" gutterBottom sx={{ mt: 2, mb: 3 }}>
-            {renderTextWithIcons('🌐 Web Activity')}
-          </Typography>
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={6}>
-              <Paper
-                sx={{
-                  p: 3,
-                  height: '100%',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                }}
-              >
-                <Typography variant="h6" gutterBottom>
-                  Time Distribution
-                </Typography>
-                {stats.topDomains.length > 0 ? (
-                  <Box sx={{ maxWidth: 400, width: '100%' }}>
-                    <Doughnut data={chartData} />
-                  </Box>
-                ) : (
-                  <Typography sx={{ mt: 5, color: 'text.secondary' }}>
-                    No activity recorded yet.
-                  </Typography>
-                )}
-              </Paper>
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <Paper sx={{ p: 3 }}>
-                <Typography variant="h6" gutterBottom>
-                  Top 10 Domains
-                </Typography>
-                <TableContainer>
-                  <Table>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>Domain</TableCell>
-                        <TableCell>Category</TableCell>
-                        <TableCell align="right">Time Spent</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {stats.topDomains.map((row) => (
-                        <TableRow key={row.domain}>
-                          <TableCell component="th" scope="row">
-                            {row.domain}
-                          </TableCell>
-                          <TableCell>
-                            <Select
-                              value={row.category || 'UNCATEGORIZED'}
-                              size="small"
-                              onChange={(e) =>
-                                handleCategoryChange(
-                                  row.domain,
-                                  e.target.value as string,
-                                )
-                              }
-                              variant="standard"
-                              disableUnderline
-                              sx={{ fontSize: '0.875rem' }}
-                            >
-                              {CATEGORIES.map((cat) => (
-                                <MenuItem key={cat} value={cat}>
-                                  {cat}
-                                </MenuItem>
-                              ))}
-                            </Select>
-                          </TableCell>
-                          <TableCell align="right">
-                            {formatDuration(row.totalTime)}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                      {stats.topDomains.length === 0 && (
-                        <TableRow>
-                          <TableCell colSpan={2} align="center">
-                            Go browse the web!
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              </Paper>
-            </Grid>
-          </Grid>
-        </>
-      )}
+      <Grid container spacing={2}>
+        <Grid item xs={12} sm={4}>
+          <SummaryTile
+            label="Productive"
+            ms={sumBy(allRows, ['WORK', 'LEARNING'])}
+            total={total}
+            color={theme.palette.success.main}
+          />
+        </Grid>
+        <Grid item xs={12} sm={4}>
+          <SummaryTile
+            label="Distracting"
+            ms={sumBy(allRows, ['DISTRACTION'])}
+            total={total}
+            color={theme.palette.error.main}
+          />
+        </Grid>
+        <Grid item xs={12} sm={4}>
+          <SummaryTile
+            label="Neutral & uncategorized"
+            ms={sumBy(allRows, ['NEUTRAL', 'UNCATEGORIZED'])}
+            total={total}
+            color={theme.palette.text.disabled}
+          />
+        </Grid>
 
-      {settings.appMonitoringEnabled && (
-        <>
-          <Typography
-            variant="h5"
-            gutterBottom
-            sx={{ color: theme.palette.text.primary, mb: 3, mt: 6 }}
-          >
-            {renderTextWithIcons('🖥️ Desktop Apps')}
-          </Typography>
-
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={6}>
-              <Paper
-                sx={{
-                  p: 3,
-                  height: '100%',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                }}
-              >
-                <Typography variant="h6" gutterBottom>
-                  App Distribution
-                </Typography>
-                {appStats.length > 0 ? (
-                  <Box sx={{ maxWidth: 400, width: '100%' }}>
-                    <Doughnut
-                      data={{
-                        labels: appStats.map((d) => d.appName),
-                        datasets: [
-                          {
-                            label: 'Minutes',
-                            data: appStats.map((d) =>
-                              Math.round(d.totalTime / 60000),
-                            ),
-                            backgroundColor: [
-                              '#00d2d3',
-                              '#54a0ff',
-                              '#5f27cd',
-                              '#ff9f43',
-                              '#ee5253',
-                              '#0abde3',
-                            ],
-                            borderWidth: 1,
-                          },
-                        ],
-                      }}
-                    />
-                  </Box>
-                ) : (
-                  <Typography sx={{ mt: 5, color: 'text.secondary' }}>
-                    No desktop activity recorded yet.
-                  </Typography>
-                )}
-              </Paper>
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <Paper sx={{ p: 3 }}>
-                <Typography variant="h6" gutterBottom>
-                  Top 10 Applications
-                </Typography>
-                <TableContainer>
-                  <Table>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>Application</TableCell>
-                        <TableCell>Category</TableCell>
-                        <TableCell align="right">Time Spent</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {appStats.map((row) => (
-                        <TableRow key={row.appName}>
-                          <TableCell component="th" scope="row">
-                            {row.appName}
-                          </TableCell>
-                          <TableCell>
-                            <Select
-                              value={row.category || 'UNCATEGORIZED'}
-                              size="small"
-                              onChange={(e) =>
-                                handleAppCategoryChange(
-                                  row.appName,
-                                  e.target.value as string,
-                                )
-                              }
-                              variant="standard"
-                              disableUnderline
-                              sx={{ fontSize: '0.875rem' }}
-                            >
-                              {CATEGORIES.map((cat) => (
-                                <MenuItem key={cat} value={cat}>
-                                  {cat}
-                                </MenuItem>
-                              ))}
-                            </Select>
-                          </TableCell>
-                          <TableCell align="right">
-                            {formatDuration(row.totalTime)}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                      {appStats.length === 0 && (
-                        <TableRow>
-                          <TableCell colSpan={2} align="center">
-                            Go use some apps!
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              </Paper>
-            </Grid>
+        {settings.integrationEnabled && (
+          <Grid item xs={12} md={settings.appMonitoringEnabled ? 6 : 12}>
+            <SourceCard
+              title="Websites"
+              icon={<LanguageIcon fontSize="small" />}
+              rows={webRows}
+              emptyText="No browsing recorded yet."
+              onCategoryChange={handleCategoryChange}
+            />
           </Grid>
-        </>
-      )}
+        )}
+        {settings.appMonitoringEnabled && (
+          <Grid item xs={12} md={settings.integrationEnabled ? 6 : 12}>
+            <SourceCard
+              title="Applications"
+              icon={<DesktopWindowsIcon fontSize="small" />}
+              rows={appRows}
+              emptyText="No desktop activity recorded yet."
+              onCategoryChange={handleAppCategoryChange}
+            />
+          </Grid>
+        )}
+      </Grid>
     </Box>
   );
 }

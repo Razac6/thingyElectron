@@ -1,5 +1,13 @@
 import React from 'react';
-import { Box, Grid, Paper, Typography } from '@mui/material';
+import {
+  Box,
+  ButtonBase,
+  Collapse,
+  Grid,
+  Paper,
+  Typography,
+} from '@mui/material';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import { alpha, lighten, darken, useTheme } from '@mui/material/styles';
 import { useTimer } from '../context/TimerContext';
 import DailyProductivityBarChart from '../components/DailyProductivityBarChart';
@@ -7,6 +15,7 @@ import ContributionGraph from '../components/ContributionGraph';
 import SmartInsightWidget from '../components/SmartInsightWidget';
 import FavoriteHabitWidget from '../components/FavoriteHabitWidget';
 import MountainClimbBeta from '../components/MountainClimbBeta';
+import JourneyMap from '../components/journey/JourneyMap';
 import DailyChallengeWidget from '../components/DailyChallengeWidget';
 import { toLocalISOString, addDays } from '../util/dateUtils';
 import useDashboardViews from './useDashboardViews';
@@ -164,10 +173,14 @@ export default function LumaDashboard() {
     activeView,
     availableViews,
     isMountainClimbEnabled,
+    isJourneyEnabled,
     handleViewChange,
   } = useDashboardViews();
 
   const wins = useTodayWins();
+  // The Activity band stays tucked away until the arrow at the bottom is clicked
+  const [activityOpen, setActivityOpen] = React.useState(false);
+  const activityRef = React.useRef<HTMLDivElement>(null);
   const today = formatDuration(totalSpendTimeToday);
 
   const week = React.useMemo(() => {
@@ -273,11 +286,17 @@ export default function LumaDashboard() {
             }}
           >
             <Box sx={{ flexGrow: 1, position: 'relative', minHeight: 0 }}>
-              {isMountainView ? (
+              {isMountainView && isJourneyEnabled && (
+                <Box sx={{ height: '100%', ...fadeIn }}>
+                  <JourneyMap />
+                </Box>
+              )}
+              {isMountainView && !isJourneyEnabled && (
                 <Box sx={{ height: 320, ...fadeIn }}>
                   <MountainClimbBeta />
                 </Box>
-              ) : activeView === 2 ? (
+              )}
+              {isMountainView ? null : activeView === 2 ? (
                 <Box sx={{ p: 2.5, height: '100%', ...fadeIn }}>
                   <DailyChallengeWidget />
                 </Box>
@@ -350,58 +369,107 @@ export default function LumaDashboard() {
           </Paper>
         </Grid>
 
-        {/* Dark activity band */}
+        {/* Activity band - slides out from under the arrow handle */}
         <Grid item xs={12}>
-          <Box
-            sx={{
-              position: 'relative',
-              overflow: 'hidden',
-              borderRadius: '28px',
-              bgcolor: 'band.main',
-              color: 'band.contrastText',
-              p: { xs: 2.5, md: 3.5 },
-              // Soft accent glow rising from the bottom edge
-              '&::before': {
-                content: '""',
-                position: 'absolute',
-                left: '35%',
-                bottom: '-55%',
-                width: '60%',
-                height: '100%',
-                background: `radial-gradient(closest-side, ${alpha(theme.palette.secondary.main, 0.28)}, transparent)`,
-                filter: 'blur(20px)',
-                pointerEvents: 'none',
-              },
-            }}
-          >
-            <Grid container spacing={3} sx={{ position: 'relative' }}>
-              <Grid item xs={12} md={4}>
-                <Typography
-                  variant="h4"
-                  sx={{ fontWeight: 300, color: 'inherit', mb: 2.5 }}
-                >
-                  Activity
-                </Typography>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                  <SummaryRow label="This week" value={fmt(week.totalMs)} />
-                  <SummaryRow label="Daily average" value={fmt(week.avgMs)} />
-                  <SummaryRow
-                    label="Best day"
-                    value={
-                      week.best.ms
-                        ? week.best.date.toLocaleDateString('en-US', {
-                            weekday: 'short',
-                          })
-                        : '-'
-                    }
-                  />
-                </Box>
-              </Grid>
-              <Grid item xs={12} md={8} sx={{ minWidth: 0 }}>
-                <ContributionGraph tone="dark" />
-              </Grid>
-            </Grid>
+          <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+            <ButtonBase
+              onClick={() => setActivityOpen((open) => !open)}
+              aria-expanded={activityOpen}
+              aria-label={activityOpen ? 'Hide activity' : 'Show activity'}
+              sx={{
+                gap: 0.5,
+                px: 2,
+                py: 0.5,
+                borderRadius: 999,
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                color: 'text.secondary',
+                bgcolor: 'background.paper',
+                border: 1,
+                borderColor: 'divider',
+                transition: 'color 0.2s, border-color 0.2s',
+                '&:hover': {
+                  color: 'text.primary',
+                  borderColor: 'text.secondary',
+                },
+              }}
+            >
+              Activity
+              <KeyboardArrowUpIcon
+                fontSize="small"
+                sx={{
+                  transition: 'transform 0.3s',
+                  transform: activityOpen ? 'rotate(180deg)' : 'none',
+                }}
+              />
+            </ButtonBase>
           </Box>
+          <Collapse
+            in={activityOpen}
+            timeout={350}
+            unmountOnExit
+            onEntered={() =>
+              activityRef.current?.scrollIntoView({
+                behavior: 'smooth',
+                block: 'nearest',
+              })
+            }
+          >
+            <Box
+              ref={activityRef}
+              sx={{
+                mt: 1.5,
+                position: 'relative',
+                overflow: 'hidden',
+                borderRadius: '28px',
+                bgcolor: 'band.main',
+                color: 'band.contrastText',
+                p: { xs: 2.5, md: 3.5 },
+                // Soft accent glow rising from the bottom edge
+                '&::before': {
+                  content: '""',
+                  position: 'absolute',
+                  left: '35%',
+                  bottom: '-55%',
+                  width: '60%',
+                  height: '100%',
+                  background: `radial-gradient(closest-side, ${alpha(theme.palette.secondary.main, 0.28)}, transparent)`,
+                  filter: 'blur(20px)',
+                  pointerEvents: 'none',
+                },
+              }}
+            >
+              <Grid container spacing={3} sx={{ position: 'relative' }}>
+                <Grid item xs={12} md={4}>
+                  <Typography
+                    variant="h4"
+                    sx={{ fontWeight: 300, color: 'inherit', mb: 2.5 }}
+                  >
+                    Activity
+                  </Typography>
+                  <Box
+                    sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}
+                  >
+                    <SummaryRow label="This week" value={fmt(week.totalMs)} />
+                    <SummaryRow label="Daily average" value={fmt(week.avgMs)} />
+                    <SummaryRow
+                      label="Best day"
+                      value={
+                        week.best.ms
+                          ? week.best.date.toLocaleDateString('en-US', {
+                              weekday: 'short',
+                            })
+                          : '-'
+                      }
+                    />
+                  </Box>
+                </Grid>
+                <Grid item xs={12} md={8} sx={{ minWidth: 0 }}>
+                  <ContributionGraph tone="dark" />
+                </Grid>
+              </Grid>
+            </Box>
+          </Collapse>
         </Grid>
       </Grid>
 

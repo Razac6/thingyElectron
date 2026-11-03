@@ -46,8 +46,24 @@ export interface IElectronAPI {
     getSprintAnalysis: (userId: number) => Promise<any>;
     getNotes: (userId: number) => Promise<any[]>;
     createNote: (note: any, userId?: number) => Promise<number>;
-    updateNote: (note: any) => Promise<void>;
+    updateNote: (
+      note: any,
+      options?: { forceVersion?: boolean },
+    ) => Promise<any>;
+    getNoteVersions: (noteId: number) => Promise<any[]>;
     deleteNote: (noteId: number) => Promise<void>;
+    importNoteFiles: () => Promise<{ fileName: string; text: string }[]>;
+    saveBase64File: (
+      fileName: string,
+      base64: string,
+    ) => Promise<string | null>;
+    openBase64File: (
+      fileName: string,
+      base64: string,
+    ) => Promise<string | null>;
+    exportNoteFiles: (
+      files: { fileName: string; content: string }[],
+    ) => Promise<number>;
     globalSearch: (userId: number, query: string) => Promise<any[]>;
     getDailyChallenge: (userId: number) => Promise<any>;
     getAverageTimeForTaskType: (taskType: string) => Promise<number>;
@@ -74,6 +90,17 @@ export interface IElectronAPI {
     getAiStats: () => Promise<any>;
     login: (creds: any) => Promise<any>;
     register: (creds: any) => Promise<any>;
+    getGamificationState: () => Promise<any>;
+    getJourney: () => Promise<any>;
+    rollJourney: () => Promise<any>;
+    equipJourneyItem: (uid: string) => Promise<any>;
+    upgradeJourneyItem: (uid: string) => Promise<any>;
+    sellJourneyItem: (uid: string) => Promise<any>;
+    awardXp: (amount: number, reason: string, key?: string) => Promise<any>;
+    syncAchievements: () => Promise<{
+      profile: any;
+      newAchievements: { id: string; name: string; xp: number }[];
+    }>;
     getProfile: (userId: number) => Promise<any>;
     updateProfile: (profile: any) => Promise<void>;
     getEarnedAchievements: (userId: number) => Promise<any[]>;

@@ -12,11 +12,12 @@ export default function useDashboardViews() {
     return saved !== null ? parseInt(saved, 10) : 0;
   });
 
+  // View 1 is the journey map while the Warrior is the assistant character, otherwise
+  // the Mountain Climb (when enabled). Views 0 and 2 are always available.
+  const isJourneyEnabled = settings?.companion_character === 'warrior';
   const isMountainClimbEnabled =
-    settings && settings.mountain_climb_enabled !== 'false';
-
-  // View 1 (Mountain Climb) only exists when the setting is enabled - views 0 and 2 are
-  // always available.
+    isJourneyEnabled ||
+    (settings && settings.mountain_climb_enabled !== 'false');
   const availableViews = isMountainClimbEnabled ? [0, 1, 2] : [0, 2];
 
   // Force back to first view if the current view is the (now-disabled) Mountain Climb one
@@ -35,6 +36,7 @@ export default function useDashboardViews() {
     activeView,
     availableViews,
     isMountainClimbEnabled,
+    isJourneyEnabled,
     handleViewChange,
   };
 }

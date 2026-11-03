@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Bar } from 'react-chartjs-2';
-import { useTheme } from '@mui/material';
+import { alpha, useTheme } from '@mui/material/styles';
 import { useTimer } from '../context/TimerContext';
 
 interface HourlyProductivityData {
@@ -22,50 +22,48 @@ function HourlyProductivityChart() {
       }
     });
 
+    const now = new Date().getHours();
     return {
       labels,
       datasets: [
         {
-          label: 'Minutes Worked',
+          label: 'Minutes worked',
           data: datasetData,
-          backgroundColor: theme.palette.secondary.main,
-          borderColor: theme.palette.secondary.dark,
-          borderWidth: 1,
+          // Current hour stands out, the rest are a lighter tint
+          backgroundColor: datasetData.map((_, hour) =>
+            hour === now
+              ? theme.palette.primary.main
+              : alpha(theme.palette.primary.main, 0.25),
+          ),
+          borderRadius: 4,
+          borderSkipped: false,
+          maxBarThickness: 18,
         },
       ],
     };
-  }, [
-    hourlyProductivity,
-    theme.palette.secondary.main,
-    theme.palette.secondary.dark,
-  ]);
+  }, [hourlyProductivity, theme.palette.primary.main]);
 
+  const tick = {
+    color: theme.palette.text.secondary,
+    font: { family: theme.typography.fontFamily as string, size: 11 },
+  };
   const options = {
     responsive: true,
     maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        display: false,
-      },
-      title: {
-        display: true,
-        text: 'Productivity by Hour of Day',
-      },
-    },
+    plugins: { legend: { display: false } },
     scales: {
       x: {
-        title: {
-          display: true,
-          text: 'Hour of Day',
-        },
+        grid: { display: false },
+        border: { display: false },
+        ticks: { ...tick, maxTicksLimit: 8 },
       },
       y: {
         beginAtZero: true,
-        title: {
-          display: true,
-          text: 'Minutes Worked',
-        },
+        border: { display: false },
+        grid: { color: alpha(theme.palette.text.primary, 0.06) },
         ticks: {
+          ...tick,
+          maxTicksLimit: 5,
           callback(value: number) {
             return `${value}m`;
           },

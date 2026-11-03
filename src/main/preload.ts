@@ -35,16 +35,36 @@ contextBridge.exposeInMainWorld('electron', {
     getNotes: (userId: number) => ipcRenderer.invoke('db:get-notes', userId),
     createNote: (note: any, userId: number) =>
       ipcRenderer.invoke('db:create-note', note, userId),
-    updateNote: (note: any) => ipcRenderer.invoke('db:update-note', note),
+    updateNote: (note: any, options?: { forceVersion?: boolean }) =>
+      ipcRenderer.invoke('db:update-note', note, options),
+    getNoteVersions: (noteId: number) =>
+      ipcRenderer.invoke('db:get-note-versions', noteId),
     deleteNote: (noteId: number) =>
       ipcRenderer.invoke('db:delete-note', noteId),
+    importNoteFiles: () => ipcRenderer.invoke('notes:import-files'),
+    saveBase64File: (fileName: string, base64: string) =>
+      ipcRenderer.invoke('files:save-base64', fileName, base64),
+    openBase64File: (fileName: string, base64: string) =>
+      ipcRenderer.invoke('files:open-base64', fileName, base64),
+    exportNoteFiles: (files: { fileName: string; content: string }[]) =>
+      ipcRenderer.invoke('notes:export-files', files),
 
     // Users
     login: (credentials: any) => ipcRenderer.invoke('db:login', credentials),
     register: (credentials: any) =>
       ipcRenderer.invoke('db:register', credentials),
 
-    // Gamification
+    // Gamification (XP and achievements are owned by the main process)
+    getGamificationState: () => ipcRenderer.invoke('gamification:get-state'),
+    awardXp: (amount: number, reason: string, key?: string) =>
+      ipcRenderer.invoke('gamification:award-xp', amount, reason, key),
+    syncAchievements: () => ipcRenderer.invoke('gamification:sync'),
+    getJourney: () => ipcRenderer.invoke('journey:get'),
+    rollJourney: () => ipcRenderer.invoke('journey:roll'),
+    equipJourneyItem: (uid: string) => ipcRenderer.invoke('journey:equip', uid),
+    upgradeJourneyItem: (uid: string) =>
+      ipcRenderer.invoke('journey:upgrade', uid),
+    sellJourneyItem: (uid: string) => ipcRenderer.invoke('journey:sell', uid),
     getProfile: (userId: number) =>
       ipcRenderer.invoke('db:get-profile', userId),
     updateProfile: (profile: any) =>

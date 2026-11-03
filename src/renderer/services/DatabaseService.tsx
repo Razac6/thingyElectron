@@ -107,9 +107,11 @@ const createNote = async (note: any) => {
   }
 };
 
-const updateNote = async (note: any) => {
+const updateNote = async (note: any, options?: { forceVersion?: boolean }) => {
   try {
-    const updated = await window.electron.database.updateNote(note);
+    const updated = options
+      ? await window.electron.database.updateNote(note, options)
+      : await window.electron.database.updateNote(note);
     return updated;
   } catch (error) {
     console.error('[DatabaseService] Error updating note:', error);

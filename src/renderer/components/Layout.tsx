@@ -23,20 +23,20 @@ import Lottie from 'lottie-react';
 
 // Import all animations
 
-import DashboardIcon from '@mui/icons-material/Dashboard';
-import AssignmentIcon from '@mui/icons-material/Assignment';
-import BarChartIcon from '@mui/icons-material/BarChart';
-import NoteAltIcon from '@mui/icons-material/NoteAlt';
-import PersonIcon from '@mui/icons-material/Person';
-import SprintIcon from '@mui/icons-material/DirectionsRun';
+import DashboardIcon from '@mui/icons-material/SpaceDashboardOutlined';
+import TasksIcon from '@mui/icons-material/TaskAltOutlined';
+import StatisticsIcon from '@mui/icons-material/InsightsOutlined';
+import CodeIcon from '@mui/icons-material/Code';
+import PersonIcon from '@mui/icons-material/PersonOutlineOutlined';
+import SprintIcon from '@mui/icons-material/DirectionsRunOutlined';
 import MenuIcon from '@mui/icons-material/Menu';
-import LoopIcon from '@mui/icons-material/Loop';
+import HabitsIcon from '@mui/icons-material/EventRepeatOutlined';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import StopIcon from '@mui/icons-material/Stop'; // Use the square Stop icon
 import SearchIcon from '@mui/icons-material/Search';
-import TerminalIcon from '@mui/icons-material/Terminal';
-import DvrIcon from '@mui/icons-material/Dvr';
-import InfoIcon from '@mui/icons-material/Info';
+import TerminalIcon from '@mui/icons-material/TerminalOutlined';
+import MonitoringIcon from '@mui/icons-material/ScreenSearchDesktopOutlined';
+import InfoIcon from '@mui/icons-material/InfoOutlined';
 import trophyAnimation from '../../../assets/Trophy.json';
 import catRocket from '../../../assets/Cat in a rocket.json';
 import meditatingFox from '../../../assets/Meditating Fox.json';
@@ -56,6 +56,11 @@ import { useSettings } from '../context/SettingsContext';
 import { AiCompanion } from './AiCompanion';
 import { useIsLuma } from '../themes';
 
+// The search shortcut is registered as CommandOrControl+K - show it the way each OS writes it
+const SEARCH_SHORTCUT = /mac/i.test(navigator.platform || navigator.userAgent)
+  ? '⌘K'
+  : 'Ctrl K';
+
 const animationMap = {
   cat_movement: catMovement,
   flirting_dog: flirtingDog,
@@ -68,13 +73,13 @@ const drawerWidth = 240;
 
 const menuItems = [
   { text: 'Dashboard', path: '/', icon: <DashboardIcon /> },
-  { text: 'Tasks', path: '/list', icon: <AssignmentIcon /> },
-  { text: 'Habits', path: '/habits', icon: <LoopIcon /> },
+  { text: 'Tasks', path: '/list', icon: <TasksIcon /> },
+  { text: 'Habits', path: '/habits', icon: <HabitsIcon /> },
   { text: 'Sprints', path: '/sprints', icon: <SprintIcon /> },
-  { text: 'Statistics', path: '/statistics', icon: <BarChartIcon /> },
-  { text: 'Monitoring', path: '/web-activity', icon: <DvrIcon /> },
+  { text: 'Statistics', path: '/statistics', icon: <StatisticsIcon /> },
+  { text: 'Monitoring', path: '/web-activity', icon: <MonitoringIcon /> },
   { text: 'Profile', path: '/profile', icon: <PersonIcon /> },
-  { text: 'Notes', path: '/notes', icon: <NoteAltIcon /> },
+  { text: 'Dev Notes', path: '/notes', icon: <CodeIcon /> },
 ];
 
 // Titles for routes that aren't in the menu (shown in the AppBar)
@@ -401,7 +406,7 @@ export default function Layout({ children }: LayoutProps) {
                   fontSize: '0.7rem',
                 }}
               >
-                Ctrl K
+                {SEARCH_SHORTCUT}
               </Box>
             </ButtonBase>
           </Box>

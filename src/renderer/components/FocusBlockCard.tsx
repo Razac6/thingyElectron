@@ -49,7 +49,7 @@ const formatLeft = (ms: number) => {
 
 export default function FocusBlockCard() {
   const { tasks, insights } = useTimer();
-  const { addXp } = useGamification();
+  const { addXp, checkForAchievements } = useGamification();
   const navigate = useNavigate();
   const theme = useTheme();
 
@@ -155,7 +155,12 @@ export default function FocusBlockCard() {
           .toggleChecklistItem(step.id, true)
           .catch(() => {});
       }
-      addXp(STEP_XP);
+      addXp(
+        STEP_XP,
+        `Focus block: ${step.text || 'goal'}`,
+        step.id ? `step:${step.id}` : undefined,
+      );
+      checkForAchievements();
       setPhase('won');
       await loadNextStep(activeTask);
     } else {

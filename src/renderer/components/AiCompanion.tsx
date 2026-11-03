@@ -30,6 +30,7 @@ import { useGamification } from '../context/GamificationContext';
 import DropletCompanion, { DropletMood } from './DropletCompanion';
 import OwlCompanion from './OwlCompanion';
 import DogCompanion from './DogCompanion';
+import WarriorCompanion from './journey/WarriorCompanion';
 import SnakeCompanion from './SnakeCompanion';
 
 const MESSAGES = [
@@ -1014,6 +1015,9 @@ export function AiCompanion() {
                   variant="peek"
                 />
               )}
+              {settings.companion_character === 'warrior' && (
+                <WarriorCompanion mood={dropletMood} />
+              )}
               {settings.companion_character === 'dog' && (
                 <DogCompanion
                   mood={dropletMood}
@@ -1021,9 +1025,9 @@ export function AiCompanion() {
                   variant="peek"
                 />
               )}
-              {!['owl', 'dog'].includes(settings.companion_character) && (
-                <DropletCompanion mood={dropletMood} talking={!!message} />
-              )}
+              {!['owl', 'dog', 'warrior'].includes(
+                settings.companion_character,
+              ) && <DropletCompanion mood={dropletMood} talking={!!message} />}
             </Box>
           )}
         </Box>
