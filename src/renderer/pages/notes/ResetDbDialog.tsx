@@ -106,7 +106,17 @@ export default function ResetDbDialog({
       state = { groups: [...state.groups, group] };
       groupId = group.id;
     }
-    const next = saveCommand(state, groupId, {
+    // docker start is a no-op for a running container; the step then waits until the
+    // database really accepts connections, so the reset (and flyway after it) don't race it
+    const withStart = saveCommand(state, groupId, {
+      id: newId('c'),
+      name: `Start ${container.name}`,
+      command: `docker start ${container.name}`,
+      cwd: '',
+      wait: true,
+      ready: { type: 'container', target: container.name, timeout: 120 },
+    });
+    const next = saveCommand(withStart, groupId, {
       id: newId('c'),
       name: `Reset ${isRedis ? container.name : dbName}`,
       command,
@@ -232,8 +242,9 @@ export default function ResetDbDialog({
       </Box>
       {saved && (
         <Typography variant="caption" color="success.main" component="div">
-          Added to Commands - add your migration after it (e.g. flyway migrate
-          in your project folder) and run the package.
+          Added to Commands (start + wait until the DB accepts connections, then
+          reset) - add your migration after it (e.g. flyway migrate in your
+          project folder) and run the package.
         </Typography>
       )}
 

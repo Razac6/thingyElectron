@@ -126,4 +126,17 @@ describe('commandsModel', () => {
     expect(next.groups.map((g) => g.name)).toEqual(['DB', 'DB copy', 'App']);
     expect(next.groups[1].commands[0].id).not.toBe('a');
   });
+
+  it('keeps a valid package color and drops unknown ones', () => {
+    const parsed = parseState(
+      JSON.stringify({
+        groups: [
+          { id: 'a', name: 'A', color: 'teal', commands: [] },
+          { id: 'b', name: 'B', color: 'chartreuse', commands: [] },
+        ],
+      }),
+    );
+    expect(parsed.groups.map((g) => g.color)).toEqual(['teal', null]);
+    expect(duplicateGroup(parsed, 'a').groups[1].color).toBe('teal');
+  });
 });

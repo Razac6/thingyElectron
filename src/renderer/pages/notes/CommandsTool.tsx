@@ -43,12 +43,15 @@ import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import DeleteSweepOutlinedIcon from '@mui/icons-material/DeleteSweepOutlined';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckIcon from '@mui/icons-material/Check';
+import HourglassTopIcon from '@mui/icons-material/HourglassTop';
 import { MONO_FONT } from './highlight';
 import useCopy from './useCopy';
 import {
   CliCommand,
   CommandGroup,
   CommandsState,
+  PACKAGE_COLORS,
+  PACKAGE_COLOR_HEX,
   SETTINGS_KEY,
   cloneGroupInto,
   commandLabel,
@@ -65,6 +68,11 @@ import {
   updateGroup,
 } from './commandsModel';
 import type { RunSnapshot, StepStatus } from '../../../main/commandRunner';
+import {
+  DEFAULT_READY_TIMEOUT,
+  ReadyType,
+  describeReady,
+} from '../../../main/readyCheck';
 
 // Your own CLI commands: run one, or a whole package top to bottom (drag & drop to
 // reorder / move between packages). Runs keep going in the background; every step has
@@ -97,6 +105,9 @@ function StatusIcon({
   const sx = { fontSize: size };
   if (status === 'running')
     return <CircularProgress size={size - 2} thickness={5} />;
+  if (status === 'waiting') {
+    return <HourglassTopIcon color="info" sx={sx} />;
+  }
   if (status === 'ok') return <CheckCircleIcon color="success" sx={sx} />;
   if (status === 'failed') return <ErrorIcon color="error" sx={sx} />;
   if (status === 'stopped') return <StopIcon color="warning" sx={sx} />;
@@ -104,6 +115,31 @@ function StatusIcon({
     return <RemoveCircleOutlineIcon sx={{ ...sx, color: 'text.disabled' }} />;
   return <RadioButtonUncheckedIcon sx={{ ...sx, color: 'text.disabled' }} />;
 }
+
+const READY_LABELS: Record<string, string> = {
+  container: 'Container is ready',
+  port: 'Port is open',
+  url: 'URL responds',
+  output: 'Output contains',
+  quiet: 'Output goes quiet',
+};
+const READY_PLACEHOLDERS: Record<string, string> = {
+  container: 'shop-db-1',
+  port: '5432  or  localhost:8080',
+  url: 'http://localhost:8080/actuator/health',
+  output: 'Started Application  or  /ready in \\d+/',
+  quiet: '3',
+};
+const READY_HELP: Record<string, string> = {
+  container:
+    'Healthcheck if it has one, otherwise a real DB probe (pg_isready, mysqladmin ping...). Waits while the image pulls / starts.',
+  port: 'A TCP connect works. With Docker the port may open before the DB is ready - prefer "Container is ready".',
+  url: 'Any HTTP answer below 500.',
+  output:
+    "Text (any case) or /regex/ in this step's output - good for dev servers and watchers.",
+  quiet:
+    'Seconds without new output, after it printed something - for watchers with no clear "ready" line.',
+};
 
 // --- edit dialog ----------------------------------------------------------------
 function CommandDialog({
@@ -237,6 +273,82 @@ function CommandDialog({
               }
             />
           </Tooltip>
+        </Box>
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+          <Select
+            size="small"
+            value={draft.ready?.type || 'none'}
+            onChange={(e) => {
+              const type = e.target.value as ReadyType;
+              setDraft((d) => ({
+                ...d,
+                ready:
+                  type === 'none'
+                    ? null
+                    : {
+                        type,
+                        target:
+                          d.ready?.type === type
+                            ? d.ready.target
+                            : type === 'quiet'
+                              ? '3'
+                              : '',
+                        timeout: d.ready?.timeout ?? DEFAULT_READY_TIMEOUT,
+                      },
+              }));
+            }}
+            sx={{ minWidth: 190, fontSize: 14 }}
+            aria-label="Ready when"
+            renderValue={(v) =>
+              v === 'none' ? 'Ready when it ends' : READY_LABELS[v as ReadyType]
+            }
+          >
+            <MenuItem value="none">Nothing extra</MenuItem>
+            {(Object.keys(READY_LABELS) as ReadyType[]).map((t) => (
+              <MenuItem key={t} value={t}>
+                {READY_LABELS[t]}
+              </MenuItem>
+            ))}
+          </Select>
+          {draft.ready && (
+            <>
+              <TextField
+                size="small"
+                value={draft.ready.target}
+                placeholder={READY_PLACEHOLDERS[draft.ready.type]}
+                helperText={READY_HELP[draft.ready.type]}
+                onChange={(e) =>
+                  setDraft((d) => ({
+                    ...d,
+                    ready: d.ready
+                      ? { ...d.ready, target: e.target.value }
+                      : null,
+                  }))
+                }
+                sx={{ flex: 1 }}
+                InputProps={{ sx: { fontFamily: MONO_FONT, fontSize: 13 } }}
+              />
+              <TextField
+                size="small"
+                type="number"
+                label="Timeout s"
+                value={draft.ready.timeout}
+                helperText="0 = no limit"
+                onChange={(e) =>
+                  setDraft((d) => ({
+                    ...d,
+                    ready: d.ready
+                      ? {
+                          ...d.ready,
+                          timeout: Math.max(0, Number(e.target.value) || 0),
+                        }
+                      : null,
+                  }))
+                }
+                sx={{ width: 100 }}
+              />
+            </>
+          )}
         </Box>
       </Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 2.5 }}>
@@ -452,6 +564,7 @@ export default function CommandsTool() {
         command: c.command,
         cwd: c.cwd,
         wait: c.wait,
+        ready: c.ready || null,
       })),
       {
         label,
@@ -668,6 +781,21 @@ export default function CommandsTool() {
                   sx={{ height: 18, fontSize: 10 }}
                 />
               )}
+              {c.ready && (
+                <Tooltip
+                  title={`Next step waits until ${describeReady(c.ready)}`}
+                >
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    icon={
+                      <HourglassTopIcon sx={{ fontSize: '12px !important' }} />
+                    }
+                    label={describeReady(c.ready)}
+                    sx={{ height: 18, fontSize: 10, maxWidth: 200 }}
+                  />
+                </Tooltip>
+              )}
             </Box>
             <Typography
               variant="caption"
@@ -742,6 +870,10 @@ export default function CommandsTool() {
               drag && drop?.type === 'command' && drop.groupId === group.id
                 ? 'primary.main'
                 : 'divider',
+            ...(group.color && {
+              borderLeft: `4px solid ${PACKAGE_COLOR_HEX[group.color]}`,
+              bgcolor: alpha(PACKAGE_COLOR_HEX[group.color], 0.05),
+            }),
           }}
         >
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -799,7 +931,15 @@ export default function CommandsTool() {
             ) : (
               <Typography
                 variant="subtitle2"
-                sx={{ fontWeight: 700, flex: 1, minWidth: 0, cursor: 'text' }}
+                sx={{
+                  fontWeight: 700,
+                  flex: 1,
+                  minWidth: 0,
+                  cursor: 'text',
+                  color: group.color
+                    ? PACKAGE_COLOR_HEX[group.color]
+                    : undefined,
+                }}
                 noWrap
                 onDoubleClick={() => setRenaming(group.id)}
               >
@@ -1202,6 +1342,26 @@ export default function CommandsTool() {
                         background
                       </Typography>
                     )}
+                    {step.ready && step.readyState && (
+                      <Typography
+                        component="span"
+                        variant="caption"
+                        color={
+                          step.readyState === 'failed'
+                            ? 'error.main'
+                            : step.readyState === 'ready'
+                              ? 'success.main'
+                              : 'info.main'
+                        }
+                        sx={{ ml: 1 }}
+                      >
+                        {step.readyState === 'waiting'
+                          ? `waiting: ${step.ready}${step.readyDetail ? ` (${step.readyDetail})` : ''}`
+                          : step.readyState === 'ready'
+                            ? 'ready'
+                            : 'not ready'}
+                      </Typography>
+                    )}
                   </Typography>
                   {step.status === 'failed' && step.code !== null && (
                     <Typography variant="caption" color="error.main">
@@ -1351,6 +1511,77 @@ export default function CommandsTool() {
         open={!!groupMenu}
         onClose={() => setGroupMenu(null)}
       >
+        {groupMenu && (
+          <Box sx={{ px: 2, pt: 0.5, pb: 1 }}>
+            <Typography variant="caption" color="text.secondary">
+              Color
+            </Typography>
+            <Box
+              sx={{
+                display: 'flex',
+                gap: 0.75,
+                mt: 0.5,
+                flexWrap: 'wrap',
+                maxWidth: 220,
+              }}
+            >
+              <Tooltip title="No color">
+                <Box
+                  component="button"
+                  aria-label="No color"
+                  onClick={() => {
+                    change(
+                      updateGroup(state, groupMenu.group.id, { color: null }),
+                    );
+                    setGroupMenu(null);
+                  }}
+                  sx={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: '50%',
+                    cursor: 'pointer',
+                    border: 2,
+                    borderColor: groupMenu.group.color
+                      ? 'divider'
+                      : 'text.primary',
+                    bgcolor: 'transparent',
+                    p: 0,
+                    background: (t) =>
+                      `linear-gradient(135deg, transparent 45%, ${t.palette.text.disabled} 45%, ${t.palette.text.disabled} 55%, transparent 55%)`,
+                  }}
+                />
+              </Tooltip>
+              {PACKAGE_COLORS.map((c) => (
+                <Box
+                  key={c}
+                  component="button"
+                  aria-label={`Color ${c}`}
+                  title={c}
+                  onClick={() => {
+                    change(
+                      updateGroup(state, groupMenu.group.id, { color: c }),
+                    );
+                    setGroupMenu(null);
+                  }}
+                  sx={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: '50%',
+                    cursor: 'pointer',
+                    p: 0,
+                    border: 2,
+                    borderColor:
+                      groupMenu.group.color === c
+                        ? 'text.primary'
+                        : 'transparent',
+                    bgcolor: PACKAGE_COLOR_HEX[c],
+                    outline: 'none',
+                  }}
+                />
+              ))}
+            </Box>
+          </Box>
+        )}
         <MenuItem
           onClick={() => {
             if (groupMenu) setRenaming(groupMenu.group.id);

@@ -12,6 +12,7 @@ import {
   DockerContainer,
   connectionStrings,
   dbHostPort,
+  detectDb,
   envToMap,
   isSafeContainerRef,
   parseContainers,
@@ -433,4 +434,97 @@ export const registerDockerIpc = (ipcMain: IpcMain) => {
   ipcMain.handle('docker:prune-volumes', (event, all?: boolean) =>
     pruneVolumes(!!all),
   );
+};
+
+/**
+ * Is the container ready to be used? Its healthcheck when it has one; otherwise, for a
+ * database image, a real probe inside it (pg_isready, mysqladmin ping, redis-cli ping,
+ * mongosh ping); otherwise just "running". A container that doesn't exist yet (image still
+ * pulling, compose still creating) is simply "not ready yet".
+ */
+export const containerReady = async (
+  ref: string,
+): Promise<{ ready: boolean; detail: string }> => {
+  if (!isSafeContainerRef(ref)) return { ready: false, detail: 'bad name' };
+  const inspect = await docker(
+    [
+      'inspect',
+      '--format',
+      '{{json .State}}|{{.Config.Image}}|{{json .Config.Env}}',
+      ref,
+    ],
+    8000,
+  );
+  if (!inspect.ok) return { ready: false, detail: 'not created yet' };
+  const [stateJson, image, envJson] = inspect.stdout.trim().split('|');
+  let state: any = {};
+  let env: Record<string, string> = {};
+  try {
+    state = JSON.parse(stateJson);
+    env = envToMap(JSON.parse(envJson || '[]') || []);
+  } catch (e) {
+    return { ready: false, detail: 'unreadable state' };
+  }
+  if (state.Status !== 'running') {
+    return { ready: false, detail: state.Status || 'not running' };
+  }
+  if (state.Health?.Status) {
+    return {
+      ready: state.Health.Status === 'healthy',
+      detail: `health: ${state.Health.Status}`,
+    };
+  }
+  const kind = detectDb(image || '');
+  const probe = (argv: string[], probeEnv: Record<string, string> = {}) =>
+    docker(
+      [
+        'exec',
+        ...Object.entries(probeEnv).flatMap(([k, v]) => ['-e', `${k}=${v}`]),
+        ref,
+        ...argv,
+      ],
+      8000,
+    );
+  let result: Awaited<ReturnType<typeof probe>> | null = null;
+  if (kind === 'postgres') {
+    result = await probe([
+      'pg_isready',
+      '-h',
+      '127.0.0.1',
+      '-U',
+      env.POSTGRES_USER || 'postgres',
+    ]);
+  } else if (kind === 'mysql' || kind === 'mariadb') {
+    // TCP on purpose: during init the image runs a temporary server without networking
+    const password = env.MARIADB_ROOT_PASSWORD || env.MYSQL_ROOT_PASSWORD || '';
+    const args = ['ping', '-h', '127.0.0.1', '-uroot', '--silent'];
+    const pwEnv: Record<string, string> = password
+      ? { MYSQL_PWD: password }
+      : {};
+    result = await probe(['mysqladmin', ...args], pwEnv);
+    if (!result.ok && /not found|no such file/i.test(result.stderr)) {
+      result = await probe(['mariadb-admin', ...args], pwEnv);
+    }
+  } else if (kind === 'redis') {
+    result = await probe(
+      ['redis-cli', 'ping'],
+      env.REDIS_PASSWORD ? { REDISCLI_AUTH: env.REDIS_PASSWORD } : {},
+    );
+    if (result.ok && !/PONG/.test(result.stdout)) {
+      return { ready: false, detail: result.stdout.trim() || 'no PONG' };
+    }
+  } else if (kind === 'mongo') {
+    const args = ['--quiet', '--eval', 'db.runCommand({ ping: 1 }).ok'];
+    result = await probe(['mongosh', ...args]);
+    if (!result.ok && /not found|no such file/i.test(result.stderr)) {
+      result = await probe(['mongo', ...args]);
+    }
+  }
+  if (!result) return { ready: true, detail: 'running' };
+  return {
+    ready: result.ok,
+    detail: result.ok
+      ? `${kind} accepts connections`
+      : `${kind} starting (${firstLine(result.stderr || result.stdout) || 'no answer'})`,
+  };
 };

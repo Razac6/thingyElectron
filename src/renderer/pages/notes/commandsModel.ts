@@ -1,3 +1,5 @@
+import type { ReadyCheck, ReadyType } from '../../../main/readyCheck';
+
 // Saved CLI commands, grouped into packages that run top to bottom. Stored as JSON in the
 // app settings (key `cli_commands`), so they live in the app DB with everything else.
 
@@ -7,6 +9,7 @@ export interface CliCommand {
   command: string;
   cwd: string; // '' = home folder
   wait: boolean; // false = start and go on (dev servers, watchers) - only inside a package
+  ready?: ReadyCheck | null; // what the next step waits for (container ready, port...)
 }
 
 export interface CommandGroup {
@@ -14,6 +17,7 @@ export interface CommandGroup {
   name: string;
   stopOnError: boolean;
   collapsed: boolean;
+  color?: PackageColor | null; // to tell packages apart at a glance
   commands: CliCommand[];
 }
 
@@ -22,6 +26,32 @@ export interface CommandsState {
 }
 
 export const SETTINGS_KEY = 'cli_commands';
+
+export const PACKAGE_COLORS = [
+  'blue',
+  'teal',
+  'green',
+  'amber',
+  'orange',
+  'red',
+  'pink',
+  'purple',
+  'slate',
+] as const;
+export type PackageColor = (typeof PACKAGE_COLORS)[number];
+
+/** Swatch values - mid tones that read on both the light and the dark theme. */
+export const PACKAGE_COLOR_HEX: Record<PackageColor, string> = {
+  blue: '#3b82f6',
+  teal: '#14b8a6',
+  green: '#22c55e',
+  amber: '#f59e0b',
+  orange: '#f97316',
+  red: '#ef4444',
+  pink: '#ec4899',
+  purple: '#8b5cf6',
+  slate: '#64748b',
+};
 
 let seq = 0;
 export const newId = (prefix: string) => {
@@ -34,6 +64,7 @@ export const emptyGroup = (name = 'New package'): CommandGroup => ({
   name,
   stopOnError: true,
   collapsed: false,
+  color: null,
   commands: [],
 });
 
@@ -49,6 +80,24 @@ export const defaultState = (): CommandsState => ({
   groups: [{ ...emptyGroup('Commands'), id: 'g-default' }],
 });
 
+const READY_TYPES: ReadyType[] = [
+  'container',
+  'port',
+  'url',
+  'output',
+  'quiet',
+];
+
+const parseReady = (raw: any): ReadyCheck | null => {
+  if (!raw || !READY_TYPES.includes(raw.type)) return null;
+  const timeout = Number(raw.timeout);
+  return {
+    type: raw.type,
+    target: String(raw.target || ''),
+    timeout: Number.isFinite(timeout) && timeout >= 0 ? timeout : 120,
+  };
+};
+
 /** Reads the stored JSON, dropping anything malformed. */
 export const parseState = (json: string | null | undefined): CommandsState => {
   try {
@@ -62,6 +111,7 @@ export const parseState = (json: string | null | undefined): CommandsState => {
           name: String(g.name || 'Package'),
           stopOnError: g.stopOnError !== false,
           collapsed: !!g.collapsed,
+          color: PACKAGE_COLORS.includes(g.color) ? g.color : null,
           commands: (Array.isArray(g.commands) ? g.commands : [])
             .filter((c: any) => c && typeof c.id === 'string')
             .map(
@@ -71,6 +121,7 @@ export const parseState = (json: string | null | undefined): CommandsState => {
                 command: String(c.command || ''),
                 cwd: String(c.cwd || ''),
                 wait: c.wait !== false,
+                ready: parseReady(c.ready),
               }),
             ),
         }),

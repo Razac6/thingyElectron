@@ -31,7 +31,7 @@ import {
   sell as sellJourneyItem,
 } from './journey';
 import { resolveHtmlPath } from './util';
-import { registerDockerIpc } from './docker';
+import { containerReady, registerDockerIpc } from './docker';
 import { registerCommandIpc, stopAllRuns } from './commandRunner';
 import {
   initDB,
@@ -748,7 +748,7 @@ ipcMain.handle('db:delete-note', (event, noteId) => deleteNote(noteId));
 // Dev Notes > Docker
 registerDockerIpc(ipcMain);
 // Dev Notes > Commands
-registerCommandIpc(ipcMain);
+registerCommandIpc(ipcMain, { containerReady });
 
 ipcMain.handle('notes:import-files', async () => {
   const result = await dialog.showOpenDialog({
