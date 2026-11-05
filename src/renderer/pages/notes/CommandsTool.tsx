@@ -116,6 +116,18 @@ const duration = (from: number | null, to: number | null) => {
 
 type ShownStatus = StepStatus | RunSnapshot['status'] | 'live' | null;
 
+const SECTION_SEP = ' › ';
+/** "A › B" -> ["A", "A › B"]: every nested package a step sits in, outermost first. */
+const sectionLevels = (section: string | null) =>
+  section
+    ? section
+        .split(SECTION_SEP)
+        .map((_, i, all) => all.slice(0, i + 1).join(SECTION_SEP))
+    : [];
+const stepInSection = (step: RunStep, section: string) =>
+  step.section === section ||
+  !!step.section?.startsWith(`${section}${SECTION_SEP}`);
+
 /** A background process that is up (its "ready when" passed) - no spinner. */
 const stepShown = (step: RunStep): ShownStatus =>
   step.status === 'running' &&
@@ -123,6 +135,21 @@ const stepShown = (step: RunStep): ShownStatus =>
   (!step.ready || step.readyState === 'ready')
     ? 'live'
     : step.status;
+/** One status for a nested package in a run, from its steps. */
+const sectionShown = (steps: RunStep[]): ShownStatus => {
+  const shown = steps.map(stepShown);
+  if (shown.some((st) => st === 'running' || st === 'waiting')) {
+    return 'running';
+  }
+  if (shown.includes('failed')) return 'failed';
+  if (shown.includes('stopped')) return 'stopped';
+  if (shown.every((st) => st === 'pending')) return 'pending';
+  if (shown.every((st) => st === 'skipped')) return 'skipped';
+  if (shown.includes('pending')) return 'running';
+  if (shown.includes('live')) return 'live';
+  return 'ok';
+};
+
 /** A package whose background steps are all up counts as ready. */
 const runShown = (run: RunSnapshot): ShownStatus =>
   run.status === 'running' && run.readyAt ? 'live' : run.status;
@@ -763,7 +790,11 @@ export default function CommandsTool() {
     }
   };
 
-  const rerun = async (options?: { from?: number; only?: number }) => {
+  const rerun = async (options?: {
+    from?: number;
+    only?: number;
+    section?: string;
+  }) => {
     if (!selected) return;
     const run = await window.electron.commands.rerun(selected.id, options);
     if (run) {
@@ -1563,6 +1594,111 @@ export default function CommandsTool() {
   const failedIndex = selected
     ? selected.steps.findIndex((s) => s.status === 'failed')
     : -1;
+  // the innermost nested package of the failed step
+  const failedSection =
+    selected && failedIndex >= 0 ? selected.steps[failedIndex].section : null;
+
+  // nested packages that start at step i (one header per level)
+  const newSections = (i: number) => {
+    if (!selected) return [];
+    const levels = sectionLevels(selected.steps[i].section);
+    const before = sectionLevels(selected.steps[i - 1]?.section ?? null);
+    let k = 0;
+    while (k < levels.length && levels[k] === before[k]) k += 1;
+    return levels.slice(k);
+  };
+
+  const renderSectionHeader = (section: string) => {
+    if (!selected) return null;
+    const steps = selected.steps.filter((st) => stepInSection(st, section));
+    const status = sectionShown(steps);
+    const firstIndex = selected.steps.findIndex((st) =>
+      stepInSection(st, section),
+    );
+    const failedAt = selected.steps.findIndex(
+      (st) => st.status === 'failed' && stepInSection(st, section),
+    );
+    const done = selected.status !== 'running';
+    const name = section.split(SECTION_SEP).pop();
+    return (
+      <Box
+        key={`section-${section}`}
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 0.75,
+          ml: -1.5,
+          pl: 1,
+          pr: 0.5,
+          pt: 0.75,
+          pb: 0.25,
+          borderRadius: 1.5,
+          '&:hover .section-actions': { opacity: 1 },
+        }}
+        title={section}
+      >
+        <FolderIcon
+          sx={{
+            fontSize: 14,
+            color: status === 'failed' ? 'error.main' : 'text.secondary',
+          }}
+        />
+        <Typography
+          variant="caption"
+          sx={{
+            fontWeight: 700,
+            flex: 1,
+            minWidth: 0,
+            color: status === 'failed' ? 'error.main' : 'text.secondary',
+          }}
+          noWrap
+        >
+          {name}
+          <Box
+            component="span"
+            sx={{ fontWeight: 400, ml: 0.75, color: 'text.disabled' }}
+          >
+            {steps.filter((st) => st.status === 'ok').length}/{steps.length}
+          </Box>
+        </Typography>
+        <StatusIcon status={status} size={14} />
+        {done && (
+          <Box
+            className="section-actions"
+            sx={{
+              display: 'flex',
+              opacity: status === 'failed' ? 1 : 0,
+              transition: 'opacity .15s',
+            }}
+          >
+            {failedAt > firstIndex && (
+              <Tooltip title={`Rerun ${name} from its failed step`}>
+                <IconButton
+                  size="small"
+                  color="error"
+                  onClick={() => rerun({ section, from: failedAt })}
+                  aria-label={`Rerun ${name} from the failed step`}
+                  sx={{ p: 0.25 }}
+                >
+                  <ReplayIcon sx={{ fontSize: 15 }} />
+                </IconButton>
+              </Tooltip>
+            )}
+            <Tooltip title={`Run only ${name} again (${steps.length} steps)`}>
+              <IconButton
+                size="small"
+                onClick={() => rerun({ section })}
+                aria-label={`Rerun only ${name}`}
+                sx={{ p: 0.25 }}
+              >
+                <PlayArrowIcon sx={{ fontSize: 16 }} />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        )}
+      </Box>
+    );
+  };
 
   return (
     <Box
@@ -1754,6 +1890,22 @@ export default function CommandsTool() {
           ) : (
             selected && (
               <>
+                {failedSection && (
+                  <Tooltip
+                    title={`Run only “${failedSection.split(SECTION_SEP).pop()}” again, from its failed step - not the whole package`}
+                  >
+                    <Button
+                      size="small"
+                      color="error"
+                      startIcon={<ReplayIcon />}
+                      onClick={() =>
+                        rerun({ section: failedSection, from: failedIndex })
+                      }
+                    >
+                      Rerun failed part
+                    </Button>
+                  </Tooltip>
+                )}
                 {failedIndex > 0 && (
                   <Tooltip
                     title={`Skip the steps that passed and start at “${selected.steps[failedIndex].name}”`}
@@ -1825,33 +1977,11 @@ export default function CommandsTool() {
               </Box>
             )}
             {selected.steps.map((step, i) => (
-              <Box key={`${step.id}-${i}`} sx={{ pl: step.section ? 1.5 : 0 }}>
-                {step.section &&
-                  step.section !== selected.steps[i - 1]?.section && (
-                    <Box
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 0.75,
-                        ml: -1.5,
-                        px: 1,
-                        pt: 0.75,
-                        pb: 0.25,
-                      }}
-                    >
-                      <FolderIcon
-                        sx={{ fontSize: 14, color: 'text.secondary' }}
-                      />
-                      <Typography
-                        variant="caption"
-                        color="text.secondary"
-                        sx={{ fontWeight: 700 }}
-                        noWrap
-                      >
-                        {step.section}
-                      </Typography>
-                    </Box>
-                  )}
+              <Box
+                key={`${step.id}-${i}`}
+                sx={{ pl: sectionLevels(step.section).length * 1.5 }}
+              >
+                {newSections(i).map((level) => renderSectionHeader(level))}
                 <Box
                   onClick={() =>
                     setSelectedStep(

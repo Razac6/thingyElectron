@@ -36,7 +36,7 @@ export interface IElectronAPI {
     output: (runId: string, step?: number | null) => Promise<string>;
     rerun: (
       runId: string,
-      options?: { from?: number; only?: number },
+      options?: { from?: number; only?: number; section?: string },
     ) => Promise<RunSnapshot | null>;
     clear: () => Promise<boolean>;
     pickFolder: (current?: string) => Promise<string | null>;

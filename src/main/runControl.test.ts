@@ -3,6 +3,8 @@ import os from 'os';
 import path from 'path';
 import {
   getOutput,
+  inSection,
+  rerun,
   setConditionFile,
   startRun,
   stopRun,
@@ -319,5 +321,55 @@ describe('dev server presets', () => {
     expect(
       func('Azure Functions Core Tools\nCore Tools Version: 4.0.5455'),
     ).toBe(false);
+  });
+});
+
+describe('rerunning one nested package', () => {
+  it('reruns only the failing package (from its failed step), not the whole stack', async () => {
+    const run = startRun(
+      [
+        { id: 'a', name: 'pull', command: 'echo did-pull', section: 'Backend' },
+        {
+          id: 'b',
+          name: 'db up',
+          command: 'echo did-db',
+          section: 'Backend › DB',
+        },
+        {
+          id: 'c',
+          name: 'migrate',
+          command: 'echo did-migrate; exit 4',
+          section: 'Backend › DB',
+        },
+        {
+          id: 'd',
+          name: 'seed',
+          command: 'echo did-seed',
+          section: 'Backend › DB',
+        },
+        {
+          id: 'e',
+          name: 'front',
+          command: 'echo did-front',
+          section: 'Frontend',
+        },
+      ],
+      { label: 'Stack', stopOnError: true },
+    )!;
+    await waitFor(finished(run.id));
+    expect(getOutput(run.id)).not.toMatch(/^did-front$/m);
+
+    const part = rerun(run.id, { section: 'Backend › DB', from: 2 })!;
+    expect(part.label).toBe('Stack (only Backend › DB, from migrate)');
+    expect(part.steps.map((st) => st.id)).toEqual(['c', 'd']);
+    await waitFor(finished(part.id));
+
+    const whole = rerun(run.id, { section: 'Backend' })!;
+    expect(whole.label).toBe('Stack (only Backend)');
+    expect(whole.steps.map((st) => st.id)).toEqual(['a', 'b', 'c', 'd']);
+    await waitFor(finished(whole.id));
+
+    expect(inSection('Backend › DB', 'Backend')).toBe(true);
+    expect(inSection('Backend2', 'Backend')).toBe(false);
   });
 });

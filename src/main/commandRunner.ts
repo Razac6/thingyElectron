@@ -810,31 +810,59 @@ export const startRun = (
   return snapshot(run);
 };
 
+/** Is a step (by its section) part of nested package `section` (or deeper inside it)? */
+export const inSection = (
+  stepSection: string | null | undefined,
+  section: string,
+) => stepSection === section || !!stepSection?.startsWith(`${section} › `);
+
 /**
  * Runs a finished run again: everything, from step `from` (e.g. the failed one) to the
- * end, or only step `only`. Uses the commands as they were in that run.
+ * end, only step `only`, or only the nested package `section` (from `from` inside it) -
+ * so a package of packages doesn't have to run all over again for one failing part.
+ * Uses the commands as they were in that run.
  */
 export const rerun = (
   runId: string,
-  { from, only }: { from?: number; only?: number } = {},
+  {
+    from,
+    only,
+    section,
+  }: { from?: number; only?: number; section?: string } = {},
 ) => {
   const run = runs.get(runId);
   const saved = pending.get(runId);
   if (!run || !saved || run.status === 'running') return null;
-  let { inputs } = saved;
+  let inputs = saved.inputs.map((input, index) => ({ input, index }));
   let label = run.label.replace(/ \((from|only) .*\)$/, '');
-  if (only !== undefined && inputs[only]) {
-    inputs = [inputs[only]];
-    label = `${label} (only ${inputs[0].name})`;
-  } else if (from !== undefined && from > 0 && inputs[from]) {
-    inputs = inputs.slice(from);
-    label = `${label} (from ${inputs[0].name})`;
+  if (only !== undefined && saved.inputs[only]) {
+    inputs = inputs.filter((x) => x.index === only);
+    label = `${label} (only ${inputs[0].input.name})`;
+  } else {
+    if (section) {
+      const picked = inputs.filter((x) => inSection(x.input.section, section));
+      if (picked.length) inputs = picked;
+    }
+    if (from !== undefined) {
+      const rest = inputs.filter((x) => x.index >= from);
+      if (rest.length && rest.length < inputs.length) inputs = rest;
+    }
+    const sectionPart = section && inputs.length ? `only ${section}` : '';
+    const fromPart =
+      from !== undefined && inputs[0]?.index === from && from > 0
+        ? `from ${inputs[0].input.name}`
+        : '';
+    const parts = [sectionPart, fromPart].filter(Boolean);
+    if (parts.length) label = `${label} (${parts.join(', ')})`;
   }
-  return startRun(inputs, {
-    label,
-    groupId: saved.groupId,
-    stopOnError: saved.stopOnError,
-  });
+  return startRun(
+    inputs.map((x) => x.input),
+    {
+      label,
+      groupId: section ? null : saved.groupId,
+      stopOnError: saved.stopOnError,
+    },
+  );
 };
 
 /** For tests / wiring: how a "container ready" check is answered. */
