@@ -26,8 +26,12 @@ export interface IElectronAPI {
         stopOnError?: boolean;
       },
     ) => Promise<RunSnapshot | null>;
-    stop: (runId: string) => Promise<boolean>;
-    stopStep: (runId: string, index: number) => Promise<boolean>;
+    stop: (runId: string, force?: boolean) => Promise<boolean>;
+    stopStep: (
+      runId: string,
+      index: number,
+      force?: boolean,
+    ) => Promise<boolean>;
     runs: () => Promise<RunSnapshot[]>;
     output: (runId: string, step?: number | null) => Promise<string>;
     rerun: (

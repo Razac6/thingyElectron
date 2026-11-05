@@ -748,7 +748,10 @@ ipcMain.handle('db:delete-note', (event, noteId) => deleteNote(noteId));
 // Dev Notes > Docker
 registerDockerIpc(ipcMain);
 // Dev Notes > Commands
-registerCommandIpc(ipcMain, { containerReady });
+registerCommandIpc(ipcMain, {
+  containerReady,
+  conditionFile: path.join(app.getPath('userData'), 'command-conditions.json'),
+});
 
 ipcMain.handle('notes:import-files', async () => {
   const result = await dialog.showOpenDialog({

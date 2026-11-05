@@ -44,22 +44,32 @@ import DeleteSweepOutlinedIcon from '@mui/icons-material/DeleteSweepOutlined';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckIcon from '@mui/icons-material/Check';
 import HourglassTopIcon from '@mui/icons-material/HourglassTop';
+import FolderIcon from '@mui/icons-material/Folder';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import LinkOffIcon from '@mui/icons-material/LinkOff';
+import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined';
+import TimerOutlinedIcon from '@mui/icons-material/TimerOutlined';
 import { MONO_FONT } from './highlight';
 import useCopy from './useCopy';
 import {
+  COMMAND_PRESETS,
   CliCommand,
   CommandGroup,
   CommandsState,
   PACKAGE_COLORS,
   PACKAGE_COLOR_HEX,
   SETTINGS_KEY,
-  cloneGroupInto,
+  addPackageLink,
+  canNest,
   commandLabel,
   duplicateGroup,
   emptyCommand,
   emptyGroup,
+  expandSteps,
   moveCommand,
   moveGroup,
+  packageSteps,
+  packageUsers,
   parseState,
   removeCommand,
   removeGroup,
@@ -77,6 +87,11 @@ import {
   ReadyType,
   describeReady,
 } from '../../../main/readyCheck';
+import {
+  CONDITION_TYPES,
+  ConditionType,
+  describeCondition,
+} from '../../../main/stepOptions';
 
 // Your own CLI commands: run one, or a whole package top to bottom (drag & drop to
 // reorder / move between packages). Runs keep going in the background; every step has
@@ -187,6 +202,24 @@ const READY_HELP: Record<string, string> = {
     'Seconds without new output, after it printed something - for watchers with no clear "ready" line.',
 };
 
+const WHEN_LABELS: Record<ConditionType, string> = {
+  changed: 'Only if files changed',
+  missing: 'Only if missing',
+  succeeds: 'Only if a check passes',
+};
+const WHEN_PLACEHOLDERS: Record<ConditionType, string> = {
+  changed: 'package.json, package-lock.json, node_modules',
+  missing: '.env',
+  succeeds: 'git fetch -q && [ -n "$(git log HEAD..@{u} --oneline)" ]',
+};
+const WHEN_HELP: Record<ConditionType, string> = {
+  changed:
+    'Comma-separated, relative to the working directory. Runs when a file differs from its last successful run or a path is missing (folders only count as there / missing). Otherwise it is skipped.',
+  missing: 'Runs when any of these paths does not exist, otherwise skipped.',
+  succeeds:
+    'A check command (same shell and folder): exit 0 = run the step, anything else = skip it.',
+};
+
 // --- edit dialog ----------------------------------------------------------------
 function CommandDialog({
   open,
@@ -238,6 +271,35 @@ function CommandDialog({
         {isNew ? 'New command' : 'Edit command'}
       </Typography>
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+        {isNew && (
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ width: '100%' }}
+            >
+              Start from
+            </Typography>
+            {COMMAND_PRESETS.map((preset) => (
+              <Tooltip key={preset.label} title={preset.hint}>
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  label={preset.label}
+                  onClick={() =>
+                    setDraft((d) => ({
+                      ...emptyCommand(),
+                      id: d.id,
+                      cwd: d.cwd,
+                      ...preset.command,
+                    }))
+                  }
+                  sx={{ fontSize: 12 }}
+                />
+              </Tooltip>
+            ))}
+          </Box>
+        )}
         <TextField
           size="small"
           label="Name"
@@ -254,7 +316,7 @@ function CommandDialog({
           multiline
           minRows={3}
           maxRows={12}
-          helperText="Runs in your login shell; several lines run as one script. Ctrl/⌘+Enter saves."
+          helperText="Any CLI (git, npm, docker, java, flyway…) - runs in your shell with its PATH; several lines run as one script. Ctrl/⌘+Enter saves."
           onChange={(e) => setDraft((d) => ({ ...d, command: e.target.value }))}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) save(false);
@@ -396,6 +458,69 @@ function CommandDialog({
             </>
           )}
         </Box>
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+          <Select
+            size="small"
+            value={draft.when?.type || 'always'}
+            onChange={(e) => {
+              const type = e.target.value as ConditionType | 'always';
+              setDraft((d) => ({
+                ...d,
+                when:
+                  type === 'always'
+                    ? null
+                    : {
+                        type,
+                        target: d.when?.type === type ? d.when.target : '',
+                      },
+              }));
+            }}
+            sx={{ minWidth: 190, fontSize: 14 }}
+            aria-label="Run it"
+          >
+            <MenuItem value="always">Always run</MenuItem>
+            {CONDITION_TYPES.map((t) => (
+              <MenuItem key={t} value={t}>
+                {WHEN_LABELS[t]}
+              </MenuItem>
+            ))}
+          </Select>
+          {draft.when ? (
+            <TextField
+              size="small"
+              value={draft.when.target}
+              placeholder={WHEN_PLACEHOLDERS[draft.when.type]}
+              helperText={WHEN_HELP[draft.when.type]}
+              onChange={(e) =>
+                setDraft((d) => ({
+                  ...d,
+                  when: d.when ? { ...d.when, target: e.target.value } : null,
+                }))
+              }
+              sx={{ flex: 1 }}
+              InputProps={{ sx: { fontFamily: MONO_FONT, fontSize: 13 } }}
+            />
+          ) : (
+            <Box sx={{ flex: 1 }} />
+          )}
+          {draft.wait && (
+            <TextField
+              size="small"
+              type="number"
+              label="Time limit s"
+              value={draft.timeout || ''}
+              placeholder="none"
+              helperText="killed after"
+              onChange={(e) =>
+                setDraft((d) => ({
+                  ...d,
+                  timeout: Math.max(0, Number(e.target.value) || 0) || null,
+                }))
+              }
+              sx={{ width: 110 }}
+            />
+          )}
+        </Box>
       </Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 2.5 }}>
         {!isNew && initial && (
@@ -527,6 +652,8 @@ export default function CommandsTool() {
   const [output, setOutput] = useState('');
   const [logFilter, setLogFilter] = useState('');
   const [hint, setHint] = useState<string | null>(null);
+  const [openLinks, setOpenLinks] = useState<Set<string>>(new Set());
+  const [flash, setFlash] = useState<string | null>(null);
   const [, tick] = useState(0);
   const { copy, copied } = useCopy();
   const saveTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -603,14 +730,24 @@ export default function CommandsTool() {
     label: string,
     group?: CommandGroup,
   ) => {
+    if (!state) return;
+    const steps = expandSteps(
+      state,
+      commands,
+      null,
+      new Set(group ? [group.id] : []),
+    );
     const run = await window.electron.commands.run(
-      commands.map((c) => ({
+      steps.map((c) => ({
         id: c.id,
         name: commandLabel(c),
         command: c.command,
         cwd: c.cwd,
         wait: c.wait,
         ready: c.ready || null,
+        timeout: c.timeout || null,
+        when: c.when || null,
+        section: c.section,
       })),
       {
         label,
@@ -634,6 +771,27 @@ export default function CommandsTool() {
       setSelectedRun(run.id);
       setSelectedStep(options?.only !== undefined ? 0 : null);
     }
+  };
+
+  const showHint = (text: string) => {
+    setHint(text);
+    setTimeout(() => setHint(null), 3000);
+  };
+
+  /** Scroll to a package (and open it) - from a link to it inside another one. */
+  const goToPackage = (id: string) => {
+    if (!state) return;
+    const target = state.groups.find((g) => g.id === id);
+    if (target?.collapsed) {
+      change(updateGroup(state, id, { collapsed: false }));
+    }
+    setTimeout(() => {
+      document
+        .getElementById(`pkg-${id}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+    setFlash(id);
+    setTimeout(() => setFlash(null), 1400);
   };
 
   const clearHistory = async () => {
@@ -690,9 +848,9 @@ export default function CommandsTool() {
     groupId: string,
     index: number,
   ) => {
-    if (!drag) return;
-    // a package dragged into another package is copied in at that spot
-    if (drag.type === 'group' && drag.id === groupId) return;
+    if (!drag || !state) return;
+    // a package dragged into another package goes in as a whole (a link to it)
+    if (drag.type === 'group' && !canNest(state, drag.id, groupId)) return;
     e.preventDefault();
     e.stopPropagation();
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -732,12 +890,16 @@ export default function CommandsTool() {
         change(moveGroup(state, drag.id, drop.index));
       } else if (drag.type === 'group' && drop.type === 'command') {
         const source = state.groups.find((g) => g.id === drag.id);
-        change(cloneGroupInto(state, drag.id, drop.groupId, drop.index));
-        if (source) {
-          setHint(
-            `Copied ${source.commands.length} command(s) from \u201c${source.name}\u201d`,
+        const target = state.groups.find((g) => g.id === drop.groupId);
+        if (source && target && canNest(state, source.id, target.id)) {
+          change(addPackageLink(state, source.id, target.id, drop.index));
+          showHint(
+            `\u201c${source.name}\u201d is now a step of \u201c${target.name}\u201d`,
           );
-          setTimeout(() => setHint(null), 3000);
+        } else if (source && target) {
+          showHint(
+            `\u201c${source.name}\u201d already contains \u201c${target.name}\u201d`,
+          );
         }
       }
     }
@@ -781,14 +943,205 @@ export default function CommandsTool() {
             lineHeight: '18px',
           }}
         >
-          copy {draggedGroup.commands.length} command(s) of {draggedGroup.name}{' '}
-          here
+          add the package {draggedGroup.name} here
         </Typography>
       )}
     </Box>
   );
 
+  const rowDrag = (group: CommandGroup, c: CliCommand, index: number) => ({
+    draggable: !searching,
+    onDragStart: (e: React.DragEvent) => {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', c.id);
+      setDrag({ type: 'command', id: c.id });
+    },
+    onDragEnd: endDrag,
+    onDragOver: (e: React.DragEvent) => onRowDragOver(e, group.id, index),
+    onDrop,
+  });
+
+  // a whole package inside this one
+  const renderLink = (group: CommandGroup, c: CliCommand, index: number) => {
+    const inner = state.groups.find((g) => g.id === c.packageId);
+    if (!inner) return null;
+    const steps = packageSteps(state, inner);
+    const expanded = openLinks.has(c.id);
+    const color = inner.color
+      ? PACKAGE_COLOR_HEX[inner.color]
+      : theme.palette.text.secondary;
+    const innerRun = runningGroups.get(inner.id);
+    const isDropBefore =
+      drop?.type === 'command' &&
+      drop.groupId === group.id &&
+      drop.index === index;
+    return (
+      <React.Fragment key={c.id}>
+        {isDropBefore && dropLine}
+        <Box
+          {...rowDrag(group, c, index)}
+          onDoubleClick={() => goToPackage(inner.id)}
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            pl: 0.5,
+            pr: 1,
+            py: 0.5,
+            my: 0.25,
+            borderRadius: 2,
+            borderLeft: `3px solid ${color}`,
+            bgcolor: alpha(color, 0.07),
+            opacity: drag?.id === c.id ? 0.4 : 1,
+            '&:hover': { bgcolor: alpha(color, 0.12) },
+            '&:hover .row-actions': { opacity: 1 },
+          }}
+        >
+          <DragIndicatorIcon
+            sx={{
+              fontSize: 18,
+              color: 'text.disabled',
+              cursor: searching ? 'default' : 'grab',
+            }}
+          />
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ width: 16, textAlign: 'right' }}
+          >
+            {index + 1}
+          </Typography>
+          <IconButton
+            size="small"
+            onClick={() =>
+              setOpenLinks((set) => {
+                const next = new Set(set);
+                if (next.has(c.id)) next.delete(c.id);
+                else next.add(c.id);
+                return next;
+              })
+            }
+            aria-label={expanded ? 'Hide its steps' : 'Show its steps'}
+            sx={{ p: 0.25 }}
+          >
+            {expanded ? (
+              <ExpandMoreIcon sx={{ fontSize: 18 }} />
+            ) : (
+              <ChevronRightIcon sx={{ fontSize: 18 }} />
+            )}
+          </IconButton>
+          <FolderIcon sx={{ fontSize: 18, color }} />
+          <Box sx={{ minWidth: 0, flex: 1 }}>
+            <Typography variant="body2" sx={{ fontWeight: 700, color }} noWrap>
+              {inner.name}
+            </Typography>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              component="div"
+              noWrap
+            >
+              package · {steps.length} step{steps.length === 1 ? '' : 's'}
+              {!inner.stopOnError && ' · continues on error'}
+            </Typography>
+          </Box>
+          <Box
+            className="row-actions"
+            sx={{
+              display: 'flex',
+              opacity: innerRun ? 1 : 0.5,
+              transition: 'opacity .15s',
+            }}
+          >
+            <Tooltip title="Go to the package (edit it there - it changes everywhere it's used)">
+              <IconButton
+                size="small"
+                onClick={() => goToPackage(inner.id)}
+                aria-label={`Go to ${inner.name}`}
+              >
+                <OpenInNewIcon sx={{ fontSize: 16 }} />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title={`Take it out of ${group.name} (the package stays)`}>
+              <IconButton
+                size="small"
+                onClick={() => change(removeCommand(state, c.id))}
+                aria-label={`Remove ${inner.name} from ${group.name}`}
+              >
+                <LinkOffIcon sx={{ fontSize: 17 }} />
+              </IconButton>
+            </Tooltip>
+            {innerRun ? (
+              <Tooltip title={`Stop ${inner.name}`}>
+                <IconButton
+                  size="small"
+                  color="error"
+                  onClick={() => window.electron.commands.stop(innerRun.id)}
+                  aria-label={`Stop ${inner.name}`}
+                >
+                  <StopIcon sx={{ fontSize: 19 }} />
+                </IconButton>
+              </Tooltip>
+            ) : (
+              <Tooltip title={`Run only ${inner.name}`}>
+                <span>
+                  <IconButton
+                    size="small"
+                    color="primary"
+                    disabled={!steps.length}
+                    onClick={() => start(inner.commands, inner.name, inner)}
+                    aria-label={`Run ${inner.name}`}
+                  >
+                    <PlayArrowIcon sx={{ fontSize: 19 }} />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            )}
+          </Box>
+        </Box>
+        {expanded && (
+          <Box
+            sx={{
+              ml: 7,
+              mr: 1,
+              mb: 0.5,
+              pl: 1.25,
+              borderLeft: `1px dashed ${alpha(color, 0.6)}`,
+            }}
+          >
+            {steps.map((st, i) => (
+              <Typography
+                // eslint-disable-next-line react/no-array-index-key
+                key={`${st.id}-${i}`}
+                variant="caption"
+                color="text.secondary"
+                component="div"
+                noWrap
+                title={st.command}
+                sx={{ py: 0.1 }}
+              >
+                {i + 1}.{' '}
+                {st.section && (
+                  <Box component="span" sx={{ color: 'text.disabled' }}>
+                    {st.section} ›{' '}
+                  </Box>
+                )}
+                {commandLabel(st)}
+              </Typography>
+            ))}
+            {!steps.length && (
+              <Typography variant="caption" color="text.disabled">
+                Empty package
+              </Typography>
+            )}
+          </Box>
+        )}
+      </React.Fragment>
+    );
+  };
+
   const renderCommand = (group: CommandGroup, c: CliCommand, index: number) => {
+    if (c.packageId) return renderLink(group, c, index);
     const status = lastStatus.get(c.id) || null;
     const isDropBefore =
       drop?.type === 'command' &&
@@ -798,15 +1151,7 @@ export default function CommandsTool() {
       <React.Fragment key={c.id}>
         {isDropBefore && dropLine}
         <Box
-          draggable={!searching}
-          onDragStart={(e) => {
-            e.dataTransfer.effectAllowed = 'move';
-            e.dataTransfer.setData('text/plain', c.id);
-            setDrag({ type: 'command', id: c.id });
-          }}
-          onDragEnd={endDrag}
-          onDragOver={(e) => onRowDragOver(e, group.id, index)}
-          onDrop={onDrop}
+          {...rowDrag(group, c, index)}
           onDoubleClick={() => setEditing({ command: c, groupId: group.id })}
           sx={{
             display: 'flex',
@@ -846,6 +1191,34 @@ export default function CommandsTool() {
                   label="background"
                   sx={{ height: 18, fontSize: 10 }}
                 />
+              )}
+              {c.when && (
+                <Tooltip title={`Runs only if ${describeCondition(c.when)}`}>
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    icon={
+                      <FilterAltOutlinedIcon
+                        sx={{ fontSize: '12px !important' }}
+                      />
+                    }
+                    label={describeCondition(c.when)}
+                    sx={{ height: 18, fontSize: 10, maxWidth: 200 }}
+                  />
+                </Tooltip>
+              )}
+              {!!c.timeout && c.wait && (
+                <Tooltip title={`Killed if it takes over ${c.timeout} s`}>
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    icon={
+                      <TimerOutlinedIcon sx={{ fontSize: '12px !important' }} />
+                    }
+                    label={`${c.timeout} s`}
+                    sx={{ height: 18, fontSize: 10 }}
+                  />
+                </Tooltip>
               )}
               {c.ready && (
                 <Tooltip
@@ -936,6 +1309,7 @@ export default function CommandsTool() {
   const renderGroup = (group: CommandGroup, index: number) => {
     const groupRun = runningGroups.get(group.id);
     const groupReady = !!groupRun?.readyAt;
+    const stepTotal = packageSteps(state, group).length;
     const open = !group.collapsed || searching;
     const isDropBefore = drop?.type === 'group' && drop.index === index;
     const dropAtEnd =
@@ -946,12 +1320,19 @@ export default function CommandsTool() {
       <React.Fragment key={group.id}>
         {isDropBefore && dropLine}
         <Paper
+          id={`pkg-${group.id}`}
           variant="outlined"
           onDragOver={(e) => onGroupDragOver(e, group, index)}
           onDrop={onDrop}
           sx={{
             borderRadius: 3,
             p: 1,
+            scrollMarginTop: 8,
+            transition: 'box-shadow .3s',
+            boxShadow:
+              flash === group.id
+                ? `0 0 0 2px ${theme.palette.primary.main}`
+                : 'none',
             opacity: drag?.type === 'group' && drag.id === group.id ? 0.4 : 1,
             borderColor:
               drag && drop?.type === 'command' && drop.groupId === group.id
@@ -1036,8 +1417,13 @@ export default function CommandsTool() {
                   variant="caption"
                   color="text.secondary"
                   sx={{ ml: 1 }}
+                  title={
+                    stepTotal !== group.commands.length
+                      ? `${stepTotal} steps with the packages inside`
+                      : undefined
+                  }
                 >
-                  {group.commands.length}
+                  {stepTotal}
                 </Typography>
               </Typography>
             )}
@@ -1124,7 +1510,7 @@ export default function CommandsTool() {
                 size="small"
                 variant="contained"
                 disableElevation
-                disabled={!group.commands.length}
+                disabled={!stepTotal}
                 onClick={() => start(group.commands, group.name, group)}
                 startIcon={<PlayArrowIcon />}
                 sx={{ ml: 0.5, py: 0.25, minWidth: 0 }}
@@ -1137,7 +1523,11 @@ export default function CommandsTool() {
             <Box
               sx={{ mt: 0.5 }}
               onDragOver={(e) => {
-                if (drag?.type !== 'group' || drag.id === group.id) return;
+                if (
+                  drag?.type !== 'group' ||
+                  !canNest(state, drag.id, group.id)
+                )
+                  return;
                 e.preventDefault();
                 e.stopPropagation();
                 if (drop?.type !== 'command' || drop.groupId !== group.id) {
@@ -1160,7 +1550,7 @@ export default function CommandsTool() {
                 >
                   {drag
                     ? 'Drop here'
-                    : 'Empty - add a command, drag one here, or drop a whole package to copy it in.'}
+                    : 'Empty - add a command, drag one here, or drop a whole package in (it runs as one step).'}
                 </Typography>
               )}
             </Box>
@@ -1348,9 +1738,18 @@ export default function CommandsTool() {
               color="error"
               variant="outlined"
               startIcon={<StopIcon />}
+              title={
+                selected.stopping
+                  ? 'Still not gone - kill everything with SIGKILL'
+                  : undefined
+              }
               onClick={() => window.electron.commands.stop(selected.id)}
             >
-              {selected.readyAt ? 'Stop all' : 'Stop'}
+              {selected.stopping
+                ? 'Force kill'
+                : selected.readyAt
+                  ? 'Stop all'
+                  : 'Stop'}
             </Button>
           ) : (
             selected && (
@@ -1426,7 +1825,33 @@ export default function CommandsTool() {
               </Box>
             )}
             {selected.steps.map((step, i) => (
-              <Box key={`${step.id}-${i}`}>
+              <Box key={`${step.id}-${i}`} sx={{ pl: step.section ? 1.5 : 0 }}>
+                {step.section &&
+                  step.section !== selected.steps[i - 1]?.section && (
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 0.75,
+                        ml: -1.5,
+                        px: 1,
+                        pt: 0.75,
+                        pb: 0.25,
+                      }}
+                    >
+                      <FolderIcon
+                        sx={{ fontSize: 14, color: 'text.secondary' }}
+                      />
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ fontWeight: 700 }}
+                        noWrap
+                      >
+                        {step.section}
+                      </Typography>
+                    </Box>
+                  )}
                 <Box
                   onClick={() =>
                     setSelectedStep(
@@ -1497,6 +1922,27 @@ export default function CommandsTool() {
                             : 'not ready'}
                       </Typography>
                     )}
+                    {step.stopping && (
+                      <Typography
+                        component="span"
+                        variant="caption"
+                        color="warning.main"
+                        sx={{ ml: 1 }}
+                      >
+                        stopping…
+                      </Typography>
+                    )}
+                    {step.note && step.status !== 'failed' && (
+                      <Typography
+                        component="span"
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ ml: 1 }}
+                        title={step.note}
+                      >
+                        {step.note}
+                      </Typography>
+                    )}
                   </Typography>
                   {step.status === 'failed' && step.code !== null && (
                     <Typography variant="caption" color="error.main">
@@ -1515,9 +1961,11 @@ export default function CommandsTool() {
                       step.status === 'waiting') && (
                       <Tooltip
                         title={
-                          step.status === 'waiting'
-                            ? 'Stop waiting - the package goes on'
-                            : 'Stop this step - the package goes on'
+                          step.stopping
+                            ? 'Still not gone - kill it with SIGKILL'
+                            : step.status === 'waiting'
+                              ? 'Stop waiting - the package goes on'
+                              : 'Stop this step - the package goes on'
                         }
                       >
                         <IconButton
@@ -1598,6 +2046,19 @@ export default function CommandsTool() {
                       }}
                     >
                       {step.tail}
+                      {step.note && (
+                        <Box
+                          component="span"
+                          sx={{
+                            display: 'block',
+                            mt: 0.5,
+                            color: 'text.primary',
+                            fontFamily: 'inherit',
+                          }}
+                        >
+                          Hint: {step.note}
+                        </Box>
+                      )}
                     </Box>
                   )}
               </Box>
@@ -1758,31 +2219,40 @@ export default function CommandsTool() {
           Duplicate
         </MenuItem>
         {groupMenu &&
-          groupMenu.group.commands.length > 0 &&
           state.groups
-            .filter((g) => g.id !== groupMenu.group.id)
+            .filter((g) => canNest(state, groupMenu.group.id, g.id))
             .map((g) => (
               <MenuItem
                 key={g.id}
                 onClick={() => {
-                  change(cloneGroupInto(state, groupMenu.group.id, g.id));
+                  change(addPackageLink(state, groupMenu.group.id, g.id));
+                  showHint(
+                    `\u201c${groupMenu.group.name}\u201d is now a step of \u201c${g.name}\u201d`,
+                  );
                   setGroupMenu(null);
                 }}
               >
                 <Typography variant="body2" noWrap>
-                  Copy into <b>{g.name}</b>
+                  Add to <b>{g.name}</b>
                 </Typography>
               </MenuItem>
             ))}
         <MenuItem
           sx={{ color: 'error.main' }}
           onClick={() => {
+            const users = groupMenu
+              ? packageUsers(state, groupMenu.group.id)
+              : [];
             if (
               groupMenu &&
-              (!groupMenu.group.commands.length ||
+              ((!groupMenu.group.commands.length && !users.length) ||
                 // eslint-disable-next-line no-alert
                 window.confirm(
-                  `Delete “${groupMenu.group.name}” and its ${groupMenu.group.commands.length} command(s)?`,
+                  `Delete “${groupMenu.group.name}” and its ${groupMenu.group.commands.length} command(s)?${
+                    users.length
+                      ? `\n\nIt's also a step of ${users.map((u) => `“${u.name}”`).join(', ')} - it will be taken out of ${users.length > 1 ? 'them' : 'it'}.`
+                      : ''
+                  }`,
                 ))
             ) {
               change(removeGroup(state, groupMenu.group.id));

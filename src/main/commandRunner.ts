@@ -1,6 +1,14 @@
 // Dev Notes > Commands: runs the user's own shell commands, one at a time or as an ordered
 // package (sequence). Runs live in the main process, so they keep going when the page is
 // closed; output and state are streamed to the renderer and kept (capped) for a re-open.
+//
+// A step's life:
+//   pending -> (only run if… -> skipped) -> running -> ok | failed | stopped
+//   with "ready when": running -> waiting (it ended, now its container/port...) -> ok
+//   background steps: the package goes on once they're up; they keep running
+// Stopping kills the step's whole process group (also what it started after its own
+// shell exited); a second Stop sends SIGKILL; a process that won't die is given up on
+// after a few seconds so nothing stays "running" forever.
 import { BrowserWindow, IpcMain, dialog } from 'electron';
 import { ChildProcess, spawn, execFile } from 'child_process';
 import fs from 'fs';
@@ -13,6 +21,19 @@ import {
   outputMatcher,
   waitUntilReady,
 } from './readiness';
+import {
+  RunCondition,
+  describeCondition,
+  exitHint,
+  normalizeCondition,
+} from './stepOptions';
+import {
+  ConditionStore,
+  changedVerdict,
+  fingerprint,
+  missingPaths,
+} from './conditionCheck';
+import { resolveShellEnv } from './shellEnv';
 
 export interface RunStepInput {
   id: string;
@@ -21,6 +42,9 @@ export interface RunStepInput {
   cwd?: string;
   wait?: boolean; // false = start it and go on (dev servers, watchers)
   ready?: ReadyCheck | null; // what the next step waits for
+  timeout?: number | null; // s a waited-for step may take before it's killed; 0 = no limit
+  when?: RunCondition | null; // run it only if…
+  section?: string | null; // the package it comes from inside another: "Stack › DB"
 }
 
 export type StepStatus =
@@ -36,12 +60,15 @@ export interface RunStep {
   id: string;
   name: string;
   command: string;
+  section: string | null;
   status: StepStatus;
   code: number | null;
   startedAt: number | null;
   endedAt: number | null;
   background: boolean;
   tail: string; // last lines of its output (shown right under a failed step)
+  note: string | null; // why it was skipped / ran, a hint why it failed…
+  stopping: boolean; // Stop pressed, not gone yet - pressing again kills it hard
   ready: string | null; // "port 5432 open"...
   readyState: 'waiting' | 'ready' | 'failed' | null;
   readyDetail: string | null; // the latest probe result
@@ -53,6 +80,7 @@ export interface CommandRun {
   label: string;
   groupId: string | null;
   status: 'running' | 'ok' | 'failed' | 'stopped';
+  stopping: boolean;
   startedAt: number;
   endedAt: number | null;
   // everything started and the background steps are ready (they keep running)
@@ -61,10 +89,35 @@ export interface CommandRun {
   output: string;
 }
 
+type Outcome = 'ok' | 'failed' | 'stopped';
+
+interface ExitInfo {
+  code: number | null;
+  signal: NodeJS.Signals | null;
+  error?: Error;
+  gaveUp?: boolean; // it didn't exit after being killed - we stopped waiting
+}
+
+/** A spawned process and everything it started (its own process group on macOS). */
+interface Proc {
+  child: ChildProcess;
+  exited: Promise<ExitInfo>;
+  done: boolean;
+  settle: (info: ExitInfo) => void;
+  giveUpTimer?: ReturnType<typeof setTimeout>;
+}
+
 const MAX_OUTPUT = 400 * 1024; // per run
 const MAX_RUNS = 15;
+const MAX_STEPS = 300;
+const BACKGROUND_GRACE_MS = 1500; // a background step without "ready when" counts as up
+const KILL_GRACE_MS = 4000; // SIGTERM -> SIGKILL
+const GIVE_UP_MS = 9000; // after Stop: stop waiting for a process that won't exit
+const DRAIN_MS = 800; // after exit: wait this long for the last output
+const CHECK_TIMEOUT_MS = 60000; // an "only run if it succeeds" check
 // eslint-disable-next-line no-control-regex
 const ANSI = /\u001b\[[0-9;?]*[ -/]*[@-~]|\u001b\][^\u0007]*\u0007|\r(?!\n)/g;
+const isWin = process.platform === 'win32';
 
 type ContainerProbe = (
   name: string,
@@ -73,6 +126,7 @@ let containerProbe: ContainerProbe = async () => ({
   ready: false,
   detail: 'docker unavailable',
 });
+let conditions = new ConditionStore(null);
 
 const READY_TYPES = ['container', 'port', 'url', 'output', 'quiet'];
 export const normalizeReady = (
@@ -92,10 +146,15 @@ export const normalizeReady = (
 };
 
 const runs = new Map<string, CommandRun>();
-const children = new Map<string, ChildProcess[]>(); // runId -> live processes
-const stopRequested = new Set<string>();
-const stepChildren = new Map<string, ChildProcess>(); // "runId:index" -> its process
+const pending = new Map<
+  string,
+  { inputs: RunStepInput[]; groupId: string | null; stopOnError: boolean }
+>();
+const procs = new Map<string, Proc[]>(); // runId -> every process it started
+const stepProcs = new Map<string, Proc>(); // "runId:index" -> the step's current process
+const stopRequested = new Set<string>(); // runs
 const stepStops = new Set<string>(); // "runId:index" - steps stopped on their own
+const chainDone = new Set<string>(); // runs whose sequence reached its end
 let counter = 0;
 
 const send = (channel: string, payload: unknown) => {
@@ -159,15 +218,23 @@ export const expandHome = (dir?: string) => {
   return trimmed;
 };
 
-// macOS/Linux: the login shell, so PATH from .zprofile (brew, nvm, sdkman...) applies.
-// Windows: PowerShell.
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+// --- processes --------------------------------------------------------------------
+
+// macOS/Linux: the login shell (with the env of the interactive one, see shellEnv), so
+// any CLI works the way it does in a terminal. Windows: PowerShell.
 const shellFor = (command: string): [string, string[]] => {
-  if (process.platform === 'win32') {
+  if (isWin) {
     return [
       'powershell.exe',
       [
         '-NoLogo',
         '-NoProfile',
+        '-NonInteractive',
         '-ExecutionPolicy',
         'Bypass',
         '-Command',
@@ -178,31 +245,134 @@ const shellFor = (command: string): [string, string[]] => {
   return [process.env.SHELL || '/bin/zsh', ['-l', '-c', command]];
 };
 
-const killTree = (child: ChildProcess) => {
-  if (!child.pid || child.exitCode !== null) return;
-  if (process.platform === 'win32') {
+const stepEnv = async () => ({
+  ...(await resolveShellEnv()),
+  FORCE_COLOR: '0',
+  CLICOLOR: '0',
+  // nothing can answer a prompt: fail instead of hanging forever
+  GIT_TERMINAL_PROMPT: '0',
+  GIT_PAGER: 'cat',
+  PAGER: 'cat',
+  npm_config_yes: 'true', // npx: don't ask "Ok to proceed?"
+});
+
+/** Is anything of its process group still alive (macOS/Linux)? */
+const groupAlive = (pid?: number) => {
+  if (!pid || isWin) return false;
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch (e) {
+    return false;
+  }
+};
+
+const procAlive = (proc: Proc) => !proc.done || groupAlive(proc.child.pid);
+
+const signalTree = (child: ChildProcess, signal: NodeJS.Signals) => {
+  if (!child.pid) return;
+  if (isWin) {
     execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], () => {});
     return;
   }
   try {
-    process.kill(-child.pid, 'SIGTERM'); // whole process group
+    process.kill(-child.pid, signal); // the whole group, even if its shell is gone
   } catch (e) {
-    child.kill('SIGTERM');
-  }
-  setTimeout(() => {
-    if (child.exitCode === null && child.pid) {
-      try {
-        process.kill(-child.pid, 'SIGKILL');
-      } catch (e) {
-        child.kill('SIGKILL');
-      }
+    try {
+      child.kill(signal);
+    } catch (err) {
+      // already gone
     }
-  }, 3000);
+  }
+};
+
+/** SIGTERM (then SIGKILL) its process tree; gives up waiting if it still won't exit. */
+const terminate = (proc: Proc, force = false) => {
+  signalTree(proc.child, force ? 'SIGKILL' : 'SIGTERM');
+  if (!force && !isWin) {
+    setTimeout(() => {
+      if (procAlive(proc)) signalTree(proc.child, 'SIGKILL');
+    }, KILL_GRACE_MS);
+  }
+  if (!proc.giveUpTimer || force) {
+    if (proc.giveUpTimer) clearTimeout(proc.giveUpTimer);
+    proc.giveUpTimer = setTimeout(
+      () => proc.settle({ code: null, signal: null, gaveUp: true }),
+      force ? 3000 : GIVE_UP_MS,
+    );
+  }
+};
+
+const startProc = (
+  runId: string,
+  command: string,
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  onData: (text: string) => void,
+): Proc => {
+  const [bin, args] = shellFor(command);
+  const child = spawn(bin, args, {
+    cwd,
+    env,
+    stdio: ['ignore', 'pipe', 'pipe'], // no stdin: a prompt gets EOF instead of hanging
+    detached: !isWin, // own process group, so Stop kills its children too
+    windowsHide: true,
+  });
+  let resolveExit: (info: ExitInfo) => void = () => {};
+  const exited = new Promise<ExitInfo>((resolve) => {
+    resolveExit = resolve;
+  });
+  const proc: Proc = {
+    child,
+    exited,
+    done: false,
+    settle: (info) => {
+      if (proc.done) return;
+      proc.done = true;
+      if (proc.giveUpTimer) clearTimeout(proc.giveUpTimer);
+      resolveExit(info);
+    },
+  };
+  child.stdout?.on('data', (d: Buffer) => onData(d.toString()));
+  child.stderr?.on('data', (d: Buffer) => onData(d.toString()));
+  child.once('error', (error) =>
+    proc.settle({ code: null, signal: null, error }),
+  );
+  child.once('exit', (code, signal) => {
+    // let the pipes drain; something it started may hold them open forever
+    const timer = setTimeout(() => proc.settle({ code, signal }), DRAIN_MS);
+    child.once('close', () => {
+      clearTimeout(timer);
+      proc.settle({ code, signal });
+    });
+  });
+  procs.set(runId, [...(procs.get(runId) || []), proc]);
+  return proc;
+};
+
+// --- the run ----------------------------------------------------------------------
+
+const conditionKey = (input: RunStepInput, cwd: string) =>
+  `${input.id}|${cwd}|${input.when?.target || ''}`;
+
+/** Remember what a "changed" step saw once it ran fine (next time it compares). */
+const rememberConditions = (run: CommandRun) => {
+  const saved = pending.get(run.id);
+  if (!saved) return;
+  run.steps.forEach((s, i) => {
+    const input = saved.inputs[i];
+    if (s.status === 'ok' && input?.when?.type === 'changed') {
+      const cwd = expandHome(input.cwd);
+      conditions.set(
+        conditionKey(input, cwd),
+        fingerprint(cwd, input.when.target),
+      );
+    }
+  });
 };
 
 const finishRun = (run: CommandRun) => {
-  // background steps still going, or the chain hasn't reached the end yet
-  if (run.status !== 'running') return;
+  if (run.status !== 'running' || !chainDone.has(run.id)) return;
   const live = run.steps.filter(
     (s) =>
       s.status === 'running' ||
@@ -223,6 +393,7 @@ const finishRun = (run: CommandRun) => {
         run,
         `\n── Ready in ${((run.readyAt - run.startedAt) / 1000).toFixed(1)} s · ${live.length} still running in the background (Stop ends ${live.length > 1 ? 'them' : 'it'}) ──\n`,
       );
+      rememberConditions(run);
       publish(run);
     }
     return;
@@ -231,10 +402,13 @@ const finishRun = (run: CommandRun) => {
   if (stopRequested.has(run.id)) run.status = 'stopped';
   else
     run.status = run.steps.some((s) => s.status === 'failed') ? 'failed' : 'ok';
+  run.stopping = false;
+  if (!run.readyAt) rememberConditions(run);
   stopRequested.delete(run.id);
-  children.delete(run.id);
+  chainDone.delete(run.id);
+  procs.delete(run.id);
   run.steps.forEach((s, i) => {
-    stepChildren.delete(`${run.id}:${i}`);
+    stepProcs.delete(`${run.id}:${i}`);
     stepStops.delete(`${run.id}:${i}`);
   });
   append(
@@ -244,126 +418,185 @@ const finishRun = (run: CommandRun) => {
   publish(run);
 };
 
-const skipRest = (run: CommandRun, index: number) => {
-  run.steps.slice(index + 1).forEach((s) => {
-    if (s.status === 'pending') s.status = 'skipped';
-  });
-  finishRun(run);
-};
-
-const pending = new Map<
-  string,
-  { inputs: RunStepInput[]; groupId: string | null; stopOnError: boolean }
->();
-
-const startStep = (
+/**
+ * Runs step `index`. Resolves when the package may go on: a waited-for step when it
+ * ended (and is ready), a background one when it's up - it keeps running after that.
+ */
+const runStep = async (
   run: CommandRun,
   index: number,
   input: RunStepInput,
-  stopOnError: boolean,
-) => {
+): Promise<Outcome> => {
   const step = run.steps[index];
-  const check = input.ready || null;
   const key = `${run.id}:${index}`;
-  const stepStopped = () => stepStops.has(key);
-  const next = () => {
-    if (run.status !== 'running' || stopRequested.has(run.id)) return;
-    if (index + 1 < run.steps.length) {
-      if (run.steps[index + 1].status !== 'pending') return;
-      // eslint-disable-next-line @typescript-eslint/no-use-before-define
-      runFrom(run, index + 1, stopOnError);
-    } else finishRun(run);
-  };
-  const failAndGoOn = () => {
-    if (stopOnError) skipRest(run, index);
-    else next();
-  };
+  const stopped = () => stopRequested.has(run.id) || stepStops.has(key);
+  const check = input.ready || null;
   const cwd = expandHome(input.cwd);
-  step.status = 'running';
-  step.startedAt = Date.now();
-  append(
-    run,
-    `${index ? '\n' : ''}▶ ${input.name}${input.cwd ? `  (${input.cwd})` : ''}\n$ ${input.command}\n`,
-    index,
-  );
-  // what the process itself printed (not our own "waiting…" lines) - for "output
-  // contains" checks and the error tail
-  let processOutput = '';
-  const ownOutput = () => processOutput;
-  publish(run);
-
-  if (!fs.existsSync(cwd)) {
-    step.status = 'failed';
-    step.endedAt = Date.now();
-    append(run, `Working directory not found: ${cwd}\n`, index);
-    step.tail = `Working directory not found: ${cwd}`;
-    failAndGoOn();
-    return;
-  }
-
-  const [bin, args] = shellFor(input.command);
-  const child = spawn(bin, args, {
-    cwd,
-    env: { ...process.env, FORCE_COLOR: '0', CLICOLOR: '0' },
-    detached: process.platform !== 'win32', // own process group, so Stop kills children too
-    windowsHide: true,
-  });
-  children.set(run.id, [...(children.get(run.id) || []), child]);
-  stepChildren.set(key, child);
   const prefix =
     step.background && run.steps.length > 1 ? `[${input.name}] ` : '';
-  let lastOutputAt: number | null = null;
-  let settled = false;
-  const liveMatch =
-    !step.background && check?.type === 'output'
-      ? outputMatcher(check.target)
-      : null;
-  const onData = (data: Buffer) => {
-    const text = data.toString();
-    lastOutputAt = Date.now();
-    processOutput = (processOutput + text.replace(ANSI, '')).slice(-MAX_OUTPUT);
-    append(run, prefix ? text.replace(/^(?=.)/gm, prefix) : text, index);
-    if (
-      liveMatch &&
-      !settled &&
-      !step.background &&
-      run.status === 'running' &&
-      !stopRequested.has(run.id) &&
-      liveMatch(processOutput)
-    ) {
-      step.background = true;
-      step.readyState = 'ready';
-      step.readyAt = Date.now();
-      step.readyDetail = 'line found';
-      append(
-        run,
-        '✔ ready (line found) - it keeps running in the background\n',
-        index,
-      );
-      publish(run);
-      next();
-    }
-  };
-  child.stdout?.on('data', onData);
-  child.stderr?.on('data', onData);
+  const say = (text: string) => append(run, text, index);
 
-  // "Ready when…": what the next step waits for
-  const waitReady = async () => {
-    if (!check) return { ok: true, detail: '' };
+  step.status = 'running';
+  step.startedAt = Date.now();
+  say(
+    `${index ? '\n' : ''}▶ ${step.section ? `${step.section} › ` : ''}${input.name}${input.cwd ? `  (${input.cwd})` : ''}\n$ ${input.command}\n`,
+  );
+  publish(run);
+
+  const end = (status: StepStatus, tail?: string): Outcome => {
+    step.status = status;
+    step.endedAt = Date.now();
+    step.stopping = false;
+    if (tail !== undefined) step.tail = tail;
+    publish(run);
+    if (status === 'failed') return 'failed';
+    return status === 'stopped' ? 'stopped' : 'ok';
+  };
+  const fail = (message: string) => {
+    say(`✖ ${message}\n`);
+    return end('failed', message);
+  };
+
+  let isDir = false;
+  try {
+    isDir = fs.statSync(cwd).isDirectory();
+  } catch (e) {
+    isDir = false;
+  }
+  if (!isDir) return fail(`Working directory not found: ${cwd}`);
+
+  const env = await stepEnv();
+  if (stopped()) return end('stopped');
+
+  // --- only run if… ---
+  if (input.when) {
+    const { when } = input;
+    let verdict: { run: boolean; reason: string };
+    if (when.type === 'changed') {
+      verdict = changedVerdict(
+        conditions.get(conditionKey(input, cwd)),
+        fingerprint(cwd, when.target),
+      );
+    } else if (when.type === 'missing') {
+      const missing = missingPaths(cwd, when.target);
+      verdict = missing.length
+        ? { run: true, reason: `${missing.join(', ')} missing` }
+        : { run: false, reason: `${when.target} already there` };
+    } else {
+      say(`? only if \`${when.target}\` succeeds\n`);
+      const probe = startProc(run.id, when.target, cwd, env, (t) => say(t));
+      stepProcs.set(key, probe);
+      const limit = setTimeout(() => terminate(probe), CHECK_TIMEOUT_MS);
+      const res = await probe.exited;
+      clearTimeout(limit);
+      if (stopped()) return end('stopped');
+      if (res.code === 0) verdict = { run: true, reason: 'its check passed' };
+      else {
+        verdict = {
+          run: false,
+          reason: res.gaveUp
+            ? 'its check hung'
+            : `its check exited with ${res.code ?? res.signal ?? '?'}`,
+        };
+      }
+    }
+    step.note = verdict.reason;
+    if (!verdict.run) {
+      say(`↷ skipped: ${verdict.reason}\n`);
+      return end('skipped');
+    }
+    say(`→ runs: ${verdict.reason}\n`);
+    publish(run);
+  }
+
+  // --- the process ---
+  let output = ''; // what the process printed (not our own lines)
+  let lastOutputAt: number | null = null;
+  let watchOutput: (() => void) | null = null;
+  let proc: Proc;
+  try {
+    proc = startProc(run.id, input.command, cwd, env, (text) => {
+      lastOutputAt = Date.now();
+      output = (output + text.replace(ANSI, '')).slice(-MAX_OUTPUT);
+      say(prefix ? text.replace(/^(?=.)/gm, prefix) : text);
+      watchOutput?.();
+    });
+  } catch (e: any) {
+    return fail(`Couldn't start it: ${e?.message || e}`);
+  }
+  stepProcs.set(key, proc);
+
+  // a waited-for step may take this long
+  let timedOut = false;
+  const limitSeconds = Number(input.timeout) || 0;
+  let limit: ReturnType<typeof setTimeout> | null = null;
+  if (!step.background && limitSeconds > 0) {
+    limit = setTimeout(() => {
+      timedOut = true;
+      say(`⏱ time limit of ${limitSeconds} s reached - stopping it\n`);
+      terminate(proc);
+    }, limitSeconds * 1000);
+  }
+
+  // decided = its status was set by the ready check (not by how the process ended)
+  let decided = false;
+  let exitInfo: ExitInfo | null = null;
+  const final: Promise<Outcome> = proc.exited.then((info) => {
+    if (limit) clearTimeout(limit);
+    exitInfo = info;
+    step.code = info.code;
+    step.tail = lastLines(output);
+    if (info.gaveUp) {
+      step.note = `it didn't exit after being stopped (pid ${proc.child.pid}) - kill it by hand if it still runs`;
+      say(`⚠ ${step.note}\n`);
+    } else if (
+      !step.background &&
+      info.code === 0 &&
+      groupAlive(proc.child.pid)
+    ) {
+      step.note = 'it left processes running in the background';
+    }
+    if (decided) {
+      step.endedAt = step.endedAt || Date.now();
+      publish(run);
+      return step.status === 'failed' ? 'failed' : 'ok';
+    }
+    if (stopped()) return end('stopped');
+    if (timedOut) {
+      const message = `Timed out after ${limitSeconds} s`;
+      say(`✖ ${message}\n`);
+      return end(
+        'failed',
+        [message, lastLines(output, 4)].filter(Boolean).join('\n'),
+      );
+    }
+    if (info.code === 0) return 'ok';
+    let reason = `exited with code ${info.code ?? '?'}`;
+    if (info.error) reason = `couldn't start it: ${info.error.message}`;
+    else if (info.signal) reason = `killed by ${info.signal}`;
+    const hint = exitHint(info.code, info.signal, output);
+    say(`${prefix}✖ ${reason}\n${hint ? `${prefix}  ${hint}\n` : ''}`);
+    step.note = hint;
+    return end('failed', lastLines(output) || reason);
+  });
+
+  const waitReady = async (rc: ReadyCheck) => {
     step.readyState = 'waiting';
     step.readyDetail = null;
-    append(run, `${prefix}… waiting until ${describeReady(check)}\n`, index);
+    say(`${prefix}… waiting until ${describeReady(rc)}\n`);
     publish(run);
-    const result = await waitUntilReady(check, {
-      output: ownOutput,
+    const result = await waitUntilReady(rc, {
+      output: () => output,
       lastOutputAt: () => lastOutputAt,
       aborted: () => {
-        if (stopRequested.has(run.id) || stepStopped()) return 'stopped';
-        if (!settled) return null;
-        // a background process that ended: fatal unless it exited fine and the
-        // check is about something else (a container, a port...)
-        if (step.code !== 0) return `it exited with code ${step.code ?? '?'}`;
-        if (check.type === 'output') return 'it ended without printing that';
+        if (stopped()) return 'stopped';
+        if (!exitInfo) return null;
+        // it ended: fatal unless it exited fine and the check is about something
+        // else (a container, a port...)
+        if (exitInfo.code !== 0) {
+          return `it exited with code ${exitInfo.code ?? exitInfo.signal ?? '?'}`;
+        }
+        if (rc.type === 'output') return 'it ended without printing that';
         return null;
       },
       containerReady: containerProbe,
@@ -375,162 +608,159 @@ const startStep = (
       },
     });
     step.readyState = result.ok ? 'ready' : 'failed';
-    if (result.ok) step.readyAt = Date.now();
     step.readyDetail = result.detail;
-    append(
-      run,
+    if (result.ok) step.readyAt = Date.now();
+    say(
       result.ok
         ? `${prefix}✔ ready (${result.detail})\n`
         : `${prefix}✖ not ready: ${result.detail}\n`,
-      index,
     );
     return result;
   };
 
-  const done = (code: number | null, error?: Error) => {
-    if (settled) return;
-    settled = true;
-    step.code = code;
-    step.endedAt = Date.now();
-    if (stopRequested.has(run.id) || stepStopped()) step.status = 'stopped';
-    else step.status = code === 0 ? 'ok' : 'failed';
-    if (error) append(run, `${error.message}\n`, index);
-    if (step.status === 'failed') {
-      append(run, `${prefix}✖ exited with code ${code ?? '?'}\n`, index);
-    }
-    step.tail = lastLines(ownOutput());
-    if (step.background) {
-      if (step.readyState === 'waiting' && step.status === 'ok') {
-        // still waiting for its container / port...: keep the run going
-        step.status = 'waiting';
+  // it ended after the package went on (or while its container check still runs)
+  const whenItEnds = () =>
+    final.then(() => {
+      if (!decided && step.status === 'running') {
+        if (step.readyState === 'waiting' && exitInfo?.code === 0) {
+          step.status = 'waiting';
+        } else if (exitInfo?.code === 0) end('ok');
       }
       publish(run);
-      finishRun(run); // the chain went on already (or goes on after ready)
-      return;
-    }
-    if (stopRequested.has(run.id)) {
-      publish(run);
-      skipRest(run, index);
-      return;
-    }
-    if (stepStopped()) {
-      // only this step was stopped: the package goes on
-      publish(run);
-      next();
-      return;
-    }
-    if (step.status === 'failed') {
-      publish(run);
-      failAndGoOn();
-      return;
-    }
-    if (!check) {
-      publish(run);
-      next();
-      return;
-    }
-    // finished fine - now wait for what it started (container healthy, port open...)
-    if (check.type === 'output' || check.type === 'quiet') {
-      const found =
-        check.type === 'quiet' || outputMatcher(check.target)(ownOutput());
-      step.readyState = found ? 'ready' : 'failed';
-      step.readyDetail = found ? 'done' : 'not in the output';
-      if (!found) {
-        step.status = 'failed';
-        step.tail = `Its output doesn't contain ${check.target}`;
-        append(run, `✖ ${step.tail}\n`, index);
-        publish(run);
-        failAndGoOn();
-        return;
-      }
-      publish(run);
-      next();
-      return;
-    }
-    step.status = 'waiting';
-    publish(run);
-    waitReady().then((result) => {
-      step.endedAt = Date.now();
-      if (stopRequested.has(run.id)) {
-        step.status = 'stopped';
-        publish(run);
-        skipRest(run, index);
-        return result;
-      }
-      if (stepStopped()) {
-        step.status = 'stopped';
-        publish(run);
-        next();
-        return result;
-      }
-      step.status = result.ok ? 'ok' : 'failed';
-      if (!result.ok) step.tail = `Not ready: ${result.detail}`;
-      publish(run);
-      if (result.ok) next();
-      else failAndGoOn();
-      return result;
-    });
-  };
-  child.on('error', (error) => done(null, error));
-  child.on('close', (code) => done(code));
-
-  if (step.background) {
-    if (!check) {
-      // No "ready when": give it a moment to start before the next step
-      setTimeout(() => {
-        if (stopRequested.has(run.id)) return;
-        if (step.status === 'running') {
-          step.readyAt = Date.now(); // no "ready when": started counts as up
-          publish(run);
-        }
-        next();
-      }, 1500);
-      return;
-    }
-    waitReady().then((result) => {
-      if (step.status === 'waiting') {
-        // the process already ended fine (e.g. compose up -d); this was the last wait
-        step.status = result.ok ? 'ok' : 'failed';
-      }
-      if (stopRequested.has(run.id)) {
-        publish(run);
-        finishRun(run);
-        return result;
-      }
-      if (stepStopped()) {
-        step.status = 'stopped';
-        publish(run);
-        next();
-        finishRun(run);
-        return result;
-      }
-      if (result.ok) {
-        publish(run);
-        next();
-        finishRun(run);
-        return result;
-      }
-      step.status = 'failed';
-      step.tail = `Not ready: ${result.detail}`;
-      publish(run);
-      killTree(child);
-      failAndGoOn();
       finishRun(run);
-      return result;
+      return null;
     });
+
+  // --- background: go on once it's up, it keeps running ---
+  if (step.background) {
+    whenItEnds();
+    if (!check) {
+      const first = await Promise.race([
+        final,
+        sleep(BACKGROUND_GRACE_MS).then(() => null),
+      ]);
+      if (first) return first === 'ok' ? end('ok') : first;
+      if (stopped()) return 'stopped';
+      step.readyAt = Date.now(); // no "ready when": started counts as up
+      publish(run);
+      return 'ok';
+    }
+    const result = await waitReady(check);
+    if (stopped()) {
+      if (!proc.done) return 'stopped'; // Stop kills it; `final` records it
+      decided = true;
+      return end('stopped');
+    }
+    decided = !result.ok || !!exitInfo;
+    if (!result.ok) {
+      if (procAlive(proc)) terminate(proc);
+      return end('failed', `Not ready: ${result.detail}`);
+    }
+    // it ended fine already (compose up -d…) and now its container is ready
+    if (exitInfo) return end('ok');
+    publish(run);
+    return 'ok';
   }
+
+  // --- waited for, with "output contains": a server that prints its ready line
+  // (nest start, vite…) goes on in the background right then ---
+  if (check?.type === 'output') {
+    const matches = outputMatcher(check.target);
+    const seen = new Promise<'seen'>((resolve) => {
+      watchOutput = () => {
+        if (matches(output)) resolve('seen');
+      };
+      watchOutput();
+    });
+    const first = await Promise.race([final, seen]);
+    if (first === 'seen' && !exitInfo && !stopped()) {
+      watchOutput = null;
+      if (limit) clearTimeout(limit);
+      step.background = true;
+      step.readyState = 'ready';
+      step.readyDetail = 'line found';
+      step.readyAt = Date.now();
+      say('✔ ready (line found) - it keeps running in the background\n');
+      publish(run);
+      whenItEnds();
+      return 'ok';
+    }
+  }
+
+  const outcome = await final;
+  if (outcome !== 'ok') return outcome;
+  if (!check) return end('ok');
+  if (check.type === 'quiet') {
+    step.readyState = 'ready';
+    step.readyDetail = 'done';
+    return end('ok');
+  }
+  if (check.type === 'output') {
+    if (outputMatcher(check.target)(output)) {
+      step.readyState = 'ready';
+      step.readyDetail = 'done';
+      return end('ok');
+    }
+    step.readyState = 'failed';
+    step.readyDetail = 'not in the output';
+    return fail(`Its output doesn't contain ${check.target}`);
+  }
+  // it ended fine - now wait for what it started (container healthy, port open...)
+  step.status = 'waiting';
+  publish(run);
+  const result = await waitReady(check);
+  if (stopped()) return end('stopped');
+  if (!result.ok) return end('failed', `Not ready: ${result.detail}`);
+  return end('ok');
 };
 
-const runFrom = (run: CommandRun, index: number, stopOnError: boolean) => {
+const drive = async (run: CommandRun, stopOnError: boolean) => {
   const { inputs } = pending.get(run.id)!;
-  startStep(run, index, inputs[index], stopOnError);
+  for (let i = 0; i < inputs.length; i += 1) {
+    if (stopRequested.has(run.id)) break;
+    let outcome: Outcome;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      outcome = await runStep(run, i, inputs[i]);
+    } catch (e: any) {
+      const step = run.steps[i];
+      step.status = 'failed';
+      step.endedAt = Date.now();
+      step.tail = `Internal error: ${e?.message || e}`;
+      append(run, `✖ ${step.tail}\n`, i);
+      outcome = 'failed';
+    }
+    if (outcome === 'failed' && stopOnError) break;
+  }
+  const why = stopRequested.has(run.id) ? 'stopped' : 'an earlier step failed';
+  run.steps.forEach((s) => {
+    if (s.status === 'pending') {
+      s.status = 'skipped';
+      s.note = why;
+    }
+  });
+  chainDone.add(run.id);
+  publish(run);
+  finishRun(run);
 };
 
 export const startRun = (
   inputs: RunStepInput[],
   options: { label: string; groupId?: string | null; stopOnError?: boolean },
 ): RunSnapshot | null => {
-  const steps = inputs.filter((s) => s && String(s.command || '').trim());
+  const steps = inputs
+    .filter((s) => s && String(s.command || '').trim())
+    .slice(0, MAX_STEPS)
+    .map((s) => ({
+      ...s,
+      id: String(s.id),
+      name: String(s.name || s.command),
+      command: String(s.command),
+      ready: normalizeReady(s.ready),
+      when: normalizeCondition(s.when),
+      timeout: Math.max(0, Number(s.timeout) || 0),
+      section: s.section ? String(s.section) : null,
+    }));
   if (!steps.length) return null;
   counter += 1;
   const run: CommandRun = {
@@ -538,21 +768,25 @@ export const startRun = (
     label: String(options.label || steps[0].name),
     groupId: options.groupId || null,
     status: 'running',
+    stopping: false,
     startedAt: Date.now(),
     endedAt: null,
     readyAt: null,
     output: '',
     steps: steps.map((s) => ({
-      id: String(s.id),
-      name: String(s.name || s.command),
-      command: String(s.command),
+      id: s.id,
+      name: s.name,
+      command: s.command,
+      section: s.section,
       status: 'pending',
       code: null,
       startedAt: null,
       endedAt: null,
       background: s.wait === false,
       tail: '',
-      ready: describeReady(normalizeReady(s.ready)) || null,
+      note: s.when ? `only if ${describeCondition(s.when)}` : null,
+      stopping: false,
+      ready: describeReady(s.ready) || null,
       readyState: null,
       readyDetail: null,
       readyAt: null,
@@ -562,12 +796,7 @@ export const startRun = (
   pending.set(run.id, {
     groupId: options.groupId || null,
     stopOnError: options.stopOnError !== false,
-    inputs: steps.map((s) => ({
-      ...s,
-      ready: normalizeReady(s.ready),
-      name: String(s.name || s.command),
-      command: String(s.command),
-    })),
+    inputs: steps,
   });
   // Keep the newest runs (never drop a running one)
   const finished = [...runs.values()].filter((r) => r.status !== 'running');
@@ -577,7 +806,7 @@ export const startRun = (
     pending.delete(oldest.id);
     stepOutputs.delete(oldest.id);
   }
-  runFrom(run, 0, options.stopOnError !== false);
+  drive(run, options.stopOnError !== false);
   return snapshot(run);
 };
 
@@ -613,29 +842,44 @@ export const setContainerProbe = (probe: ContainerProbe) => {
   containerProbe = probe;
 };
 
-export const stopRun = (runId: string) => {
+/** For tests / wiring: where "only run if changed" keeps what it saw. */
+export const setConditionFile = (file: string | null) => {
+  conditions = new ConditionStore(file);
+};
+
+/** Stops a whole run. Pressed again while it's stopping: kill -9 everything. */
+export const stopRun = (runId: string, force = false) => {
   const run = runs.get(runId);
   if (!run || run.status !== 'running') return false;
+  const hard = force || run.stopping;
   stopRequested.add(runId);
-  (children.get(runId) || []).forEach(killTree);
-  // Steps that never started
-  if (!run.steps.some((s) => s.status === 'running')) skipRest(run, -1);
+  run.stopping = true;
+  run.steps.forEach((s) => {
+    if (s.status === 'running' || s.status === 'waiting') s.stopping = true;
+  });
+  append(run, hard ? '\n■ Killing everything (SIGKILL)\n' : '\n■ Stopping…\n');
+  (procs.get(runId) || []).filter(procAlive).forEach((p) => terminate(p, hard));
+  publish(run);
   return true;
 };
 
 /** Stops one step (its process, or its "ready when" wait); the package goes on. */
-export const stopStep = (runId: string, index: number) => {
+export const stopStep = (runId: string, index: number, force = false) => {
   const run = runs.get(runId);
   const step = run?.steps[index];
   if (!run || !step || run.status !== 'running') return false;
   if (step.status !== 'running' && step.status !== 'waiting') return false;
   const key = `${runId}:${index}`;
+  const hard = force || step.stopping;
   stepStops.add(key);
-  append(run, `■ Stopping ${step.name}\n`, index);
-  const child = stepChildren.get(key);
-  if (child && child.exitCode === null && child.signalCode === null) {
-    killTree(child);
-  }
+  step.stopping = true;
+  append(
+    run,
+    hard ? `■ Killing ${step.name} (SIGKILL)\n` : `■ Stopping ${step.name}\n`,
+    index,
+  );
+  const proc = stepProcs.get(key);
+  if (proc && procAlive(proc)) terminate(proc, hard);
   publish(run);
   return true;
 };
@@ -648,17 +892,21 @@ export const stopAllRuns = () => {
 
 export const registerCommandIpc = (
   ipcMain: IpcMain,
-  wiring: { containerReady?: ContainerProbe } = {},
+  wiring: { containerReady?: ContainerProbe; conditionFile?: string } = {},
 ) => {
   if (wiring.containerReady) containerProbe = wiring.containerReady;
+  if (wiring.conditionFile) setConditionFile(wiring.conditionFile);
+  resolveShellEnv(); // warm up: the first run shouldn't wait for the shell
   ipcMain.handle('commands:run', (event, inputs: RunStepInput[], options) =>
     startRun(Array.isArray(inputs) ? inputs : [], options || {}),
   );
-  ipcMain.handle('commands:stop', (event, runId: string) =>
-    stopRun(String(runId)),
+  ipcMain.handle('commands:stop', (event, runId: string, force?: boolean) =>
+    stopRun(String(runId), !!force),
   );
-  ipcMain.handle('commands:stop-step', (event, runId: string, index: number) =>
-    stopStep(String(runId), Number(index)),
+  ipcMain.handle(
+    'commands:stop-step',
+    (event, runId: string, index: number, force?: boolean) =>
+      stopStep(String(runId), Number(index), !!force),
   );
   ipcMain.handle('commands:runs', () =>
     [...runs.values()].map(snapshot).sort((a, b) => b.startedAt - a.startedAt),

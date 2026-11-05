@@ -1,6 +1,10 @@
 import {
   CommandsState,
-  cloneGroupInto,
+  COMMAND_PRESETS,
+  addPackageLink,
+  canNest,
+  packageSteps,
+  packageUsers,
   duplicateGroup,
   commandLabel,
   moveCommand,
@@ -102,23 +106,109 @@ describe('commandsModel', () => {
     );
   });
 
-  it('copies a package into another one (independent copies)', () => {
-    const next = cloneGroupInto(state(), 'g1', 'g2', 0);
-    expect(next.groups[1].commands.map((c) => c.name)).toEqual([
+  it('puts a whole package into another one as a link, not a copy', () => {
+    const next = addPackageLink(state(), 'g1', 'g2', 0);
+    const link = next.groups[1].commands[0];
+    expect(link.packageId).toBe('g1');
+    expect(next.groups[1].commands).toHaveLength(2); // one entry, not 3 copies
+    expect(
+      packageSteps(next, next.groups[1]).map((c) => [c.id, c.section]),
+    ).toEqual([
+      ['a', 'DB'],
+      ['b', 'DB'],
+      ['c', 'DB'],
+      ['d', null],
+    ]);
+    // edits to the inner package show up where it's used
+    const edited = saveCommand(next, 'g1', cmd('e'));
+    expect(packageSteps(edited, edited.groups[1]).map((c) => c.id)).toEqual([
       'a',
       'b',
       'c',
+      'e',
       'd',
     ]);
-    const copyIds = next.groups[1].commands.slice(0, 3).map((c) => c.id);
-    expect(copyIds).not.toContain('a'); // new ids
-    expect(new Set(copyIds).size).toBe(3);
-    expect(next.groups[0].commands).toHaveLength(3); // source untouched
+    expect(packageUsers(next, 'g1').map((g) => g.id)).toEqual(['g2']);
+  });
+
+  it('refuses loops and cleans links up', () => {
+    const one = addPackageLink(state(), 'g1', 'g2');
+    expect(canNest(one, 'g2', 'g1')).toBe(false); // g2 already contains g1
+    expect(addPackageLink(one, 'g2', 'g1')).toBe(one);
+    expect(canNest(one, 'g1', 'g1')).toBe(false);
+    // deeper: g3 > g2 > g1 - g1 can't take g3
+    const three: CommandsState = {
+      groups: [
+        ...one.groups,
+        {
+          id: 'g3',
+          name: 'All',
+          stopOnError: true,
+          collapsed: false,
+          commands: [],
+        },
+      ],
+    };
+    const nested = addPackageLink(three, 'g2', 'g3');
+    expect(canNest(nested, 'g3', 'g1')).toBe(false);
     expect(
-      cloneGroupInto(state(), 'g2', 'g1').groups[0].commands.map((c) => c.name),
-    ).toEqual(['a', 'b', 'c', 'd']);
-    const same = state();
-    expect(cloneGroupInto(same, 'g1', 'g1')).toBe(same);
+      packageSteps(nested, nested.groups[2]).map((c) => c.section),
+    ).toEqual(['App', 'App › DB', 'App › DB', 'App › DB']);
+    // deleting a package removes its links; stored links to nowhere are dropped
+    expect(
+      removeGroup(nested, 'g1').groups[0].commands.map((c) => c.id),
+    ).toEqual(['d']);
+    const parsed = parseState(
+      JSON.stringify({
+        groups: [
+          {
+            id: 'x',
+            name: 'X',
+            commands: [
+              { id: 'l', packageId: 'gone' },
+              { id: 'm', packageId: 'x' },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(parsed.groups[0].commands).toEqual([]);
+  });
+
+  it('searches links by the package name', () => {
+    const next = addPackageLink(state(), 'g1', 'g2');
+    expect(
+      searchCommands(next, 'db')
+        .find((g) => g.id === 'g2')
+        ?.commands.map((c) => c.packageId),
+    ).toEqual(['g1']);
+  });
+
+  it('has presets with valid conditions', () => {
+    const npm = COMMAND_PRESETS.find(
+      (p) => p.command.command === 'npm install',
+    );
+    expect(npm?.command.when).toEqual({
+      type: 'changed',
+      target: 'package.json, package-lock.json, node_modules',
+    });
+    const parsed = parseState(
+      JSON.stringify({
+        groups: [
+          {
+            id: 'x',
+            name: 'X',
+            commands: [
+              { id: 'c', command: 'npm i', ...npm?.command, timeout: '90' },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(parsed.groups[0].commands[0]).toMatchObject({
+      when: npm?.command.when,
+      timeout: 90,
+    });
   });
 
   it('duplicates a package right after itself', () => {
