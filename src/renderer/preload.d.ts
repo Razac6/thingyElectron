@@ -24,6 +24,7 @@ export interface IElectronAPI {
         label: string;
         groupId?: string | null;
         stopOnError?: boolean;
+        notify?: boolean;
       },
     ) => Promise<RunSnapshot | null>;
     stop: (runId: string, force?: boolean) => Promise<boolean>;
@@ -36,7 +37,12 @@ export interface IElectronAPI {
     output: (runId: string, step?: number | null) => Promise<string>;
     rerun: (
       runId: string,
-      options?: { from?: number; only?: number; section?: string },
+      options?: {
+        from?: number;
+        only?: number;
+        section?: string;
+        latest?: Record<string, Partial<RunStepInput>>;
+      },
     ) => Promise<RunSnapshot | null>;
     clear: () => Promise<boolean>;
     pickFolder: (current?: string) => Promise<string | null>;

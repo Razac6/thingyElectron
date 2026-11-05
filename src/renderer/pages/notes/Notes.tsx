@@ -48,6 +48,7 @@ import HttpConverter from './HttpConverter';
 import Base64Tool from './Base64Tool';
 import DockerTool from './DockerTool';
 import CommandsTool from './CommandsTool';
+import BottomToast from './BottomToast';
 import VersionHistoryDialog, { NoteVersion } from './VersionHistoryDialog';
 import {
   Note,
@@ -124,12 +125,18 @@ function Notes() {
       .finally(() => setIsLoading(false));
   }, []);
 
-  // Opened from global search
+  // Opened from global search / a package notification
+  const [openRun, setOpenRun] = useState<string | null>(null);
   useEffect(() => {
     const noteId = (location.state as any)?.noteId;
     if (noteId) {
       setMode('notes');
       setSelectedId(noteId);
+    }
+    const runId = (location.state as any)?.openRun;
+    if (runId) {
+      setMode('commands');
+      setOpenRun(runId);
     }
   }, [location.state]);
 
@@ -343,9 +350,7 @@ function Notes() {
           <ToggleButton value="docker">Docker</ToggleButton>
           <ToggleButton value="commands">Commands</ToggleButton>
         </ToggleButtonGroup>
-        {message && (
-          <Chip size="small" color="success" label={message} sx={{ ml: 1 }} />
-        )}
+        <BottomToast text={message} onClose={() => setMessage(null)} />
         <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1 }}>
           {mode === 'notes' && (
             <>
@@ -374,11 +379,14 @@ function Notes() {
               </Tooltip>
             </>
           )}
-          <NewItemButton
-            label="New note"
-            onClick={() => create()}
-            sx={{ ml: 1 }}
-          />
+          {/* Commands has its own "+ Command"; Docker has nothing to note */}
+          {mode !== 'commands' && mode !== 'docker' && (
+            <NewItemButton
+              label="New note"
+              onClick={() => create()}
+              sx={{ ml: 1 }}
+            />
+          )}
         </Box>
       </Box>
 
@@ -394,7 +402,7 @@ function Notes() {
       )}
       {mode === 'commands' && (
         <Box sx={{ flex: 1, minHeight: 0 }}>
-          <CommandsTool />
+          <CommandsTool openRun={openRun} />
         </Box>
       )}
       {mode === 'docker' && (

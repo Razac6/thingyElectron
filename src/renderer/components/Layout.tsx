@@ -235,11 +235,21 @@ export default function Layout({ children }: LayoutProps) {
       'task:draft-received',
       handleTaskDraft,
     );
+    // a package notification was clicked: show that run's log
+    const unsubRun = window.electron.ipcRenderer.on(
+      'commands:open-run',
+      (runId: unknown) => {
+        navigate('/notes', {
+          state: { openRun: String(runId), at: Date.now() },
+        });
+      },
+    );
 
     return () => {
       if (unsubSearch) unsubSearch();
       if (unsubSettings) unsubSettings();
       if (unsubDraft) unsubDraft();
+      if (unsubRun) unsubRun();
     };
   }, [navigate]);
 

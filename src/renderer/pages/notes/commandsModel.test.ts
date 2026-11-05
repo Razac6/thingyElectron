@@ -227,6 +227,16 @@ describe('commandsModel', () => {
       }),
     );
     expect(parsed.groups.map((g) => g.color)).toEqual(['teal', null]);
+    const withIcons = parseState(
+      JSON.stringify({
+        groups: [
+          { id: 'a', name: 'A', icon: 'database', commands: [] },
+          { id: 'b', name: 'B', icon: 'unicorn', commands: [] },
+        ],
+      }),
+    );
+    expect(withIcons.groups.map((g) => g.icon)).toEqual(['database', null]);
+    expect(duplicateGroup(withIcons, 'a').groups[1].icon).toBe('database');
     expect(duplicateGroup(parsed, 'a').groups[1].color).toBe('teal');
   });
 });

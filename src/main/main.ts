@@ -751,6 +751,25 @@ registerDockerIpc(ipcMain);
 registerCommandIpc(ipcMain, {
   containerReady,
   conditionFile: path.join(app.getPath('userData'), 'command-conditions.json'),
+  // a package is done / failed / up: tell even when the app is in the background;
+  // a click opens that run's log
+  notify: (notice) => {
+    if (!Notification.isSupported()) return;
+    const n = new Notification({
+      title: notice.title,
+      body: notice.body,
+      icon: appIconPath,
+      silent: notice.kind !== 'failed',
+    });
+    n.on('click', () => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+      mainWindow.webContents.send('commands:open-run', notice.runId);
+    });
+    n.show();
+  },
 });
 
 ipcMain.handle('notes:import-files', async () => {

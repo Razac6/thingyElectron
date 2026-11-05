@@ -44,12 +44,15 @@ import DeleteSweepOutlinedIcon from '@mui/icons-material/DeleteSweepOutlined';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckIcon from '@mui/icons-material/Check';
 import HourglassTopIcon from '@mui/icons-material/HourglassTop';
-import FolderIcon from '@mui/icons-material/Folder';
+import NotificationsActiveOutlinedIcon from '@mui/icons-material/NotificationsActiveOutlined';
+import NotificationsOffOutlinedIcon from '@mui/icons-material/NotificationsOffOutlined';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import LinkOffIcon from '@mui/icons-material/LinkOff';
 import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined';
 import TimerOutlinedIcon from '@mui/icons-material/TimerOutlined';
 import { MONO_FONT } from './highlight';
+import BottomToast from './BottomToast';
+import { PackageIconView, packageIconLabel } from './packageIcons';
 import useCopy from './useCopy';
 import {
   COMMAND_PRESETS,
@@ -58,6 +61,7 @@ import {
   CommandsState,
   PACKAGE_COLORS,
   PACKAGE_COLOR_HEX,
+  PACKAGE_ICONS,
   SETTINGS_KEY,
   addPackageLink,
   canNest,
@@ -80,6 +84,7 @@ import {
 import type {
   RunSnapshot,
   RunStep,
+  RunStepInput,
   StepStatus,
 } from '../../../main/commandRunner';
 import {
@@ -136,8 +141,9 @@ const stepShown = (step: RunStep): ShownStatus =>
     ? 'live'
     : step.status;
 /** One status for a nested package in a run, from its steps. */
-const sectionShown = (steps: RunStep[]): ShownStatus => {
-  const shown = steps.map(stepShown);
+const combineShown = (all: ShownStatus[]): ShownStatus => {
+  const shown = all.filter((st) => st !== null); // never run: no say
+  if (!shown.length) return null;
   if (shown.some((st) => st === 'running' || st === 'waiting')) {
     return 'running';
   }
@@ -148,6 +154,19 @@ const sectionShown = (steps: RunStep[]): ShownStatus => {
   if (shown.includes('pending')) return 'running';
   if (shown.includes('live')) return 'live';
   return 'ok';
+};
+const sectionShown = (steps: RunStep[]): ShownStatus =>
+  combineShown(steps.map(stepShown));
+
+const STATUS_WORDS: Record<string, string> = {
+  running: 'running',
+  waiting: 'waiting until ready',
+  live: 'up, running in the background',
+  ok: 'all passed',
+  failed: 'a step failed',
+  stopped: 'stopped',
+  skipped: 'skipped',
+  pending: 'not started',
 };
 
 /** A package whose background steps are all up counts as ready. */
@@ -658,7 +677,11 @@ function LogView({ text, filter }: { text: string; filter: string }) {
 }
 
 // --- main ---------------------------------------------------------------------
-export default function CommandsTool() {
+export default function CommandsTool({
+  openRun = null,
+}: {
+  openRun?: string | null; // show this run (a notification was clicked)
+}) {
   const theme = useTheme();
   const [state, setState] = useState<CommandsState | null>(null);
   const [query, setQuery] = useState('');
@@ -718,6 +741,11 @@ export default function CommandsTool() {
   }, []);
 
   const selected = runs.find((r) => r.id === selectedRun) || null;
+  // the command whose own log is shown on the right (marked in the list)
+  const logOpenFor =
+    selected && selectedStep !== null
+      ? selected.steps[selectedStep]?.id || null
+      : null;
 
   useEffect(() => {
     if (!selectedRun) {
@@ -743,6 +771,20 @@ export default function CommandsTool() {
       off();
     };
   }, [selectedRun, selectedStep]);
+
+  // a notification was clicked: open that run, on its failed step if any
+  useEffect(() => {
+    if (!openRun) return;
+    window.electron.commands.runs().then((list) => {
+      setRuns(list);
+      const run = list.find((r) => r.id === openRun);
+      if (!run) return;
+      setSelectedRun(run.id);
+      const failed = run.steps.findIndex((st) => st.status === 'failed');
+      setSelectedStep(failed >= 0 ? failed : null);
+      setLogFilter('');
+    });
+  }, [openRun]);
 
   // durations of running steps
   useEffect(() => {
@@ -780,6 +822,7 @@ export default function CommandsTool() {
         label,
         groupId: group?.id || null,
         stopOnError: group ? group.stopOnError : true,
+        notify: group ? group.notify !== false : false,
       },
     );
     if (run) {
@@ -795,8 +838,38 @@ export default function CommandsTool() {
     only?: number;
     section?: string;
   }) => {
-    if (!selected) return;
-    const run = await window.electron.commands.rerun(selected.id, options);
+    if (!selected || !state) return;
+    const noScope =
+      options?.from === undefined &&
+      options?.only === undefined &&
+      !options?.section;
+    const group = state.groups.find((g) => g.id === selected.groupId);
+    if (noScope && group) {
+      // the whole package: run it as it is now (added / removed steps too)
+      await start(group.commands, group.name, group);
+      return;
+    }
+    // the saved commands as they are now, so a fix made after the failure runs
+    const latest: Record<string, Partial<RunStepInput>> = {};
+    state.groups.forEach((g) =>
+      g.commands.forEach((c) => {
+        if (!c.packageId) {
+          latest[c.id] = {
+            name: commandLabel(c),
+            command: c.command,
+            cwd: c.cwd,
+            wait: c.wait,
+            ready: c.ready || null,
+            timeout: c.timeout || null,
+            when: c.when || null,
+          };
+        }
+      }),
+    );
+    const run = await window.electron.commands.rerun(selected.id, {
+      ...options,
+      latest,
+    });
     if (run) {
       setRuns((list) => [run, ...list.filter((r) => r.id !== run.id)]);
       setSelectedRun(run.id);
@@ -807,6 +880,38 @@ export default function CommandsTool() {
   const showHint = (text: string) => {
     setHint(text);
     setTimeout(() => setHint(null), 3000);
+  };
+
+  /**
+   * Opens the log of the newest run of these steps (one command, or every step of a
+   * package inside another): that step's own log, or for several the first one that
+   * failed / is running.
+   */
+  const showLastLog = (stepIds: string[]) => {
+    const ids = new Set(stepIds);
+    const run = runs.find((r) => r.steps.some((st) => ids.has(st.id)));
+    if (!run) {
+      showHint('Not run yet - nothing to show');
+      return;
+    }
+    const mine = run.steps
+      .map((st, index) => ({ st, index }))
+      .filter((x) => ids.has(x.st.id));
+    const pick =
+      stepIds.length === 1
+        ? mine[0]
+        : mine.find((x) => x.st.status === 'failed') ||
+          mine.find(
+            (x) => x.st.status === 'running' || x.st.status === 'waiting',
+          );
+    setSelectedRun(run.id);
+    setSelectedStep(pick ? pick.index : mine[0].index);
+    setLogFilter('');
+  };
+  /** Clicks on a row's own buttons don't count. */
+  const rowClick = (e: React.MouseEvent, open: () => void) => {
+    if ((e.target as HTMLElement).closest('button, input, a')) return;
+    open();
   };
 
   /** Scroll to a package (and open it) - from a link to it inside another one. */
@@ -905,11 +1010,31 @@ export default function CommandsTool() {
       }
     } else if (drag?.type === 'group') {
       e.preventDefault();
+      // over another package: its middle = put the dragged one inside (as a step),
+      // its top / bottom edge = reorder the packages
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      setDrop({
-        type: 'group',
-        index: index + (e.clientY > rect.top + rect.height / 2 ? 1 : 0),
-      });
+      const edge = Math.min(14, rect.height * 0.25);
+      const y = e.clientY - rect.top;
+      const nest =
+        drag.id !== group.id &&
+        y > edge &&
+        y < rect.height - edge &&
+        !!state &&
+        canNest(state, drag.id, group.id);
+      if (nest) {
+        if (drop?.type !== 'command' || drop.groupId !== group.id) {
+          setDrop({
+            type: 'command',
+            groupId: group.id,
+            index: group.commands.length,
+          });
+        }
+        return;
+      }
+      const next = index + (y > rect.height / 2 ? 1 : 0);
+      if (drop?.type !== 'group' || drop.index !== next) {
+        setDrop({ type: 'group', index: next });
+      }
     }
   };
   const onDrop = (e: React.DragEvent) => {
@@ -992,6 +1117,30 @@ export default function CommandsTool() {
     onDrop,
   });
 
+  /** Combined last-run status of some steps (a package, a package inside one). */
+  const renderCombined = (steps: CliCommand[]) => {
+    const statuses = steps.map((st) => lastStatus.get(st.id) || null);
+    const status = combineShown(statuses);
+    if (!status) return null;
+    const ran = statuses.filter(Boolean).length;
+    const passed = statuses.filter((st) => st === 'ok' || st === 'live').length;
+    const failed = statuses.filter((st) => st === 'failed').length;
+    return (
+      <Tooltip
+        title={`Last run: ${STATUS_WORDS[status] || status} · ${passed}/${steps.length} ok${failed ? ` · ${failed} failed` : ''}${ran < steps.length ? ` · ${steps.length - ran} not run yet` : ''}`}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          {failed > 0 && (
+            <Typography variant="caption" color="error.main">
+              {failed}✖
+            </Typography>
+          )}
+          <StatusIcon status={status} size={15} />
+        </Box>
+      </Tooltip>
+    );
+  };
+
   // a whole package inside this one
   const renderLink = (group: CommandGroup, c: CliCommand, index: number) => {
     const inner = state.groups.find((g) => g.id === c.packageId);
@@ -1011,7 +1160,11 @@ export default function CommandsTool() {
         {isDropBefore && dropLine}
         <Box
           {...rowDrag(group, c, index)}
+          onClick={(e) =>
+            rowClick(e, () => showLastLog(steps.map((st) => st.id)))
+          }
           onDoubleClick={() => goToPackage(inner.id)}
+          title="Click: its last log · Double-click: go to the package"
           sx={{
             display: 'flex',
             alignItems: 'center',
@@ -1022,6 +1175,7 @@ export default function CommandsTool() {
             my: 0.25,
             borderRadius: 2,
             borderLeft: `3px solid ${color}`,
+            cursor: 'pointer',
             bgcolor: alpha(color, 0.07),
             opacity: drag?.id === c.id ? 0.4 : 1,
             '&:hover': { bgcolor: alpha(color, 0.12) },
@@ -1061,7 +1215,7 @@ export default function CommandsTool() {
               <ChevronRightIcon sx={{ fontSize: 18 }} />
             )}
           </IconButton>
-          <FolderIcon sx={{ fontSize: 18, color }} />
+          <PackageIconView icon={inner.icon} sx={{ fontSize: 18, color }} />
           <Box sx={{ minWidth: 0, flex: 1 }}>
             <Typography variant="body2" sx={{ fontWeight: 700, color }} noWrap>
               {inner.name}
@@ -1076,6 +1230,7 @@ export default function CommandsTool() {
               {!inner.stopOnError && ' · continues on error'}
             </Typography>
           </Box>
+          {renderCombined(steps)}
           <Box
             className="row-actions"
             sx={{
@@ -1148,9 +1303,21 @@ export default function CommandsTool() {
                 color="text.secondary"
                 component="div"
                 noWrap
-                title={st.command}
-                sx={{ py: 0.1 }}
+                title={`${st.command}\n(click: its last log)`}
+                onClick={() => showLastLog([st.id])}
+                sx={{
+                  py: 0.1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 0.5,
+                  cursor: 'pointer',
+                  borderRadius: 1,
+                  color:
+                    logOpenFor === st.id ? 'primary.main' : 'text.secondary',
+                  '&:hover': { color: 'text.primary' },
+                }}
               >
+                <StatusIcon status={lastStatus.get(st.id) || null} size={12} />
                 {i + 1}.{' '}
                 {st.section && (
                   <Box component="span" sx={{ color: 'text.disabled' }}>
@@ -1183,7 +1350,9 @@ export default function CommandsTool() {
         {isDropBefore && dropLine}
         <Box
           {...rowDrag(group, c, index)}
+          onClick={(e) => rowClick(e, () => showLastLog([c.id]))}
           onDoubleClick={() => setEditing({ command: c, groupId: group.id })}
+          title="Click: its last log · Double-click: edit"
           sx={{
             display: 'flex',
             alignItems: 'center',
@@ -1192,8 +1361,18 @@ export default function CommandsTool() {
             pr: 1,
             py: 0.5,
             borderRadius: 2,
+            cursor: 'pointer',
             opacity: drag?.id === c.id ? 0.4 : 1,
-            '&:hover': { bgcolor: 'action.hover' },
+            bgcolor:
+              logOpenFor === c.id
+                ? alpha(theme.palette.primary.main, 0.1)
+                : 'transparent',
+            '&:hover': {
+              bgcolor:
+                logOpenFor === c.id
+                  ? alpha(theme.palette.primary.main, 0.14)
+                  : 'action.hover',
+            },
             '&:hover .row-actions': { opacity: 1 },
           }}
         >
@@ -1369,23 +1548,31 @@ export default function CommandsTool() {
               drag && drop?.type === 'command' && drop.groupId === group.id
                 ? 'primary.main'
                 : 'divider',
+            ...(draggedGroup &&
+              drop?.type === 'command' &&
+              drop.groupId === group.id && {
+                outline: `2px dashed ${theme.palette.primary.main}`,
+                outlineOffset: 2,
+              }),
             ...(group.color && {
               borderLeft: `4px solid ${PACKAGE_COLOR_HEX[group.color]}`,
               bgcolor: alpha(PACKAGE_COLOR_HEX[group.color], 0.05),
             }),
           }}
         >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          <Box
+            draggable={!searching && renaming !== group.id}
+            onDragStart={(e) => {
+              e.dataTransfer.effectAllowed = 'move';
+              e.dataTransfer.setData('text/plain', group.id);
+              setDrag({ type: 'group', id: group.id });
+            }}
+            onDragEnd={endDrag}
+            sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}
+          >
             <Box
-              draggable={!searching}
-              onDragStart={(e) => {
-                e.dataTransfer.effectAllowed = 'move';
-                e.dataTransfer.setData('text/plain', group.id);
-                setDrag({ type: 'group', id: group.id });
-              }}
-              onDragEnd={endDrag}
               sx={{ display: 'flex', cursor: searching ? 'default' : 'grab' }}
-              title="Drag to reorder packages"
+              title="Drag onto another package to put it inside, or to its edge to reorder"
             >
               <DragIndicatorIcon
                 sx={{ fontSize: 18, color: 'text.disabled' }}
@@ -1407,6 +1594,17 @@ export default function CommandsTool() {
                 <ChevronRightIcon fontSize="small" />
               )}
             </IconButton>
+            {group.icon && (
+              <PackageIconView
+                icon={group.icon}
+                sx={{
+                  fontSize: 18,
+                  color: group.color
+                    ? PACKAGE_COLOR_HEX[group.color]
+                    : 'text.secondary',
+                }}
+              />
+            )}
             {renaming === group.id ? (
               <TextField
                 size="small"
@@ -1458,6 +1656,17 @@ export default function CommandsTool() {
                 </Typography>
               </Typography>
             )}
+            {!groupRun && renderCombined(packageSteps(state, group))}
+            {draggedGroup &&
+              drop?.type === 'command' &&
+              drop.groupId === group.id && (
+                <Chip
+                  size="small"
+                  color="primary"
+                  label={`+ ${draggedGroup.name} as a step`}
+                  sx={{ height: 20, fontSize: 11 }}
+                />
+              )}
             <Tooltip
               title={
                 group.stopOnError
@@ -1480,6 +1689,38 @@ export default function CommandsTool() {
                 }
                 sx={{ height: 20, fontSize: 11 }}
               />
+            </Tooltip>
+            <Tooltip
+              title={
+                group.notify !== false
+                  ? 'Notifies you when it is done, fails or is up (click to turn off)'
+                  : 'No notification for this package (click to turn on)'
+              }
+            >
+              <IconButton
+                size="small"
+                onClick={() =>
+                  change(
+                    updateGroup(state, group.id, {
+                      notify: group.notify === false,
+                    }),
+                  )
+                }
+                aria-label={
+                  group.notify !== false
+                    ? `Turn off notifications for ${group.name}`
+                    : `Turn on notifications for ${group.name}`
+                }
+                sx={{ p: 0.5 }}
+              >
+                {group.notify !== false ? (
+                  <NotificationsActiveOutlinedIcon sx={{ fontSize: 17 }} />
+                ) : (
+                  <NotificationsOffOutlinedIcon
+                    sx={{ fontSize: 17, color: 'text.disabled' }}
+                  />
+                )}
+              </IconButton>
             </Tooltip>
             <Tooltip title="Add command">
               <IconButton
@@ -1637,7 +1878,8 @@ export default function CommandsTool() {
         }}
         title={section}
       >
-        <FolderIcon
+        <PackageIconView
+          icon={state?.groups.find((g) => g.name === name)?.icon}
           sx={{
             fontSize: 14,
             color: status === 'failed' ? 'error.main' : 'text.secondary',
@@ -1738,7 +1980,6 @@ export default function CommandsTool() {
               ) : undefined,
             }}
           />
-          {hint && <Chip size="small" color="success" label={hint} />}
           <Button
             size="small"
             startIcon={<AddIcon />}
@@ -2330,6 +2571,76 @@ export default function CommandsTool() {
                 />
               ))}
             </Box>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              component="div"
+              sx={{ mt: 1.25 }}
+            >
+              Icon
+            </Typography>
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(7, 28px)',
+                gap: 0.25,
+                mt: 0.5,
+              }}
+            >
+              <Tooltip title="No icon">
+                <IconButton
+                  size="small"
+                  aria-label="No icon"
+                  onClick={() => {
+                    change(
+                      updateGroup(state, groupMenu.group.id, { icon: null }),
+                    );
+                    setGroupMenu(null);
+                  }}
+                  sx={{
+                    width: 28,
+                    height: 28,
+                    border: 1,
+                    borderColor: groupMenu.group.icon
+                      ? 'transparent'
+                      : 'text.primary',
+                  }}
+                >
+                  <CloseIcon sx={{ fontSize: 15, color: 'text.disabled' }} />
+                </IconButton>
+              </Tooltip>
+              {PACKAGE_ICONS.map((icon) => (
+                <Tooltip key={icon} title={packageIconLabel(icon)}>
+                  <IconButton
+                    size="small"
+                    aria-label={`Icon ${packageIconLabel(icon)}`}
+                    onClick={() => {
+                      change(updateGroup(state, groupMenu.group.id, { icon }));
+                      setGroupMenu(null);
+                    }}
+                    sx={{
+                      width: 28,
+                      height: 28,
+                      border: 1,
+                      borderColor:
+                        groupMenu.group.icon === icon
+                          ? 'text.primary'
+                          : 'transparent',
+                    }}
+                  >
+                    <PackageIconView
+                      icon={icon}
+                      sx={{
+                        fontSize: 17,
+                        color: groupMenu.group.color
+                          ? PACKAGE_COLOR_HEX[groupMenu.group.color]
+                          : 'text.secondary',
+                      }}
+                    />
+                  </IconButton>
+                </Tooltip>
+              ))}
+            </Box>
           </Box>
         )}
         <MenuItem
@@ -2394,6 +2705,7 @@ export default function CommandsTool() {
         </MenuItem>
       </Menu>
 
+      <BottomToast text={hint} onClose={() => setHint(null)} />
       <CommandDialog
         open={!!editing}
         initial={editing?.command || null}

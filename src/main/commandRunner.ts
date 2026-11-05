@@ -128,6 +128,62 @@ let containerProbe: ContainerProbe = async () => ({
 });
 let conditions = new ConditionStore(null);
 
+export interface RunNotice {
+  runId: string;
+  kind: 'ok' | 'failed' | 'ready';
+  title: string;
+  body: string;
+}
+let notifier: (notice: RunNotice) => void = () => {};
+
+const seconds = (ms: number) =>
+  ms < 60000
+    ? `${(ms / 1000).toFixed(1)} s`
+    : `${Math.floor(ms / 60000)} min ${Math.round((ms % 60000) / 1000)} s`;
+
+/** A desktop notification when a package is done / failed / up (if it asked for one). */
+const announce = (run: CommandRun, kind: RunNotice['kind']) => {
+  if (!pending.get(run.id)?.notify) return;
+  const took = seconds(
+    (run.endedAt || run.readyAt || Date.now()) - run.startedAt,
+  );
+  const failed = run.steps.find((st) => st.status === 'failed');
+  const skipped = run.steps.filter((st) => st.status === 'skipped').length;
+  const live = run.steps.filter((st) => st.status === 'running').length;
+  let notice: RunNotice;
+  if (kind === 'failed' && failed) {
+    const where = failed.section
+      ? `${failed.section} › ${failed.name}`
+      : failed.name;
+    const why = (failed.tail || '').split('\n').filter(Boolean).pop() || '';
+    notice = {
+      runId: run.id,
+      kind,
+      title: `✖ ${run.label} failed`,
+      body: `At “${where}”${why ? `: ${why.slice(0, 140)}` : ''}`,
+    };
+  } else if (kind === 'ready') {
+    notice = {
+      runId: run.id,
+      kind,
+      title: `● ${run.label} is ready`,
+      body: `Up in ${took} · ${live} running in the background`,
+    };
+  } else {
+    notice = {
+      runId: run.id,
+      kind: 'ok',
+      title: `✓ ${run.label} done`,
+      body: `${run.steps.length} step${run.steps.length === 1 ? '' : 's'} in ${took}${skipped ? ` · ${skipped} skipped` : ''}`,
+    };
+  }
+  try {
+    notifier(notice);
+  } catch (e) {
+    // a notification is never worth failing a run for
+  }
+};
+
 const READY_TYPES = ['container', 'port', 'url', 'output', 'quiet'];
 export const normalizeReady = (
   check?: ReadyCheck | null,
@@ -148,7 +204,12 @@ export const normalizeReady = (
 const runs = new Map<string, CommandRun>();
 const pending = new Map<
   string,
-  { inputs: RunStepInput[]; groupId: string | null; stopOnError: boolean }
+  {
+    inputs: RunStepInput[];
+    groupId: string | null;
+    stopOnError: boolean;
+    notify: boolean;
+  }
 >();
 const procs = new Map<string, Proc[]>(); // runId -> every process it started
 const stepProcs = new Map<string, Proc>(); // "runId:index" -> the step's current process
@@ -395,6 +456,7 @@ const finishRun = (run: CommandRun) => {
       );
       rememberConditions(run);
       publish(run);
+      announce(run, 'ready');
     }
     return;
   }
@@ -416,6 +478,9 @@ const finishRun = (run: CommandRun) => {
     `\n── ${run.status === 'ok' ? 'Done' : run.status === 'stopped' ? 'Stopped' : 'Failed'} in ${((run.endedAt - run.startedAt) / 1000).toFixed(1)} s ──\n`,
   );
   publish(run);
+  if (run.status === 'failed') announce(run, 'failed');
+  // a ready package whose servers later end fine was already announced
+  else if (run.status === 'ok' && !run.readyAt) announce(run, 'ok');
 };
 
 /**
@@ -746,7 +811,13 @@ const drive = async (run: CommandRun, stopOnError: boolean) => {
 
 export const startRun = (
   inputs: RunStepInput[],
-  options: { label: string; groupId?: string | null; stopOnError?: boolean },
+  options: {
+    label: string;
+    groupId?: string | null;
+    stopOnError?: boolean;
+    intro?: string; // a line shown before the first step
+    notify?: boolean; // a desktop notification when it's done / failed / ready
+  },
 ): RunSnapshot | null => {
   const steps = inputs
     .filter((s) => s && String(s.command || '').trim())
@@ -796,6 +867,7 @@ export const startRun = (
   pending.set(run.id, {
     groupId: options.groupId || null,
     stopOnError: options.stopOnError !== false,
+    notify: !!options.notify,
     inputs: steps,
   });
   // Keep the newest runs (never drop a running one)
@@ -806,6 +878,7 @@ export const startRun = (
     pending.delete(oldest.id);
     stepOutputs.delete(oldest.id);
   }
+  if (options.intro) append(run, `${options.intro}\n\n`);
   drive(run, options.stopOnError !== false);
   return snapshot(run);
 };
@@ -828,7 +901,15 @@ export const rerun = (
     from,
     only,
     section,
-  }: { from?: number; only?: number; section?: string } = {},
+    latest,
+  }: {
+    from?: number;
+    only?: number;
+    section?: string;
+    // the commands as they are saved now (by id): a fix made after the failure is
+    // what runs, not the old copy
+    latest?: Record<string, Partial<RunStepInput>>;
+  } = {},
 ) => {
   const run = runs.get(runId);
   const saved = pending.get(runId);
@@ -855,19 +936,61 @@ export const rerun = (
     const parts = [sectionPart, fromPart].filter(Boolean);
     if (parts.length) label = `${label} (${parts.join(', ')})`;
   }
-  return startRun(
-    inputs.map((x) => x.input),
-    {
-      label,
-      groupId: section ? null : saved.groupId,
-      stopOnError: saved.stopOnError,
-    },
-  );
+  let changed = 0;
+  const fresh = inputs.map(({ input }) => {
+    const now = latest?.[input.id];
+    if (!now || !String(now.command || '').trim()) return input;
+    const next: RunStepInput = {
+      ...input,
+      name: String(now.name || input.name),
+      command: String(now.command),
+      cwd: now.cwd ?? input.cwd,
+      wait: now.wait ?? input.wait,
+      ready: now.ready ?? null,
+      timeout: now.timeout ?? null,
+      when: now.when ?? null,
+    };
+    const same = (a: RunStepInput, b: RunStepInput) =>
+      JSON.stringify([
+        a.name,
+        a.command,
+        a.cwd || '',
+        a.wait !== false,
+        normalizeReady(a.ready),
+        normalizeCondition(a.when),
+        Number(a.timeout) || 0,
+      ]) ===
+      JSON.stringify([
+        b.name,
+        b.command,
+        b.cwd || '',
+        b.wait !== false,
+        normalizeReady(b.ready),
+        normalizeCondition(b.when),
+        Number(b.timeout) || 0,
+      ]);
+    if (!same(input, next)) changed += 1;
+    return next;
+  });
+  return startRun(fresh, {
+    label,
+    groupId: section ? null : saved.groupId,
+    stopOnError: saved.stopOnError,
+    notify: saved.notify,
+    intro: changed
+      ? `↻ ${changed} step${changed > 1 ? 's' : ''} changed since the last run - running the current version`
+      : undefined,
+  });
 };
 
 /** For tests / wiring: how a "container ready" check is answered. */
 export const setContainerProbe = (probe: ContainerProbe) => {
   containerProbe = probe;
+};
+
+/** For tests / wiring: how a package's "done / failed / ready" is announced. */
+export const setNotifier = (fn: (notice: RunNotice) => void) => {
+  notifier = fn;
 };
 
 /** For tests / wiring: where "only run if changed" keeps what it saw. */
@@ -920,9 +1043,14 @@ export const stopAllRuns = () => {
 
 export const registerCommandIpc = (
   ipcMain: IpcMain,
-  wiring: { containerReady?: ContainerProbe; conditionFile?: string } = {},
+  wiring: {
+    containerReady?: ContainerProbe;
+    conditionFile?: string;
+    notify?: (notice: RunNotice) => void;
+  } = {},
 ) => {
   if (wiring.containerReady) containerProbe = wiring.containerReady;
+  if (wiring.notify) notifier = wiring.notify;
   if (wiring.conditionFile) setConditionFile(wiring.conditionFile);
   resolveShellEnv(); // warm up: the first run shouldn't wait for the shell
   ipcMain.handle('commands:run', (event, inputs: RunStepInput[], options) =>

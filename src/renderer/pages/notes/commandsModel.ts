@@ -25,6 +25,8 @@ export interface CommandGroup {
   stopOnError: boolean;
   collapsed: boolean;
   color?: PackageColor | null; // to tell packages apart at a glance
+  icon?: PackageIcon | null; // database, frontend, functions...
+  notify?: boolean; // desktop notification when it's done / failed / ready (default on)
   commands: CliCommand[];
 }
 
@@ -46,6 +48,30 @@ export const PACKAGE_COLORS = [
   'slate',
 ] as const;
 export type PackageColor = (typeof PACKAGE_COLORS)[number];
+
+export const PACKAGE_ICONS = [
+  'folder',
+  'database',
+  'server',
+  'web',
+  'mobile',
+  'api',
+  'functions',
+  'cloud',
+  'stack',
+  'services',
+  'terminal',
+  'code',
+  'build',
+  'tests',
+  'debug',
+  'sync',
+  'deploy',
+  'auth',
+  'mail',
+  'jobs',
+] as const;
+export type PackageIcon = (typeof PACKAGE_ICONS)[number];
 
 /** Swatch values - mid tones that read on both the light and the dark theme. */
 export const PACKAGE_COLOR_HEX: Record<PackageColor, string> = {
@@ -119,6 +145,8 @@ export const parseState = (json: string | null | undefined): CommandsState => {
           stopOnError: g.stopOnError !== false,
           collapsed: !!g.collapsed,
           color: PACKAGE_COLORS.includes(g.color) ? g.color : null,
+          icon: PACKAGE_ICONS.includes(g.icon) ? g.icon : null,
+          notify: g.notify !== false,
           commands: (Array.isArray(g.commands) ? g.commands : [])
             .filter((c: any) => c && typeof c.id === 'string')
             .map(

@@ -6,6 +6,8 @@ import {
   inSection,
   rerun,
   setConditionFile,
+  setNotifier,
+  RunNotice,
   startRun,
   stopRun,
   stopStep,
@@ -371,5 +373,120 @@ describe('rerunning one nested package', () => {
 
     expect(inSection('Backend › DB', 'Backend')).toBe(true);
     expect(inSection('Backend2', 'Backend')).toBe(false);
+  });
+});
+
+describe('rerun after a fix', () => {
+  it('runs the command as it is saved now, not the old copy', async () => {
+    const run = startRun(
+      [
+        { id: 'ok1', name: 'first', command: 'echo first-ran' },
+        { id: 'fix', name: 'broken', command: 'echo old-version; exit 2' },
+      ],
+      { label: 'fixme' },
+    )!;
+    await waitFor(finished(run.id));
+    expect(getOutput(run.id)).toMatch(/Failed in/);
+
+    const again = rerun(run.id, {
+      from: 1,
+      latest: {
+        fix: {
+          name: 'broken',
+          command: 'echo new-version',
+          cwd: '',
+          wait: true,
+        },
+        ok1: { name: 'first', command: 'echo first-ran', cwd: '', wait: true },
+      },
+    })!;
+    await waitFor(finished(again.id));
+    const out = getOutput(again.id);
+    expect(out).toContain('1 step changed since the last run');
+    expect(out).toMatch(/^new-version$/m);
+    expect(out).not.toMatch(/^old-version$/m);
+    expect(out).toMatch(/Done in/);
+
+    // nothing changed: no note, same commands
+    const same = rerun(again.id, {
+      latest: {
+        fix: {
+          name: 'broken',
+          command: 'echo new-version',
+          cwd: '',
+          wait: true,
+        },
+      },
+    })!;
+    await waitFor(finished(same.id));
+    expect(getOutput(same.id)).not.toContain('changed since the last run');
+  });
+});
+
+describe('package notifications', () => {
+  const notices: RunNotice[] = [];
+  beforeAll(() => setNotifier((n) => notices.push(n)));
+  afterAll(() => setNotifier(() => {}));
+  const mine = (id: string) => notices.filter((n) => n.runId === id);
+
+  it('tells when a package is done or failed - only if it asked to', async () => {
+    const ok = startRun([{ id: 'n1', name: 'one', command: 'echo one' }], {
+      label: 'Build',
+      notify: true,
+    })!;
+    await waitFor(finished(ok.id));
+    await waitFor(() => mine(ok.id).length > 0, 5000);
+    expect(mine(ok.id)[0]).toMatchObject({ kind: 'ok', title: '✓ Build done' });
+
+    const bad = startRun(
+      [
+        {
+          id: 'n2',
+          name: 'compile',
+          command: 'echo broken-thing; exit 1',
+          section: 'Backend',
+        },
+      ],
+      { label: 'Stack', notify: true },
+    )!;
+    await waitFor(finished(bad.id));
+    await waitFor(() => mine(bad.id).length > 0, 5000);
+    expect(mine(bad.id)[0]).toMatchObject({
+      kind: 'failed',
+      title: '✖ Stack failed',
+    });
+    expect(mine(bad.id)[0].body).toContain('Backend › compile');
+
+    const quiet = startRun([{ id: 'n3', name: 'x', command: 'echo x' }], {
+      label: 'Quiet',
+    })!;
+    await waitFor(finished(quiet.id));
+    expect(mine(quiet.id)).toEqual([]);
+  });
+
+  it('tells when the servers are up, and not when you stop it yourself', async () => {
+    const run = startRun(
+      [
+        {
+          id: 'srv',
+          name: 'server',
+          command: sh(
+            'echo SERVER UP; sleep 60',
+            "Write-Output 'SERVER UP'; Start-Sleep -Seconds 60",
+          ),
+          wait: false,
+          ready: { type: 'output', target: 'server up', timeout: 30 },
+        },
+      ],
+      { label: 'Dev', notify: true },
+    )!;
+    await waitFor(() => mine(run.id).length > 0);
+    expect(mine(run.id)[0]).toMatchObject({
+      kind: 'ready',
+      title: '● Dev is ready',
+    });
+    stopRun(run.id);
+    await waitFor(finished(run.id));
+    expect(mine(run.id)).toHaveLength(1);
   });
 });

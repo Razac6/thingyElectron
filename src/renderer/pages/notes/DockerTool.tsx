@@ -39,6 +39,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import CleaningServicesOutlinedIcon from '@mui/icons-material/CleaningServicesOutlined';
 import CodeArea from './CodeArea';
 import { MONO_FONT } from './highlight';
+import BottomToast from './BottomToast';
 import useCopy from './useCopy';
 import { RemoveContainerDialog, VolumesView } from './DockerVolumes';
 import ResetDbDialog from './ResetDbDialog';
@@ -765,15 +766,11 @@ export default function DockerTool() {
             )}
           </>
         )}
-        {message && (
-          <Chip
-            size="small"
-            color={message.error ? 'error' : 'success'}
-            label={message.text}
-            onDelete={() => setMessage(null)}
-            sx={{ maxWidth: 360 }}
-          />
-        )}
+        <BottomToast
+          text={message?.text || null}
+          error={message?.error}
+          onClose={() => setMessage(null)}
+        />
         <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1 }}>
           {status?.engine && (
             <Typography variant="caption" color="text.secondary" noWrap>
