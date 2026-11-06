@@ -9,7 +9,6 @@ import {
   Tray,
   Menu,
   nativeImage,
-  globalShortcut,
   Notification,
   powerMonitor,
 } from 'electron';
@@ -1433,6 +1432,16 @@ const createWindow = async () => {
     },
     opacity: Number(getSetting('window_opacity')) || 1.0,
   });
+  // Ctrl+K / ⌘K opens the search - only in this window. (A global shortcut would take
+  // the key from every other app, e.g. Stackrun's own Ctrl+K search.)
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' || input.alt || input.shift) return;
+    const mod = process.platform === 'darwin' ? input.meta : input.control;
+    if (mod && (input.code === 'KeyK' || input.key.toLowerCase() === 'k')) {
+      event.preventDefault();
+      mainWindow?.webContents.send('open-search');
+    }
+  });
   mainWindow.loadURL(resolveHtmlPath('index.html'));
   mainWindow.on('ready-to-show', () => {
     if (process.env.START_MINIMIZED) mainWindow?.minimize();
@@ -1467,14 +1476,10 @@ app
     startServer();
     startAppMonitor();
     createWindow();
-    globalShortcut.register('CommandOrControl+K', () => {
-      mainWindow?.webContents.send('open-search');
-    });
   })
   .catch(app.quit);
 
 app.on('will-quit', () => {
   stopServer();
   stopAppMonitor();
-  globalShortcut.unregisterAll();
 });
