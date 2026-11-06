@@ -10,15 +10,9 @@ import React, {
 } from 'react';
 import { useSettings } from './SettingsContext';
 
-// The main process owns XP and achievements (see src/main/gamification.ts and db.ts
-// awardXp / syncAchievements). This context mirrors that state for the UI, forwards
-// awards, and plays the reward animations when the main process reports new achievements.
-
-interface UserProfile {
-  userId: number;
-  level: number;
-  xp: number;
-}
+// The main process owns the achievements (see src/main/gamification.ts and db.ts
+// syncAchievements). This context mirrors them for the UI and plays the reward
+// animations when the main process reports new ones.
 
 type AnimationType =
   | 'cat_movement'
@@ -28,10 +22,7 @@ type AnimationType =
   | 'trophy';
 
 interface GamificationContextType {
-  profile: UserProfile | null;
   earnedAchievements: string[];
-  /** `key` makes the award once-only (e.g. `habit:3:2026-11-03`). */
-  addXp: (amount: number, reason?: string, key?: string) => Promise<void>;
   /** Re-evaluates achievements from the data; true if a new one was earned. */
   checkForAchievements: (action?: string, data?: any) => Promise<boolean>;
   refresh: () => Promise<void>;
@@ -45,7 +36,6 @@ const GamificationContext = createContext<GamificationContextType | undefined>(
 );
 
 export function GamificationProvider({ children }: { children: ReactNode }) {
-  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [earnedAchievements, setEarnedAchievements] = useState<string[]>([]);
   const [rewardAnimation, setRewardAnimation] = useState<AnimationType | null>(
     null,
@@ -86,7 +76,6 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     try {
       const state = await window.electron.database.getGamificationState();
-      setProfile(state.profile);
       setEarnedAchievements(
         state.achievements.filter((a: any) => a.earnedAt).map((a: any) => a.id),
       );
@@ -99,12 +88,11 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     refresh().finally(() => setIsLoading(false));
   }, [refresh]);
 
-  // Awards made by the main process (quests, Pomodoro, meditation, task completion...)
+  // Achievements the main process granted (quests, Pomodoro, task completion...)
   useEffect(() => {
     const unsubscribe = window.electron.ipcRenderer.on(
       'gamification:updated',
       (payload: any) => {
-        if (payload?.profile) setProfile(payload.profile);
         if (payload?.newAchievements?.length) {
           setEarnedAchievements((prev) => [
             ...new Set([
@@ -121,22 +109,9 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
     };
   }, [triggerRewardAnimation]);
 
-  const addXp = useCallback(
-    async (amount: number, reason?: string, key?: string) => {
-      const updated = await window.electron.database.awardXp(
-        amount,
-        reason || 'Reward',
-        key,
-      );
-      if (updated) setProfile(updated);
-    },
-    [],
-  );
-
   const checkForAchievements = useCallback(async () => {
-    const { profile: updated, newAchievements } =
+    const { newAchievements } =
       await window.electron.database.syncAchievements();
-    if (updated) setProfile(updated);
     if (!newAchievements.length) return false;
     setEarnedAchievements((prev) => [
       ...new Set([...prev, ...newAchievements.map((a) => a.id)]),
@@ -161,9 +136,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(
     () => ({
-      profile,
       earnedAchievements,
-      addXp,
       checkForAchievements,
       refresh,
       rewardAnimation,
@@ -171,9 +144,7 @@ export function GamificationProvider({ children }: { children: ReactNode }) {
       hideRewardAnimation,
     }),
     [
-      profile,
       earnedAchievements,
-      addXp,
       checkForAchievements,
       refresh,
       rewardAnimation,

@@ -37,7 +37,6 @@ jest.mock('../services/DatabaseService', () => ({
 
 jest.mock('./GamificationContext', () => ({
   useGamification: () => ({
-    addXp: jest.fn(),
     checkForAchievements: jest.fn().mockResolvedValue(false),
     triggerRewardAnimation: jest.fn(),
   }),

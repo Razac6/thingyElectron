@@ -30,7 +30,8 @@ import { useGamification } from '../context/GamificationContext';
 import DropletCompanion, { DropletMood } from './DropletCompanion';
 import OwlCompanion from './OwlCompanion';
 import DogCompanion from './DogCompanion';
-import WarriorCompanion from './journey/WarriorCompanion';
+import WarriorCompanion, { MonsterCompanion } from './sprites/WarriorCompanion';
+import { monsterOf } from './CompanionPicker';
 import SnakeCompanion from './SnakeCompanion';
 
 const MESSAGES = [
@@ -1018,6 +1019,12 @@ export function AiCompanion() {
               {settings.companion_character === 'warrior' && (
                 <WarriorCompanion mood={dropletMood} />
               )}
+              {monsterOf(settings.companion_character) && (
+                <MonsterCompanion
+                  monster={monsterOf(settings.companion_character)!}
+                  mood={dropletMood}
+                />
+              )}
               {settings.companion_character === 'dog' && (
                 <DogCompanion
                   mood={dropletMood}
@@ -1027,7 +1034,10 @@ export function AiCompanion() {
               )}
               {!['owl', 'dog', 'warrior'].includes(
                 settings.companion_character,
-              ) && <DropletCompanion mood={dropletMood} talking={!!message} />}
+              ) &&
+                !monsterOf(settings.companion_character) && (
+                  <DropletCompanion mood={dropletMood} talking={!!message} />
+                )}
             </Box>
           )}
         </Box>

@@ -14,8 +14,6 @@ import DailyProductivityBarChart from '../components/DailyProductivityBarChart';
 import ContributionGraph from '../components/ContributionGraph';
 import SmartInsightWidget from '../components/SmartInsightWidget';
 import FavoriteHabitWidget from '../components/FavoriteHabitWidget';
-import MountainClimbBeta from '../components/MountainClimbBeta';
-import JourneyMap from '../components/journey/JourneyMap';
 import DailyChallengeWidget from '../components/DailyChallengeWidget';
 import { toLocalISOString, addDays } from '../util/dateUtils';
 import useDashboardViews from './useDashboardViews';
@@ -169,13 +167,7 @@ export default function LumaDashboard() {
   const theme = useTheme();
   const { tasks, totalSpendTimeToday, productivityData } = useTimer();
   const { settings } = useSettings();
-  const {
-    activeView,
-    availableViews,
-    isMountainClimbEnabled,
-    isJourneyEnabled,
-    handleViewChange,
-  } = useDashboardViews();
+  const { activeView, availableViews, handleViewChange } = useDashboardViews();
 
   const wins = useTodayWins();
   // The Activity band stays tucked away until the arrow at the bottom is clicked
@@ -203,8 +195,6 @@ export default function LumaDashboard() {
     const { hours, minutes } = formatDuration(ms);
     return hours ? `${hours}h ${minutes}m` : `${minutes}m`;
   };
-
-  const isMountainView = activeView === 1 && isMountainClimbEnabled;
 
   const tiles = parseTiles(settings[TILES_SETTING]);
   const highlighted = parseHighlight(settings[HIGHLIGHT_SETTING]);
@@ -286,17 +276,7 @@ export default function LumaDashboard() {
             }}
           >
             <Box sx={{ flexGrow: 1, position: 'relative', minHeight: 0 }}>
-              {isMountainView && isJourneyEnabled && (
-                <Box sx={{ height: '100%', ...fadeIn }}>
-                  <JourneyMap />
-                </Box>
-              )}
-              {isMountainView && !isJourneyEnabled && (
-                <Box sx={{ height: 320, ...fadeIn }}>
-                  <MountainClimbBeta />
-                </Box>
-              )}
-              {isMountainView ? null : activeView === 2 ? (
+              {activeView === 2 ? (
                 <Box sx={{ p: 2.5, height: '100%', ...fadeIn }}>
                   <DailyChallengeWidget />
                 </Box>

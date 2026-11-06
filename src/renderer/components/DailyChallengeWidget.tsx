@@ -93,7 +93,7 @@ function DailyChallengeWidget() {
 
         <Chip
           icon={<EmojiEventsIcon sx={{ fontSize: '1rem !important' }} />}
-          label={`+${dailyChallenge.xpReward} XP`}
+          label={`${dailyChallenge.progress} / ${dailyChallenge.target}`}
           size="small"
           sx={{
             fontWeight: 400,

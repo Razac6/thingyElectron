@@ -9,8 +9,6 @@ import DailyProductivityBarChart from '../components/DailyProductivityBarChart';
 import ContributionGraph from '../components/ContributionGraph';
 import SmartInsightWidget from '../components/SmartInsightWidget';
 import FavoriteHabitWidget from '../components/FavoriteHabitWidget';
-import MountainClimbBeta from '../components/MountainClimbBeta';
-import JourneyMap from '../components/journey/JourneyMap';
 import DailyChallengeWidget from '../components/DailyChallengeWidget';
 import useDashboardViews from './useDashboardViews';
 import LumaDashboard from './LumaDashboard';
@@ -37,13 +35,7 @@ const Item = styled(Paper)(({ theme }) => ({
 export default function Dashboard() {
   const { tasks, isLoading, totalSpendTimeToday } = useTimer();
   const isLuma = useIsLuma();
-  const {
-    activeView,
-    availableViews,
-    isMountainClimbEnabled,
-    isJourneyEnabled,
-    handleViewChange,
-  } = useDashboardViews();
+  const { activeView, availableViews, handleViewChange } = useDashboardViews();
 
   if (isLoading) {
     return <LiquidLoader label="Loading dashboard" />;
@@ -132,13 +124,7 @@ export default function Dashboard() {
           >
             {/* View Container */}
             <Box sx={{ flexGrow: 1, position: 'relative' }}>
-              {activeView === 1 && isMountainClimbEnabled ? (
-                <Box
-                  sx={{ height: '320px', animation: 'fadeIn 0.4s ease-out' }}
-                >
-                  {isJourneyEnabled ? <JourneyMap /> : <MountainClimbBeta />}
-                </Box>
-              ) : activeView === 2 ? (
+              {activeView === 2 ? (
                 <Box
                   sx={{
                     p: 2,
@@ -178,14 +164,8 @@ export default function Dashboard() {
                 justifyContent: 'center',
                 gap: 1.5,
                 py: 1.5,
-                bgcolor:
-                  activeView === 1 && isMountainClimbEnabled
-                    ? 'transparent'
-                    : 'rgba(255,255,255,0.5)',
-                borderTop:
-                  activeView === 1 && isMountainClimbEnabled
-                    ? 'none'
-                    : '1px solid rgba(0,0,0,0.05)',
+                bgcolor: 'rgba(255,255,255,0.5)',
+                borderTop: '1px solid rgba(0,0,0,0.05)',
                 position: 'absolute',
                 bottom: 0,
                 width: '100%',

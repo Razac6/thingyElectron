@@ -11,16 +11,9 @@ import {
 import {
   ACHIEVEMENTS,
   AchievementStats,
-  applyXp,
   longestStreak,
   newlyEarned,
 } from './gamification';
-import {
-  JourneyState,
-  SprintInfo,
-  initialJourney,
-  rollsForTask,
-} from './journey';
 
 const initSqlJs = require('sql.js');
 
@@ -224,7 +217,7 @@ export const initDB = async () => {
       `CREATE TABLE IF NOT EXISTS xp_events (id INTEGER PRIMARY KEY, key TEXT UNIQUE, amount INTEGER, reason TEXT, createdAt TEXT)`,
     );
 
-    // Journey (warrior board game): one JSON state row + once-only dice grants
+    // Journey (the removed warrior board game): no longer used, kept so old data stays
     database.run(
       `CREATE TABLE IF NOT EXISTS journey_state (id INTEGER PRIMARY KEY, data TEXT)`,
     );
@@ -990,17 +983,6 @@ export const globalSearch = (userId: number, query: string) => {
   }
   taskStmt.free();
 
-  const noteStmt = db.prepare(`
-    SELECT id, title, 'note' as resultType
-    FROM notes
-    WHERE userId = :userId AND (title LIKE :query COLLATE NOCASE OR content LIKE :query COLLATE NOCASE)
-  `);
-  noteStmt.bind({ ':userId': userId, ':query': likeQuery });
-  while (noteStmt.step()) {
-    results.push(noteStmt.getAsObject());
-  }
-  noteStmt.free();
-
   return results;
 };
 
@@ -1333,35 +1315,6 @@ export const setTaskTags = (taskId: number, tagNames: string[]) => {
   console.log('[DB] Task tags updated and DB saved.');
 };
 
-export const getProfile = (userId: number) => {
-  if (!db) throw new Error('DB not initialized');
-  const stmt = db.prepare('SELECT * FROM user_profile WHERE userId = :userId');
-  stmt.bind({ ':userId': userId });
-  let profile = null;
-  if (stmt.step()) {
-    profile = stmt.getAsObject();
-  }
-  stmt.free();
-
-  return profile;
-};
-
-export const updateProfile = (profile: {
-  userId: number;
-  level: number;
-  xp: number;
-}) => {
-  if (!db) throw new Error('DB not initialized');
-  db.run('UPDATE user_profile SET level = ?, xp = ? WHERE userId = ?', [
-    profile.level,
-    profile.xp,
-    profile.userId,
-  ]);
-  saveDB();
-  console.log('[DB] Profile updated and DB saved.');
-  return profile;
-};
-
 export const getEarnedAchievements = (userId: number) => {
   if (!db) throw new Error('DB not initialized');
   const stmt = db.prepare(
@@ -1497,157 +1450,6 @@ export const updateSprint = (sprint: any) => {
   saveDB();
   console.log('[DB] Sprint updated and DB saved.');
   return sprint;
-};
-
-// Note formats the editor supports; anything else is stored as markdown
-const noteFormat = (value: unknown) =>
-  value === 'json' || value === 'sql' ? value : 'markdown';
-
-const parseNoteTags = (value: unknown): string[] => {
-  if (Array.isArray(value)) return value.map(String);
-  try {
-    const parsed = JSON.parse(String(value ?? '[]'));
-    return Array.isArray(parsed) ? parsed.map(String) : [];
-  } catch (e) {
-    return [];
-  }
-};
-
-const noteFromRow = (row: any) => ({
-  ...row,
-  notebook: row.notebook || '',
-  tags: parseNoteTags(row.tags),
-  pinned: Number(row.pinned) === 1,
-  format: noteFormat(row.format),
-  updatedAt: row.updatedAt || row.createdAt,
-});
-
-export const getNotes = (userId: number) => {
-  if (!db) throw new Error('DB not initialized');
-  const stmt = db.prepare('SELECT * FROM notes WHERE userId = :userId');
-  stmt.bind({ ':userId': userId });
-  const notes: any[] = [];
-  while (stmt.step()) {
-    notes.push(noteFromRow(stmt.getAsObject()));
-  }
-  stmt.free();
-
-  return notes;
-};
-
-export const createNote = (note: any, userId: number) => {
-  if (!db) throw new Error('DB not initialized');
-  const now = new Date().toISOString();
-  const createdAt = note.createdAt || now;
-  db.run(
-    'INSERT INTO notes (title, content, createdAt, userId, notebook, tags, pinned, format, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [
-      note.title,
-      note.content,
-      createdAt,
-      userId,
-      note.notebook || '',
-      JSON.stringify(parseNoteTags(note.tags)),
-      note.pinned ? 1 : 0,
-      noteFormat(note.format),
-      note.updatedAt || createdAt,
-    ],
-  );
-  const id = db.exec('SELECT last_insert_rowid() as id')[0].values[0][0];
-  saveDB();
-  console.log('[DB] Note created and DB saved.');
-  return noteFromRow({ ...note, createdAt, id, userId, tags: note.tags });
-};
-
-// Version history: before a note's text changes, its previous state is kept. Autosave
-// fires every few seconds while typing, so edits within VERSION_COALESCE_MS of the last
-// snapshot are folded into it; `forceVersion` (used by restore) always snapshots.
-const VERSION_COALESCE_MS = 5 * 60 * 1000;
-const MAX_VERSIONS_PER_NOTE = 50;
-
-const snapshotNote = (noteId: number, force: boolean) => {
-  if (!db) return;
-  const current = db.exec(
-    'SELECT title, content, format, COALESCE(updatedAt, createdAt) FROM notes WHERE id = ?',
-    [noteId],
-  )[0]?.values[0];
-  if (!current) return;
-  const last = db.exec(
-    'SELECT savedAt FROM note_versions WHERE noteId = ? ORDER BY savedAt DESC LIMIT 1',
-    [noteId],
-  )[0]?.values[0];
-  const now = Date.now();
-  if (
-    !force &&
-    last &&
-    now - new Date(String(last[0])).getTime() < VERSION_COALESCE_MS
-  ) {
-    return;
-  }
-  db.run(
-    'INSERT INTO note_versions (noteId, title, content, format, savedAt) VALUES (?, ?, ?, ?, ?)',
-    [noteId, current[0], current[1], current[2], new Date(now).toISOString()],
-  );
-  db.run(
-    `DELETE FROM note_versions WHERE noteId = ? AND id NOT IN (
-       SELECT id FROM note_versions WHERE noteId = ? ORDER BY savedAt DESC LIMIT ?)`,
-    [noteId, noteId, MAX_VERSIONS_PER_NOTE],
-  );
-};
-
-export const getNoteVersions = (noteId: number) => {
-  if (!db) throw new Error('DB not initialized');
-  const stmt = db.prepare(
-    'SELECT id, noteId, title, content, format, savedAt FROM note_versions WHERE noteId = :noteId ORDER BY savedAt DESC',
-  );
-  stmt.bind({ ':noteId': noteId });
-  const versions: any[] = [];
-  while (stmt.step()) versions.push(stmt.getAsObject());
-  stmt.free();
-  return versions;
-};
-
-export const updateNote = (
-  note: any,
-  options: { forceVersion?: boolean } = {},
-) => {
-  if (!db) throw new Error('DB not initialized');
-  const previous = db.exec(
-    'SELECT title, content, format FROM notes WHERE id = ?',
-    [note.id],
-  )[0]?.values[0];
-  const textChanged =
-    previous &&
-    (previous[0] !== note.title ||
-      previous[1] !== note.content ||
-      previous[2] !== noteFormat(note.format));
-  if (textChanged) snapshotNote(note.id, !!options.forceVersion);
-
-  const updatedAt = new Date().toISOString();
-  db.run(
-    'UPDATE notes SET title = ?, content = ?, notebook = ?, tags = ?, pinned = ?, format = ?, updatedAt = ? WHERE id = ?',
-    [
-      note.title,
-      note.content,
-      note.notebook || '',
-      JSON.stringify(parseNoteTags(note.tags)),
-      note.pinned ? 1 : 0,
-      noteFormat(note.format),
-      updatedAt,
-      note.id,
-    ],
-  );
-  saveDB();
-  return noteFromRow({ ...note, updatedAt });
-};
-
-export const deleteNote = (noteId: number) => {
-  if (!db) throw new Error('DB not initialized');
-  db.run('DELETE FROM notes WHERE id = ?', [noteId]);
-  db.run('DELETE FROM note_versions WHERE noteId = ?', [noteId]);
-  saveDB();
-  console.log('[DB] Note deleted and DB saved.');
-  return noteId;
 };
 
 export const registerUser = (username: string, password: string) => {
@@ -3106,22 +2908,6 @@ export const getFocusContext = (
   startTime?: number,
 ): number => getFocusContextDetail(timestamp, startTime).score;
 
-export const startNewExpedition = () => {
-  const targetMinutes = 120 + Math.floor(Math.random() * 240); // 2h to 6h
-  const newExpedition = {
-    seed: Math.random(),
-    targetMinutes,
-    accumulatedMinutes: 0,
-    status: 'active',
-  };
-  setSetting('current_expedition', JSON.stringify(newExpedition));
-  logSystemEvent(
-    `New Expedition Started: Target ${targetMinutes}m.`,
-    'GAMIFICATION',
-  );
-  return newExpedition;
-};
-
 export const closeDB = () => {
   if (db) {
     saveDB();
@@ -3130,72 +2916,11 @@ export const closeDB = () => {
   }
 };
 
-// --- Gamification ------------------------------------------------------------------------
-// One local profile (the app is single-user; the profile row predates the per-device user
-// ids tasks use, so it stays keyed 1). All XP goes through awardXp.
+// --- Achievements ------------------------------------------------------------------------
+// Kept for the one local profile (single-user app; keyed 1 like before).
 
 const GAMIFICATION_USER_ID = 1;
 const MAX_REAL_SESSION_MS = 8 * 3600000;
-
-export const getGamificationProfile = () => {
-  if (!db) throw new Error('DB not initialized');
-  db.run(
-    'INSERT OR IGNORE INTO user_profile (userId, level, xp) VALUES (?, 1, 0)',
-    [GAMIFICATION_USER_ID],
-  );
-  const row = db.exec('SELECT level, xp FROM user_profile WHERE userId = ?', [
-    GAMIFICATION_USER_ID,
-  ])[0]?.values[0];
-  return {
-    userId: GAMIFICATION_USER_ID,
-    level: Number(row?.[0]) || 1,
-    xp: Number(row?.[1]) || 0,
-  };
-};
-
-/**
- * Adds XP (and levels up as needed). With a `key` the award happens at most once - e.g.
- * `task:42` - so undo/redo can't farm XP. Returns null when the key was already used.
- */
-export const awardXp = (amount: number, reason: string, key?: string) => {
-  if (!db) throw new Error('DB not initialized');
-  if (key) {
-    const used = db.exec('SELECT 1 FROM xp_events WHERE key = ?', [key])[0];
-    if (used) return null;
-  }
-  const before = getGamificationProfile();
-  const next = applyXp(before, amount);
-  db.run('UPDATE user_profile SET level = ?, xp = ? WHERE userId = ?', [
-    next.level,
-    next.xp,
-    GAMIFICATION_USER_ID,
-  ]);
-  db.run(
-    'INSERT INTO xp_events (key, amount, reason, createdAt) VALUES (?, ?, ?, ?)',
-    [key ?? null, amount, reason, new Date().toISOString()],
-  );
-  if (next.levelsGained > 0) {
-    logSystemEvent(`Level up: ${next.level}`, 'GAMIFICATION');
-  }
-  saveDB();
-  return {
-    profile: { userId: GAMIFICATION_USER_ID, level: next.level, xp: next.xp },
-    levelsGained: next.levelsGained,
-  };
-};
-
-export const getXpEvents = (limit = 20) => {
-  if (!db) return [];
-  const rows = db.exec(
-    'SELECT amount, reason, createdAt FROM xp_events ORDER BY id DESC LIMIT ?',
-    [limit],
-  )[0];
-  return (rows?.values || []).map(([amount, reason, createdAt]) => ({
-    amount: Number(amount),
-    reason: String(reason),
-    createdAt: String(createdAt),
-  }));
-};
 
 const scalar = (sql: string, params: any[] = []) =>
   Number(db?.exec(sql, params)[0]?.values[0]?.[0]) || 0;
@@ -3287,7 +3012,7 @@ const getEarnedWithDates = () => {
   );
 };
 
-/** Grants every achievement whose target is now reached (with its XP). Returns the new ones. */
+/** Grants every achievement whose target is now reached. Returns the new ones. */
 export const syncAchievements = () => {
   if (!db) throw new Error('DB not initialized');
   const earned = [...getEarnedWithDates().keys()];
@@ -3298,10 +3023,9 @@ export const syncAchievements = () => {
       [GAMIFICATION_USER_ID, a.id, new Date().toISOString()],
     );
     logSystemEvent(`Achievement Unlocked: ${a.id}`, 'GAMIFICATION');
-    awardXp(a.xp, `Achievement: ${a.name}`, `achievement:${a.id}`);
   });
   if (fresh.length) saveDB();
-  return fresh.map((a) => ({ id: a.id, name: a.name, xp: a.xp }));
+  return fresh.map((a) => ({ id: a.id, name: a.name }));
 };
 
 /** Everything the Profile page shows. */
@@ -3309,111 +3033,14 @@ export const getGamificationState = () => {
   const stats = getAchievementStats();
   const earned = getEarnedWithDates();
   return {
-    profile: getGamificationProfile(),
     achievements: ACHIEVEMENTS.map((a) => ({
       id: a.id,
       name: a.name,
       description: a.description,
-      xp: a.xp,
       group: a.group,
       target: a.target,
       progress: Math.min(a.target, a.progress(stats)),
       earnedAt: earned.get(a.id) || null,
     })),
-    recentXp: getXpEvents(15),
-  };
-};
-
-// --- Journey -----------------------------------------------------------------------------
-
-export const getJourneyState = (): JourneyState => {
-  if (!db) throw new Error('DB not initialized');
-  const row = db.exec('SELECT data FROM journey_state WHERE id = 1')[0]
-    ?.values[0];
-  if (row) {
-    try {
-      const saved = JSON.parse(String(row[0]));
-      // Saves from before games were per sprint (no map seed) start fresh
-      if (typeof saved.seed === 'number')
-        return { ...initialJourney(), ...saved };
-    } catch (e) {
-      console.error('[DB] Corrupt journey state, starting over', e);
-    }
-  }
-  const fresh = initialJourney();
-  db.run('INSERT OR REPLACE INTO journey_state (id, data) VALUES (1, ?)', [
-    JSON.stringify(fresh),
-  ]);
-  saveDB();
-  return fresh;
-};
-
-export const saveJourneyState = (state: JourneyState) => {
-  if (!db) throw new Error('DB not initialized');
-  db.run('INSERT OR REPLACE INTO journey_state (id, data) VALUES (1, ?)', [
-    JSON.stringify(state),
-  ]);
-  saveDB();
-  return state;
-};
-
-/** Adds dice rolls once per key (e.g. `task:42`). Returns false when already granted. */
-export const grantJourneyRolls = (
-  rolls: number,
-  reason: string,
-  key: string,
-  penalty = 0,
-) => {
-  if (!db) throw new Error('DB not initialized');
-  if (db.exec('SELECT 1 FROM journey_grants WHERE key = ?', [key])[0]) {
-    return false;
-  }
-  db.run(
-    'INSERT INTO journey_grants (key, rolls, reason, createdAt) VALUES (?, ?, ?, ?)',
-    [key, rolls, reason, new Date().toISOString()],
-  );
-  const state = getJourneyState();
-  saveJourneyState({
-    ...state,
-    pendingRolls: state.pendingRolls + rolls,
-    penalty: (state.penalty || 0) + penalty,
-  });
-  return true;
-};
-
-/**
- * The sprint the journey follows: the ACTIVE one, else the one whose dates cover today.
- * `expectedRolls` - what its planned tasks are worth in dice rolls (sizes the map).
- */
-export const getJourneySprint = (today: string): SprintInfo | null => {
-  if (!db) return null;
-  const row =
-    db.exec(
-      "SELECT id, name, endDate FROM sprints WHERE status = 'ACTIVE' ORDER BY startDate DESC LIMIT 1",
-    )[0]?.values[0] ||
-    db.exec(
-      'SELECT id, name, endDate FROM sprints WHERE startDate <= ? AND endDate >= ? ORDER BY startDate DESC LIMIT 1',
-      [today, today],
-    )[0]?.values[0];
-  if (!row) return null;
-  const id = Number(row[0]);
-  const tasks =
-    db.exec('SELECT storyPoints, estimate FROM tasks WHERE sprintId = ?', [
-      id,
-    ])[0]?.values || [];
-  const expectedRolls = tasks.reduce(
-    (sum, [storyPoints, estimate]) =>
-      sum +
-      rollsForTask({
-        storyPoints: Number(storyPoints),
-        estimate: Number(estimate),
-      }).rolls,
-    0,
-  );
-  return {
-    id,
-    name: String(row[1] || `Sprint ${id}`),
-    endDate: row[2] ? String(row[2]).slice(0, 10) : null,
-    expectedRolls,
   };
 };

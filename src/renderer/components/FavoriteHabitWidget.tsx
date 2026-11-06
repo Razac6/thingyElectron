@@ -41,8 +41,7 @@ export default function FavoriteHabitWidget() {
   const [habit, setHabit] = useState<any>(null);
   const [logs, setLogs] = useState<any[]>([]);
   const [streak, setStreak] = useState(0);
-  const { addXp, checkForAchievements, triggerRewardAnimation } =
-    useGamification();
+  const { checkForAchievements, triggerRewardAnimation } = useGamification();
 
   const loadData = async () => {
     const userStr = localStorage.getItem('userId');
@@ -95,8 +94,6 @@ export default function FavoriteHabitWidget() {
     await window.electron.database.logHabit(habit.id, todayStr, newValue);
 
     if (newValue === 1) {
-      // Once per habit per day - unticking and ticking again doesn't pay twice
-      addXp(15, `Habit: ${habit.title}`, `habit:${habit.id}:${todayStr}`);
       checkForAchievements();
       triggerRewardAnimation('standard');
     }

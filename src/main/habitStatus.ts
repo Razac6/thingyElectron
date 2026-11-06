@@ -23,7 +23,7 @@ export const localDateKey = (date: Date = new Date()): string => {
 };
 
 export const isHabitDueOn = (habit: HabitLike, date: Date): boolean => {
-  const frequency = habit.frequency;
+  const { frequency } = habit;
   if (!frequency || !frequency.type || frequency.type === 'daily') return true;
   return (
     Array.isArray(frequency.days) && frequency.days.includes(date.getDay())

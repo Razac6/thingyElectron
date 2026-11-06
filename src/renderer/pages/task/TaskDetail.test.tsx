@@ -51,7 +51,6 @@ jest.mock('../../context/TimerContext', () => ({
 // Mock Contexts
 jest.mock('../../context/GamificationContext', () => ({
   useGamification: () => ({
-    addXp: jest.fn(),
     checkForAchievements: jest.fn(),
     triggerRewardAnimation: jest.fn(),
   }),

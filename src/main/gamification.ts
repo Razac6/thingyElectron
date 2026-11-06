@@ -300,34 +300,6 @@ export const newlyEarned = (stats: AchievementStats, earned: string[]) =>
     (a) => !earned.includes(a.id) && a.progress(stats) >= a.target,
   );
 
-// --- Levels ----------------------------------------------------------------------------
-// Level n needs n * 100 XP to reach level n + 1; `xp` is the XP gathered within the
-// current level (that's how existing profiles are stored).
-
-export const xpForNextLevel = (level: number) => Math.max(1, level) * 100;
-
-export const applyXp = (
-  profile: { level: number; xp: number },
-  amount: number,
-) => {
-  let level = Math.max(1, profile.level || 1);
-  let xp = Math.max(0, (profile.xp || 0) + amount);
-  const startLevel = level;
-  // A big award (retroactive achievements) can span several levels
-  while (xp >= xpForNextLevel(level)) {
-    xp -= xpForNextLevel(level);
-    level += 1;
-  }
-  return { level, xp, levelsGained: level - startLevel };
-};
-
-/** Total XP ever earned, from level + XP within the level. */
-export const totalXp = (level: number, xp: number) => {
-  let total = xp;
-  for (let l = 1; l < level; l += 1) total += xpForNextLevel(l);
-  return total;
-};
-
 /** Longest run of consecutive days with the habit done, from its log dates (YYYY-MM-DD). */
 export const longestStreak = (dates: string[]) => {
   const days = [...new Set(dates)]
@@ -341,13 +313,4 @@ export const longestStreak = (dates: string[]) => {
     best = Math.max(best, run);
   });
   return best;
-};
-
-// XP for everyday actions. Keys make an award once-only, so ticking a task or habit
-// off and on again can't farm XP.
-export const XP = {
-  TASK_COMPLETED: 10,
-  HABIT_DONE: 15,
-  FOCUS_STEP: 15,
-  FATIGUE_BREAK: 15,
 };

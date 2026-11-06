@@ -6,7 +6,6 @@ import GlobalStyles from '@mui/material/GlobalStyles';
 import Dashboard from './dashboard/dashboard';
 import List from './pages/list/List';
 import Habits from './pages/habits/Habits';
-import Notes from './pages/notes/Notes';
 import Statistics from './pages/statistics/Statistics';
 import Profile from './pages/profile/Profile';
 import SystemLogs from './pages/system-logs/SystemLogs';
@@ -77,7 +76,6 @@ export default function App() {
                           <Route path="/list" element={<List />} />
                           <Route path="/habits" element={<Habits />} />
                           {/* Chat route removed */}
-                          <Route path="/notes" element={<Notes />} />
                           <Route path="/statistics" element={<Statistics />} />
                           <Route
                             path="/web-activity"

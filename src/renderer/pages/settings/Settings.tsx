@@ -325,10 +325,8 @@ function Settings() {
           color="text.secondary"
           sx={{ display: 'block', mt: 1 }}
         >
-          The Warrior turns on the journey: finished tasks, focus blocks, habits
-          and quests earn dice rolls on a map with treasure, gold and battles
-          (Dashboard), and gear to equip (Profile). Other characters keep things
-          simple.
+          The Warrior and the monsters are pixel art from the wojownik game;
+          hover a card to see how it reacts.
         </Typography>
         {(settings.ui_theme || DEFAULT_THEME) === 'luma' && (
           <>
@@ -437,20 +435,6 @@ function Settings() {
               />
             }
             label="Enable Reward Animations (Confetti)"
-          />
-          <FormControlLabel
-            control={
-              <Switch
-                checked={settings.mountain_climb_enabled !== 'false'}
-                onChange={(e) =>
-                  updateSetting(
-                    'mountain_climb_enabled',
-                    String(e.target.checked),
-                  )
-                }
-              />
-            }
-            label="Enable Mountain Climb Expedition (BETA)"
           />
           <FormControlLabel
             control={

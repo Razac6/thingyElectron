@@ -12,10 +12,6 @@ import {
   updateTask,
   deleteTask,
   register,
-  fetchNotes,
-  createNote,
-  updateNote,
-  deleteNote,
   globalSearch,
   logWorkSession,
   getDailyProductivity,
@@ -41,7 +37,6 @@ import {
   updateDailyBio,
   predictDuration,
   forceNeuralTraining,
-  startNewExpedition,
 } from './DatabaseService';
 
 // Mock window.electron BEFORE importing the service
@@ -53,10 +48,6 @@ const mockElectron = {
     updateTask: jest.fn(),
     deleteTask: jest.fn(),
     register: jest.fn(),
-    getNotes: jest.fn(),
-    createNote: jest.fn(),
-    updateNote: jest.fn(),
-    deleteNote: jest.fn(),
     globalSearch: jest.fn(),
     logWorkSession: jest.fn(),
     getDailyProductivity: jest.fn(),
@@ -82,7 +73,6 @@ const mockElectron = {
     updateDailyBio: jest.fn(),
     predictDuration: jest.fn(),
     forceNeuralTraining: jest.fn(),
-    startNewExpedition: jest.fn(),
   },
 };
 
@@ -336,117 +326,6 @@ describe('DatabaseService', () => {
         mockElectron.database.deleteTask.mockRejectedValue(error);
 
         await expect(deleteTask(1)).rejects.toThrow('Delete failed');
-        expect(console.error).toHaveBeenCalled();
-      });
-    });
-  });
-
-  describe('Note Operations', () => {
-    const mockNote = {
-      id: 1,
-      title: 'Test Note',
-      content: 'Test Content',
-      createdAt: '2024-01-01',
-    };
-
-    describe('fetchNotes', () => {
-      it('should fetch notes successfully', async () => {
-        localStorage.setItem('userId', JSON.stringify(123));
-        const mockNotes = [mockNote];
-        mockElectron.database.getNotes.mockResolvedValue(mockNotes);
-
-        const result = await fetchNotes();
-
-        expect(mockElectron.database.getNotes).toHaveBeenCalledWith(123);
-        expect(result).toEqual(mockNotes);
-      });
-
-      it('should return empty array when userId is missing', async () => {
-        const result = await fetchNotes();
-
-        expect(result).toEqual([]);
-      });
-
-      it('should return empty array on error', async () => {
-        localStorage.setItem('userId', JSON.stringify(123));
-        mockElectron.database.getNotes.mockRejectedValue(new Error('DB Error'));
-
-        const result = await fetchNotes();
-
-        expect(result).toEqual([]);
-        expect(console.error).toHaveBeenCalled();
-      });
-    });
-
-    describe('createNote', () => {
-      it('should create note successfully', async () => {
-        localStorage.setItem('userId', JSON.stringify(123));
-        mockElectron.database.createNote.mockResolvedValue(mockNote);
-
-        const result = await createNote({ title: 'New Note' });
-
-        expect(mockElectron.database.createNote).toHaveBeenCalledWith(
-          { title: 'New Note' },
-          123,
-        );
-        expect(result).toEqual(mockNote);
-      });
-
-      it('should throw error when user is not logged in', async () => {
-        await expect(createNote({ title: 'New Note' })).rejects.toThrow(
-          'User not logged in',
-        );
-      });
-
-      it('should throw error on creation failure', async () => {
-        localStorage.setItem('userId', JSON.stringify(123));
-        const error = new Error('Create failed');
-        mockElectron.database.createNote.mockRejectedValue(error);
-
-        await expect(createNote({ title: 'New Note' })).rejects.toThrow(
-          'Create failed',
-        );
-        expect(console.error).toHaveBeenCalled();
-      });
-    });
-
-    describe('updateNote', () => {
-      it('should update note successfully', async () => {
-        const updatedNote = { ...mockNote, title: 'Updated Note' };
-        mockElectron.database.updateNote.mockResolvedValue(updatedNote);
-
-        const result = await updateNote(updatedNote);
-
-        expect(mockElectron.database.updateNote).toHaveBeenCalledWith(
-          updatedNote,
-        );
-        expect(result).toEqual(updatedNote);
-      });
-
-      it('should throw error on update failure', async () => {
-        const error = new Error('Update failed');
-        mockElectron.database.updateNote.mockRejectedValue(error);
-
-        await expect(updateNote(mockNote)).rejects.toThrow('Update failed');
-        expect(console.error).toHaveBeenCalled();
-      });
-    });
-
-    describe('deleteNote', () => {
-      it('should delete note successfully', async () => {
-        mockElectron.database.deleteNote.mockResolvedValue({ success: true });
-
-        const result = await deleteNote(1);
-
-        expect(mockElectron.database.deleteNote).toHaveBeenCalledWith(1);
-        expect(result).toEqual({ success: true });
-      });
-
-      it('should throw error on deletion failure', async () => {
-        const error = new Error('Delete failed');
-        mockElectron.database.deleteNote.mockRejectedValue(error);
-
-        await expect(deleteNote(1)).rejects.toThrow('Delete failed');
         expect(console.error).toHaveBeenCalled();
       });
     });
@@ -1123,24 +1002,6 @@ describe('DatabaseService', () => {
           bioData,
         );
         expect(result).toEqual({ success: true });
-      });
-    });
-
-    describe('startNewExpedition', () => {
-      it('should start new expedition successfully', async () => {
-        const mockExpedition = {
-          id: 1,
-          startDate: '2024-01-01',
-          status: 'active',
-        };
-        mockElectron.database.startNewExpedition.mockResolvedValue(
-          mockExpedition,
-        );
-
-        const result = await startNewExpedition();
-
-        expect(mockElectron.database.startNewExpedition).toHaveBeenCalled();
-        expect(result).toEqual(mockExpedition);
       });
     });
   });

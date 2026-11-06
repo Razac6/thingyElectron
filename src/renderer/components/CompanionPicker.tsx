@@ -6,19 +6,30 @@ import DropletCompanion from './DropletCompanion';
 import OwlCompanion from './OwlCompanion';
 import DogCompanion from './DogCompanion';
 import { SnakePreview } from './SnakeCompanion';
-import WarriorCompanion from './journey/WarriorCompanion';
+import WarriorCompanion, { MonsterCompanion } from './sprites/WarriorCompanion';
+import { MONSTERS } from './sprites/assets';
 
 // Assistant character picker with live previews - each card shows the character the way
 // it appears in the app (the animals peeking over the bottom edge), and hovering a card
 // shows its happy reaction.
 
+// monster-<name>: one of the pixel-art monsters of the wojownik game
 export type CompanionCharacter =
   | 'warrior'
   | 'droplet'
   | 'owl'
   | 'dog'
   | 'snake'
-  | 'cat';
+  | 'cat'
+  | `monster-${string}`;
+
+export const MONSTER_PREFIX = 'monster-';
+/** The monster of a `monster-<name>` character, or null. */
+export const monsterOf = (value?: string) =>
+  value?.startsWith(MONSTER_PREFIX) &&
+  MONSTERS[value.slice(MONSTER_PREFIX.length)]
+    ? value.slice(MONSTER_PREFIX.length)
+    : null;
 
 const CHARACTERS: { id: CompanionCharacter; label: string }[] = [
   { id: 'warrior', label: 'Warrior' },
@@ -27,6 +38,10 @@ const CHARACTERS: { id: CompanionCharacter; label: string }[] = [
   { id: 'dog', label: 'Dog' },
   { id: 'snake', label: 'Snake' },
   { id: 'cat', label: 'Cat' },
+  ...Object.keys(MONSTERS).map((m) => ({
+    id: `${MONSTER_PREFIX}${m}` as CompanionCharacter,
+    label: m.charAt(0).toUpperCase() + m.slice(1),
+  })),
 ];
 
 export const normalizeCharacter = (value?: string): CompanionCharacter =>
@@ -42,6 +57,9 @@ function Preview({
   hovered: boolean;
 }) {
   const mood = hovered ? 'happy' : 'idle';
+  const monster = monsterOf(id);
+  if (monster)
+    return <MonsterCompanion monster={monster} mood={mood} size={120} />;
   switch (id) {
     case 'owl':
       return <OwlCompanion mood={mood} variant="peek" />;

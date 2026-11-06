@@ -113,9 +113,7 @@ describe('SearchOverlay', () => {
       }
 
       await waitFor(() => {
-        expect(
-          screen.getByPlaceholderText(/Search tasks and notes/),
-        ).toBeInTheDocument();
+        expect(screen.getByPlaceholderText(/Search tasks/)).toBeInTheDocument();
       });
     });
 
@@ -272,7 +270,7 @@ describe('SearchOverlay', () => {
         fireEvent.click(switchButton);
       }
 
-      const input = screen.getByPlaceholderText(/Search tasks and notes/);
+      const input = screen.getByPlaceholderText(/Search tasks/);
       fireEvent.change(input, { target: { value: 'test query' } });
 
       await waitFor(
@@ -304,7 +302,7 @@ describe('SearchOverlay', () => {
         fireEvent.click(switchButton);
       }
 
-      const input = screen.getByPlaceholderText(/Search tasks and notes/);
+      const input = screen.getByPlaceholderText(/Search tasks/);
       fireEvent.change(input, { target: { value: 'test' } });
 
       await waitFor(() => {
@@ -330,7 +328,7 @@ describe('SearchOverlay', () => {
         fireEvent.click(switchButton);
       }
 
-      const input = screen.getByPlaceholderText(/Search tasks and notes/);
+      const input = screen.getByPlaceholderText(/Search tasks/);
       fireEvent.change(input, { target: { value: 'nonexistent' } });
 
       await waitFor(

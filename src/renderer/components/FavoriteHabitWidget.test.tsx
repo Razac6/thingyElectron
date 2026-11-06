@@ -26,7 +26,6 @@ beforeAll(() => {
 // Mock GamificationContext
 jest.mock('../context/GamificationContext', () => ({
   useGamification: () => ({
-    addXp: jest.fn(),
     checkForAchievements: jest.fn(),
     triggerRewardAnimation: jest.fn(),
   }),

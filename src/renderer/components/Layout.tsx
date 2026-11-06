@@ -26,7 +26,6 @@ import Lottie from 'lottie-react';
 import DashboardIcon from '@mui/icons-material/SpaceDashboardOutlined';
 import TasksIcon from '@mui/icons-material/TaskAltOutlined';
 import StatisticsIcon from '@mui/icons-material/InsightsOutlined';
-import CodeIcon from '@mui/icons-material/Code';
 import PersonIcon from '@mui/icons-material/PersonOutlineOutlined';
 import SprintIcon from '@mui/icons-material/DirectionsRunOutlined';
 import MenuIcon from '@mui/icons-material/Menu';
@@ -80,7 +79,6 @@ const menuItems = [
   { text: 'Statistics', path: '/statistics', icon: <StatisticsIcon /> },
   { text: 'Monitoring', path: '/web-activity', icon: <MonitoringIcon /> },
   { text: 'Profile', path: '/profile', icon: <PersonIcon /> },
-  { text: 'Dev Notes', path: '/notes', icon: <CodeIcon /> },
 ];
 
 // Titles for routes that aren't in the menu (shown in the AppBar)
@@ -235,21 +233,11 @@ export default function Layout({ children }: LayoutProps) {
       'task:draft-received',
       handleTaskDraft,
     );
-    // a package notification was clicked: show that run's log
-    const unsubRun = window.electron.ipcRenderer.on(
-      'commands:open-run',
-      (runId: unknown) => {
-        navigate('/notes', {
-          state: { openRun: String(runId), at: Date.now() },
-        });
-      },
-    );
 
     return () => {
       if (unsubSearch) unsubSearch();
       if (unsubSettings) unsubSettings();
       if (unsubDraft) unsubDraft();
-      if (unsubRun) unsubRun();
     };
   }, [navigate]);
 

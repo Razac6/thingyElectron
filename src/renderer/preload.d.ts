@@ -1,12 +1,5 @@
 import { IpcRendererEvent } from 'electron';
 import { StandupData } from '../main/DailyStandupAI';
-import type { DockerStatus } from '../main/docker';
-import type { RunSnapshot, RunStepInput } from '../main/commandRunner';
-import type {
-  ConnectionString,
-  DockerContainer,
-  DockerVolume,
-} from '../main/dockerTools';
 
 export interface IElectronAPI {
   ipcRenderer: {
@@ -16,83 +9,6 @@ export interface IElectronAPI {
     sendSync(channel: string, ...args: any[]): any;
     removeListener(channel: string, func: (...args: unknown[]) => void): void;
     invoke(channel: string, ...args: unknown[]): Promise<any>;
-  };
-  commands: {
-    run: (
-      steps: RunStepInput[],
-      options: {
-        label: string;
-        groupId?: string | null;
-        stopOnError?: boolean;
-        notify?: boolean;
-      },
-    ) => Promise<RunSnapshot | null>;
-    stop: (runId: string, force?: boolean) => Promise<boolean>;
-    stopStep: (
-      runId: string,
-      index: number,
-      force?: boolean,
-    ) => Promise<boolean>;
-    runs: () => Promise<RunSnapshot[]>;
-    output: (runId: string, step?: number | null) => Promise<string>;
-    rerun: (
-      runId: string,
-      options?: {
-        from?: number;
-        only?: number;
-        section?: string;
-        latest?: Record<string, Partial<RunStepInput>>;
-      },
-    ) => Promise<RunSnapshot | null>;
-    clear: () => Promise<boolean>;
-    pickFolder: (current?: string) => Promise<string | null>;
-  };
-  docker: {
-    status: () => Promise<DockerStatus>;
-    list: () => Promise<{
-      containers: DockerContainer[];
-      error: string | null;
-    }>;
-    action: (
-      ids: string[],
-      action: 'start' | 'stop' | 'restart' | 'pause' | 'unpause',
-    ) => Promise<{ ok: boolean; error: string | null }>;
-    logs: (id: string, tail?: number) => Promise<{ ok: boolean; text: string }>;
-    connections: (id: string) => Promise<ConnectionString[]>;
-    startColima: () => Promise<{ ok: boolean; error: string | null }>;
-    remove: (
-      id: string,
-      options: {
-        force?: boolean;
-        anonymousVolumes?: boolean;
-        volumes?: string[];
-      },
-    ) => Promise<{ ok: boolean; error: string | null }>;
-    volumes: (
-      withSizes?: boolean,
-    ) => Promise<{ volumes: DockerVolume[]; error: string | null }>;
-    removeVolumes: (
-      names: string[],
-    ) => Promise<{ ok: boolean; error: string | null }>;
-    resetInfo: (
-      id: string,
-      dbName?: string,
-    ) => Promise<{
-      supported: boolean;
-      kind?: string;
-      dbName?: string;
-      error: string | null;
-      command?: string;
-    }>;
-    resetDb: (
-      id: string,
-      dbName: string,
-    ) => Promise<{ ok: boolean; error: string | null; output?: string }>;
-    pruneVolumes: (all?: boolean) => Promise<{
-      ok: boolean;
-      error: string | null;
-      reclaimed: string | null;
-    }>;
   };
   shell: {
     openExternal: (url: string) => void;
@@ -128,26 +44,6 @@ export interface IElectronAPI {
     updateSprint: (sprint: any) => Promise<void>;
     updateSprintStatus: (sprintId: number, status: string) => Promise<void>;
     getSprintAnalysis: (userId: number) => Promise<any>;
-    getNotes: (userId: number) => Promise<any[]>;
-    createNote: (note: any, userId?: number) => Promise<number>;
-    updateNote: (
-      note: any,
-      options?: { forceVersion?: boolean },
-    ) => Promise<any>;
-    getNoteVersions: (noteId: number) => Promise<any[]>;
-    deleteNote: (noteId: number) => Promise<void>;
-    importNoteFiles: () => Promise<{ fileName: string; text: string }[]>;
-    saveBase64File: (
-      fileName: string,
-      base64: string,
-    ) => Promise<string | null>;
-    openBase64File: (
-      fileName: string,
-      base64: string,
-    ) => Promise<string | null>;
-    exportNoteFiles: (
-      files: { fileName: string; content: string }[],
-    ) => Promise<number>;
     globalSearch: (userId: number, query: string) => Promise<any[]>;
     getDailyChallenge: (userId: number) => Promise<any>;
     getAverageTimeForTaskType: (taskType: string) => Promise<number>;
@@ -175,12 +71,6 @@ export interface IElectronAPI {
     login: (creds: any) => Promise<any>;
     register: (creds: any) => Promise<any>;
     getGamificationState: () => Promise<any>;
-    getJourney: () => Promise<any>;
-    rollJourney: () => Promise<any>;
-    equipJourneyItem: (uid: string) => Promise<any>;
-    upgradeJourneyItem: (uid: string) => Promise<any>;
-    sellJourneyItem: (uid: string) => Promise<any>;
-    awardXp: (amount: number, reason: string, key?: string) => Promise<any>;
     syncAchievements: () => Promise<{
       profile: any;
       newAchievements: { id: string; name: string; xp: number }[];
@@ -265,7 +155,6 @@ export interface IElectronAPI {
       focusMinutes: number;
     }>;
     setAppCategory: (appName: string, category: string) => Promise<void>;
-    startNewExpedition: () => Promise<any>;
     requestSync: () => Promise<void>;
   };
 }

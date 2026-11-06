@@ -13,7 +13,6 @@ import {
   styled,
   IconButton,
   InputAdornment,
-  Chip,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import SearchIcon from '@mui/icons-material/Search';
@@ -45,7 +44,7 @@ const SearchContainer = styled(Paper)(({ theme }) => ({
 interface SearchResult {
   id: number;
   title: string;
-  resultType: 'task' | 'note';
+  resultType: 'task';
 }
 
 interface SearchOverlayProps {
@@ -273,11 +272,7 @@ export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
   const handleSelectResult = (result: SearchResult) => {
     onClose();
     setQuery('');
-    if (result.resultType === 'task') {
-      navigate(`/task/${result.id}`);
-    } else {
-      navigate(`/notes`, { state: { noteId: result.id } });
-    }
+    navigate(`/task/${result.id}`);
   };
 
   const handleQuickAdd = async () => {
@@ -390,7 +385,7 @@ export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
 
   const placeholder = isAdding
     ? "Add task: 'Fix login @bug #backend 2h'"
-    : 'Search tasks and notes...';
+    : 'Search tasks...';
 
   return (
     <Modal
@@ -514,9 +509,6 @@ export default function SearchOverlay({ open, onClose }: SearchOverlayProps) {
                   onClick={() => handleSelectResult(result)}
                 >
                   <ListItemText primary={result.title} />
-                  {result.resultType === 'note' && (
-                    <Chip label="Note" size="small" />
-                  )}
                 </ListItemButton>
               ))
             ) : (

@@ -31,40 +31,14 @@ contextBridge.exposeInMainWorld('electron', {
     getSprintAnalysis: (userId: number) =>
       ipcRenderer.invoke('db:get-sprint-analysis', userId),
 
-    // Notes
-    getNotes: (userId: number) => ipcRenderer.invoke('db:get-notes', userId),
-    createNote: (note: any, userId: number) =>
-      ipcRenderer.invoke('db:create-note', note, userId),
-    updateNote: (note: any, options?: { forceVersion?: boolean }) =>
-      ipcRenderer.invoke('db:update-note', note, options),
-    getNoteVersions: (noteId: number) =>
-      ipcRenderer.invoke('db:get-note-versions', noteId),
-    deleteNote: (noteId: number) =>
-      ipcRenderer.invoke('db:delete-note', noteId),
-    importNoteFiles: () => ipcRenderer.invoke('notes:import-files'),
-    saveBase64File: (fileName: string, base64: string) =>
-      ipcRenderer.invoke('files:save-base64', fileName, base64),
-    openBase64File: (fileName: string, base64: string) =>
-      ipcRenderer.invoke('files:open-base64', fileName, base64),
-    exportNoteFiles: (files: { fileName: string; content: string }[]) =>
-      ipcRenderer.invoke('notes:export-files', files),
-
     // Users
     login: (credentials: any) => ipcRenderer.invoke('db:login', credentials),
     register: (credentials: any) =>
       ipcRenderer.invoke('db:register', credentials),
 
-    // Gamification (XP and achievements are owned by the main process)
+    // Achievements (owned by the main process)
     getGamificationState: () => ipcRenderer.invoke('gamification:get-state'),
-    awardXp: (amount: number, reason: string, key?: string) =>
-      ipcRenderer.invoke('gamification:award-xp', amount, reason, key),
     syncAchievements: () => ipcRenderer.invoke('gamification:sync'),
-    getJourney: () => ipcRenderer.invoke('journey:get'),
-    rollJourney: () => ipcRenderer.invoke('journey:roll'),
-    equipJourneyItem: (uid: string) => ipcRenderer.invoke('journey:equip', uid),
-    upgradeJourneyItem: (uid: string) =>
-      ipcRenderer.invoke('journey:upgrade', uid),
-    sellJourneyItem: (uid: string) => ipcRenderer.invoke('journey:sell', uid),
     getProfile: (userId: number) =>
       ipcRenderer.invoke('db:get-profile', userId),
     updateProfile: (profile: any) =>
@@ -206,7 +180,6 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('db:get-today-wins', userId),
     setAppCategory: (appName: string, category: string) =>
       ipcRenderer.invoke('db:set-app-category', appName, category),
-    startNewExpedition: () => ipcRenderer.invoke('db:start-new-expedition'),
     requestSync: () => ipcRenderer.invoke('server:request-sync'),
   },
   app: {
@@ -245,44 +218,6 @@ contextBridge.exposeInMainWorld('electron', {
     removeListener: (channel: string, func: (...args: unknown[]) => void) => {
       ipcRenderer.removeListener(channel, (event, ...args) => func(...args));
     },
-  },
-  commands: {
-    run: (steps: any[], options: any) =>
-      ipcRenderer.invoke('commands:run', steps, options),
-    stop: (runId: string, force?: boolean) =>
-      ipcRenderer.invoke('commands:stop', runId, force),
-    stopStep: (runId: string, index: number, force?: boolean) =>
-      ipcRenderer.invoke('commands:stop-step', runId, index, force),
-    runs: () => ipcRenderer.invoke('commands:runs'),
-    output: (runId: string, step?: number | null) =>
-      ipcRenderer.invoke('commands:output', runId, step),
-    rerun: (runId: string, options?: { from?: number; only?: number }) =>
-      ipcRenderer.invoke('commands:rerun', runId, options),
-    clear: () => ipcRenderer.invoke('commands:clear'),
-    pickFolder: (current?: string) =>
-      ipcRenderer.invoke('commands:pick-folder', current),
-  },
-  docker: {
-    status: () => ipcRenderer.invoke('docker:status'),
-    list: () => ipcRenderer.invoke('docker:list'),
-    action: (ids: string[], action: string) =>
-      ipcRenderer.invoke('docker:action', ids, action),
-    logs: (id: string, tail?: number) =>
-      ipcRenderer.invoke('docker:logs', id, tail),
-    connections: (id: string) => ipcRenderer.invoke('docker:connections', id),
-    startColima: () => ipcRenderer.invoke('docker:start-colima'),
-    remove: (id: string, options: any) =>
-      ipcRenderer.invoke('docker:remove', id, options),
-    volumes: (withSizes?: boolean) =>
-      ipcRenderer.invoke('docker:volumes', withSizes),
-    removeVolumes: (names: string[]) =>
-      ipcRenderer.invoke('docker:remove-volumes', names),
-    resetInfo: (id: string, dbName?: string) =>
-      ipcRenderer.invoke('docker:reset-info', id, dbName),
-    resetDb: (id: string, dbName: string) =>
-      ipcRenderer.invoke('docker:reset-db', id, dbName),
-    pruneVolumes: (all?: boolean) =>
-      ipcRenderer.invoke('docker:prune-volumes', all),
   },
   shell: {
     openExternal: (url: string) =>

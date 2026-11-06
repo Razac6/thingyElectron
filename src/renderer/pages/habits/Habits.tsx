@@ -439,8 +439,7 @@ export default function Habits() {
   const [habits, setHabits] = useState<Habit[]>([]);
   const [habitLogs, setHabitLogs] = useState<Record<number, HabitLog[]>>({});
   const [openDialog, setOpenDialog] = useState(false);
-  const { addXp, checkForAchievements, triggerRewardAnimation } =
-    useGamification();
+  const { checkForAchievements, triggerRewardAnimation } = useGamification();
 
   // Form State
   const [currentHabit, setCurrentHabit] = useState<Partial<Habit>>({
@@ -535,13 +534,6 @@ export default function Habits() {
     // Only reward if toggling ON and it's TODAY
     const today = toLocalISOString(new Date());
     if (newValue === 1 && dateStr === today) {
-      const habit = habits.find((h) => h.id === habitId);
-      // Once per habit per day - unticking and ticking again doesn't pay twice
-      addXp(
-        15,
-        `Habit: ${habit?.title || 'habit'}`,
-        `habit:${habitId}:${dateStr}`,
-      );
       checkForAchievements();
       triggerRewardAnimation('standard');
     }

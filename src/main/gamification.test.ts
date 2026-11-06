@@ -1,10 +1,8 @@
 import {
   ACHIEVEMENTS,
   AchievementStats,
-  applyXp,
   longestStreak,
   newlyEarned,
-  totalXp,
 } from './gamification';
 
 const stats = (over: Partial<AchievementStats> = {}): AchievementStats => ({
@@ -54,21 +52,6 @@ describe('gamification', () => {
     expect(new Set(ACHIEVEMENTS.map((a) => a.id)).size).toBe(
       ACHIEVEMENTS.length,
     );
-  });
-
-  it('levels up across several levels for big awards', () => {
-    // level 1 needs 100, level 2 needs 200
-    expect(applyXp({ level: 1, xp: 50 }, 300)).toEqual({
-      level: 3,
-      xp: 50,
-      levelsGained: 2,
-    });
-    expect(applyXp({ level: 4, xp: 320 }, 10)).toEqual({
-      level: 4,
-      xp: 330,
-      levelsGained: 0,
-    });
-    expect(totalXp(3, 50)).toBe(350);
   });
 
   it('longest streak of consecutive days', () => {

@@ -79,56 +79,6 @@ const deleteTask = async (taskId: number) => {
   }
 };
 
-const fetchNotes = async () => {
-  try {
-    const userStr = localStorage.getItem('userId');
-    const userId = userStr ? JSON.parse(userStr) : null;
-    if (!userId) {
-      return [];
-    }
-    const data = await window.electron.database.getNotes(userId);
-    return data;
-  } catch (error) {
-    console.error('[DatabaseService] Error fetching notes:', error);
-    return [];
-  }
-};
-
-const createNote = async (note: any) => {
-  try {
-    const userStr = localStorage.getItem('userId');
-    const userId = userStr ? JSON.parse(userStr) : null;
-    if (!userId) throw new Error('User not logged in');
-    const created = await window.electron.database.createNote(note, userId);
-    return created;
-  } catch (error) {
-    console.error('[DatabaseService] Error creating note:', error);
-    throw error;
-  }
-};
-
-const updateNote = async (note: any, options?: { forceVersion?: boolean }) => {
-  try {
-    const updated = options
-      ? await window.electron.database.updateNote(note, options)
-      : await window.electron.database.updateNote(note);
-    return updated;
-  } catch (error) {
-    console.error('[DatabaseService] Error updating note:', error);
-    throw error;
-  }
-};
-
-const deleteNote = async (noteId: number) => {
-  try {
-    const deleted = await window.electron.database.deleteNote(noteId);
-    return deleted;
-  } catch (error) {
-    console.error('[DatabaseService] Error deleting note:', error);
-    throw error;
-  }
-};
-
 const register = async (username: string, password: string) => {
   try {
     const registered = await window.electron.database.register({
@@ -418,10 +368,6 @@ const updateDailyBio = async (date: string, data: any) => {
   return await window.electron.database.updateDailyBio(date, data);
 };
 
-const startNewExpedition = async () => {
-  return await window.electron.database.startNewExpedition();
-};
-
 export {
   getToken,
   checkAuth,
@@ -430,10 +376,6 @@ export {
   updateTask,
   deleteTask,
   register,
-  fetchNotes,
-  createNote,
-  updateNote,
-  deleteNote,
   globalSearch,
   logWorkSession,
   adjustTaskWorkTime,
@@ -461,5 +403,4 @@ export {
   updateDailyBio,
   predictDuration,
   forceNeuralTraining,
-  startNewExpedition,
 };

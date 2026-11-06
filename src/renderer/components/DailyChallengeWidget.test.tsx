@@ -26,7 +26,7 @@ describe('DailyChallengeWidget', () => {
     render(<DailyChallengeWidget />);
 
     expect(screen.getByText('Work for 2 hours today')).toBeInTheDocument();
-    expect(screen.getByText('+50 XP')).toBeInTheDocument();
+    expect(screen.getByText('60 / 120')).toBeInTheDocument();
     expect(screen.getByText('50%')).toBeInTheDocument(); // 60/120 = 50%
   });
 

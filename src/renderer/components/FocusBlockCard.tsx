@@ -36,7 +36,6 @@ interface Step {
 
 const MIN_BLOCK = 25;
 const MAX_BLOCK = 90;
-const STEP_XP = 15;
 const SPLIT_ESTIMATE_HOURS = 2; // bigger tasks without steps get a "split it" nudge
 
 // Block length that fits the user: their recommended max focus span, rounded to 5 min
@@ -59,7 +58,7 @@ export default function FocusBlockCard() {
   const [withBoost, setWithBoost] = useState(
     () => localStorage.getItem('focus_block_boost') === 'true',
   );
-  const { addXp, checkForAchievements } = useGamification();
+  const { checkForAchievements } = useGamification();
   const navigate = useNavigate();
   const theme = useTheme();
 
@@ -175,11 +174,6 @@ export default function FocusBlockCard() {
           .toggleChecklistItem(step.id, true)
           .catch(() => {});
       }
-      addXp(
-        STEP_XP,
-        `Focus block: ${step.text || 'goal'}`,
-        step.id ? `step:${step.id}` : undefined,
-      );
       checkForAchievements();
       setPhase('won');
       await loadNextStep(activeTask);
@@ -331,7 +325,7 @@ export default function FocusBlockCard() {
           <Box sx={{ mt: 2, display: 'flex', gap: 1, justifyContent: 'end' }}>
             <Button onClick={() => finishBlock(false)}>Not yet</Button>
             <Button variant="contained" onClick={() => finishBlock(true)}>
-              Done +{STEP_XP} XP
+              Done
             </Button>
           </Box>
         </>
@@ -340,7 +334,7 @@ export default function FocusBlockCard() {
       {phase === 'won' && (
         <>
           <Typography variant="overline" color="success.main">
-            Small win · +{STEP_XP} XP
+            Small win
           </Typography>
           <Typography variant="body1" sx={{ fontWeight: 600, pr: 3 }}>
             {/* No checklist step means the goal was the task itself */}
